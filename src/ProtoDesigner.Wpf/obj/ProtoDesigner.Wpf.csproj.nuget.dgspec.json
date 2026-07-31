@@ -1,0 +1,354 @@
+{
+  "format": 1,
+  "restore": {
+    "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Wpf\\ProtoDesigner.Wpf.csproj": {}
+  },
+  "projects": {
+    "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Application\\ProtoDesigner.Application.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Application\\ProtoDesigner.Application.csproj",
+        "projectName": "ProtoDesigner.Application",
+        "projectPath": "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Application\\ProtoDesigner.Application.csproj",
+        "packagesPath": "C:\\Users\\Elad Shechter\\.nuget\\packages\\",
+        "outputPath": "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Application\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\Elad Shechter\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "framework": "net8.0",
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Core\\ProtoDesigner.Core.csproj": {
+                "projectPath": "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Core\\ProtoDesigner.Core.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.300"
+      },
+      "frameworks": {
+        "net8.0": {
+          "framework": "net8.0",
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.302/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.CodeGen\\ProtoDesigner.CodeGen.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.CodeGen\\ProtoDesigner.CodeGen.csproj",
+        "projectName": "ProtoDesigner.CodeGen",
+        "projectPath": "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.CodeGen\\ProtoDesigner.CodeGen.csproj",
+        "packagesPath": "C:\\Users\\Elad Shechter\\.nuget\\packages\\",
+        "outputPath": "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.CodeGen\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\Elad Shechter\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "framework": "net8.0",
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Core\\ProtoDesigner.Core.csproj": {
+                "projectPath": "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Core\\ProtoDesigner.Core.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.300"
+      },
+      "frameworks": {
+        "net8.0": {
+          "framework": "net8.0",
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.302/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Core\\ProtoDesigner.Core.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Core\\ProtoDesigner.Core.csproj",
+        "projectName": "ProtoDesigner.Core",
+        "projectPath": "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Core\\ProtoDesigner.Core.csproj",
+        "packagesPath": "C:\\Users\\Elad Shechter\\.nuget\\packages\\",
+        "outputPath": "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Core\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\Elad Shechter\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "framework": "net8.0",
+            "targetAlias": "net8.0",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.300"
+      },
+      "frameworks": {
+        "net8.0": {
+          "framework": "net8.0",
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.302/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Persistence.Json\\ProtoDesigner.Persistence.Json.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Persistence.Json\\ProtoDesigner.Persistence.Json.csproj",
+        "projectName": "ProtoDesigner.Persistence.Json",
+        "projectPath": "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Persistence.Json\\ProtoDesigner.Persistence.Json.csproj",
+        "packagesPath": "C:\\Users\\Elad Shechter\\.nuget\\packages\\",
+        "outputPath": "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Persistence.Json\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\Elad Shechter\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "framework": "net8.0",
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Application\\ProtoDesigner.Application.csproj": {
+                "projectPath": "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Application\\ProtoDesigner.Application.csproj"
+              },
+              "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Core\\ProtoDesigner.Core.csproj": {
+                "projectPath": "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Core\\ProtoDesigner.Core.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.300"
+      },
+      "frameworks": {
+        "net8.0": {
+          "framework": "net8.0",
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.302/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Wpf\\ProtoDesigner.Wpf.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Wpf\\ProtoDesigner.Wpf.csproj",
+        "projectName": "ProtoDesigner",
+        "projectPath": "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Wpf\\ProtoDesigner.Wpf.csproj",
+        "packagesPath": "C:\\Users\\Elad Shechter\\.nuget\\packages\\",
+        "outputPath": "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Wpf\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\Elad Shechter\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0-windows"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0-windows": {
+            "framework": "net8.0-windows7.0",
+            "targetAlias": "net8.0-windows",
+            "projectReferences": {
+              "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Application\\ProtoDesigner.Application.csproj": {
+                "projectPath": "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Application\\ProtoDesigner.Application.csproj"
+              },
+              "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.CodeGen\\ProtoDesigner.CodeGen.csproj": {
+                "projectPath": "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.CodeGen\\ProtoDesigner.CodeGen.csproj"
+              },
+              "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Core\\ProtoDesigner.Core.csproj": {
+                "projectPath": "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Core\\ProtoDesigner.Core.csproj"
+              },
+              "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Persistence.Json\\ProtoDesigner.Persistence.Json.csproj": {
+                "projectPath": "C:\\Development\\Projects\\ProtoDesigner\\src\\ProtoDesigner.Persistence.Json\\ProtoDesigner.Persistence.Json.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.300"
+      },
+      "frameworks": {
+        "net8.0-windows": {
+          "framework": "net8.0-windows7.0",
+          "targetAlias": "net8.0-windows",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            },
+            "Microsoft.WindowsDesktop.App.WPF": {
+              "privateAssets": "none"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.302/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}

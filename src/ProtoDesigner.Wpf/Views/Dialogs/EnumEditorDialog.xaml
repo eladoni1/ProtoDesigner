@@ -1,0 +1,97 @@
+<Window x:Class="ProtoDesigner.Wpf.Views.Dialogs.EnumEditorDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Enum type"
+        Width="520" Height="640"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+  <Border Background="{StaticResource Surface1}" Padding="20">
+    <Grid>
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="*"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+      </Grid.RowDefinitions>
+
+      <StackPanel Grid.Row="0">
+        <TextBlock Style="{StaticResource H3Text}" x:Name="HeadingText" Text="Enum type"/>
+        <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,16"
+                   Text="A restricted set of named values. Several names may share one value — the C++ 'SUCCESS = 0, NO_ERROR = 0' idiom."/>
+
+        <TextBlock Style="{StaticResource SectionLabel}" Text="Name"/>
+        <TextBox x:Name="NameBox" Padding="10,7" Margin="0,4,0,14"/>
+      </StackPanel>
+
+      <Grid Grid.Row="1" Margin="0,0,0,14">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="10"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="10"/>
+          <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <StackPanel Grid.Column="0">
+          <TextBlock Style="{StaticResource SectionLabel}" Text="Host type"
+                     ToolTip="How the value is stored in the generated struct"/>
+          <ComboBox x:Name="KindBox" Margin="0,4,0,0" SelectionChanged="OnKindChanged"/>
+        </StackPanel>
+        <StackPanel Grid.Column="2">
+          <TextBlock Style="{StaticResource SectionLabel}" Text="Wire form"
+                     ToolTip="Unsigned allows any bit width. Signed reserves a sign bit, so only whole-byte widths are offered."/>
+          <ComboBox x:Name="WireFormBox" Margin="0,4,0,0" SelectionChanged="OnWireFormChanged"/>
+        </StackPanel>
+        <StackPanel Grid.Column="4">
+          <TextBlock Style="{StaticResource SectionLabel}" Text="Wire size"/>
+          <ComboBox x:Name="WireSizeBox" Margin="0,4,0,0" SelectionChanged="OnWireChanged"/>
+        </StackPanel>
+      </Grid>
+
+      <StackPanel Grid.Row="2">
+        <TextBlock x:Name="WireHint" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,14"/>
+        <Grid Margin="0,0,0,6">
+          <TextBlock Style="{StaticResource SectionLabel}" Text="Members" VerticalAlignment="Center"/>
+          <Button Content="+ Add member" Style="{StaticResource GhostButton}" Padding="10,4" FontSize="11"
+                  HorizontalAlignment="Right" Click="OnAddMember"/>
+        </Grid>
+      </StackPanel>
+
+      <Border Grid.Row="3" Background="{StaticResource Surface0}" CornerRadius="6"
+              BorderBrush="{StaticResource SurfaceStroke}" BorderThickness="1">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="6">
+          <ItemsControl x:Name="MembersList">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Grid Margin="0,2">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="100"/>
+                    <ColumnDefinition Width="30"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBox Grid.Column="0" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                           FontFamily="{StaticResource MonoFont}" Margin="0,0,6,0"/>
+                  <TextBox Grid.Column="1" Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
+                           FontFamily="{StaticResource MonoFont}" Margin="0,0,6,0"/>
+                  <Button Grid.Column="2" Style="{StaticResource IconButton}" Content="✕" Width="26" Height="26"
+                          ToolTip="Remove member" Click="OnRemoveMember" Tag="{Binding}"/>
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </Border>
+
+      <Border Grid.Row="4" x:Name="ErrorBanner" Background="{StaticResource Surface3}" CornerRadius="6"
+              Padding="10,7" Margin="0,12,0,0" Visibility="Collapsed">
+        <TextBlock x:Name="ErrorText" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap"/>
+      </Border>
+
+      <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+        <Button Content="Cancel" Style="{StaticResource GhostButton}" Click="OnCancel" MinWidth="88"/>
+        <Button Content="Save" Style="{StaticResource PrimaryButton}" Click="OnSave" MinWidth="88" Margin="8,0,0,0"/>
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>

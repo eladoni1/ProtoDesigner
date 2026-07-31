@@ -1,0 +1,713 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>ProtoDesigner.Core</name>
+    </assembly>
+    <members>
+        <member name="T:ProtoDesigner.Core.Ir.IrBuilder">
+            <summary>
+            Turns a bus + project into a <see cref="T:ProtoDesigner.Core.Ir.ProtocolIr"/>. Runs the layout engine, walks the produced
+            tree, resolves every type reference into a concrete kind, and collects the enums referenced by any
+            field into a top-level list so codegen can emit them once. Fails fast on any unresolved reference —
+            validation is expected to have run first.
+            </summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Ir.ProtocolIr">
+            <summary>
+            A resolved, validated, layout-annotated snapshot of one bus's protocol. Generators consume this
+            and this alone — no library references, no overrides, no unresolved names. Every offset, every
+            width, every endianness is baked in.
+            </summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Ir.ProtocolIr.#ctor(System.String,System.String,ProtoDesigner.Core.Model.Transport,System.Collections.Generic.IReadOnlyList{ProtoDesigner.Core.Ir.IrEnum},System.Collections.Generic.IReadOnlyList{ProtoDesigner.Core.Ir.IrMessage})">
+            <summary>
+            A resolved, validated, layout-annotated snapshot of one bus's protocol. Generators consume this
+            and this alone — no library references, no overrides, no unresolved names. Every offset, every
+            width, every endianness is baked in.
+            </summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Ir.IrEnum">
+            <summary>An enum type referenced by one or more fields. Emitted as a first-class type by generators.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Ir.IrEnum.#ctor(System.String,ProtoDesigner.Core.Model.PrimitiveKind,System.Boolean,System.Collections.Generic.IReadOnlyList{ProtoDesigner.Core.Ir.IrEnumMember})">
+            <summary>An enum type referenced by one or more fields. Emitted as a first-class type by generators.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Ir.IrMessage">
+            <summary>One message. Fields are flattened in wire order (structs and static arrays are expanded).</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Ir.IrMessage.#ctor(System.String,System.Nullable{System.Int32},System.Int32,System.Int32,System.Collections.Generic.IReadOnlyList{ProtoDesigner.Core.Ir.IrRegion},System.Collections.Generic.IReadOnlyList{ProtoDesigner.Core.Ir.IrField})">
+            <summary>One message. Fields are flattened in wire order (structs and static arrays are expanded).</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Ir.IrRegion">
+            <summary>
+            A contiguous span of the message. Fixed regions carry compile-time-constant offsets; a Variable
+            region holds exactly one dynamic array, whose length is only known at parse time.
+            </summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Ir.IrRegion.#ctor(System.Int32,ProtoDesigner.Core.Ir.IrRegionKind,System.Int32,System.Int32,System.Int32,System.Int32,System.Nullable{System.Int32},System.Int32)">
+            <summary>
+            A contiguous span of the message. Fixed regions carry compile-time-constant offsets; a Variable
+            region holds exactly one dynamic array, whose length is only known at parse time.
+            </summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Ir.IrField">
+            <summary>
+            A leaf field carrying an actual value. Structs are flattened away and their members appear here
+            with dotted paths (`header.messageId`). Static arrays are one field with array info; dynamic
+            arrays live in a variable region.
+            </summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Ir.IrField.#ctor(System.String,ProtoDesigner.Core.Ir.IrFieldKind,ProtoDesigner.Core.Model.PrimitiveKind,System.Nullable{System.Int32},System.Int32,System.Int32,System.Int32,ProtoDesigner.Core.Model.Endianness,ProtoDesigner.Core.Model.BitOrder,ProtoDesigner.Core.Model.ScalarTransform,ProtoDesigner.Core.Ir.IrArrayInfo)">
+            <summary>
+            A leaf field carrying an actual value. Structs are flattened away and their members appear here
+            with dotted paths (`header.messageId`). Static arrays are one field with array info; dynamic
+            arrays live in a variable region.
+            </summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Ir.IrArrayInfo">
+            <summary>Everything a generator needs to code an array element in isolation.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Ir.IrArrayInfo.#ctor(ProtoDesigner.Core.Ir.IrArrayKind,System.Nullable{System.Int32},System.Int32,System.Int32,ProtoDesigner.Core.Model.PrimitiveKind,System.Nullable{System.Int32},System.Nullable{System.Int32},System.Int32,System.Collections.Generic.IReadOnlyList{System.Byte})">
+            <summary>Everything a generator needs to code an array element in isolation.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Layout.BitMath">
+            <summary>
+            Pure bit arithmetic shared by the layout engine and (later) the validation rules that decide whether a
+            user-requested serialized width can actually hold a field's declared range.
+            </summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Layout.BitMath.AlignUp(System.Int32,System.Int32)">
+            <summary>Rounds <paramref name="bitOffset"/> up to the next multiple of <paramref name="alignmentBits"/>.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Layout.BitMath.BitsForUnsignedMax(System.UInt64)">
+            <summary>Bits needed to hold the unsigned values 0..<paramref name="maxValue"/>. Zero still needs one bit.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Layout.BitMath.BitsForSignedRange(System.Int64,System.Int64)">
+            <summary>Bits needed to hold <paramref name="min"/>..<paramref name="max"/> in two's complement.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Layout.BitMath.MaxUnsigned(System.Int32)">
+            <summary>Largest unsigned value representable in <paramref name="bits"/> bits.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Layout.BitMath.RequiredBits(ProtoDesigner.Core.Model.NumericRange,System.Nullable{ProtoDesigner.Core.Model.ScalarTransform})">
+            <summary>
+            Minimum serialized width for a range once the transform is applied. This is the number the
+            "impossible compression size" validation rule compares a user's requested width against.
+            </summary>
+            <remarks>
+            Wire codes below zero force a signed encoding. Set the transform's offset to the range minimum to
+            bias the codes non-negative and get the tightest possible width.
+            </remarks>
+        </member>
+        <member name="M:ProtoDesigner.Core.Layout.BitMath.RequiredBits(ProtoDesigner.Core.Model.EnumType,System.Nullable{ProtoDesigner.Core.Model.ScalarTransform})">
+            <summary>Convenience overload for an enum: the span of its declared members.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Layout.BitMath.MinimumScale(ProtoDesigner.Core.Model.NumericRange,System.Int32)">
+            <summary>
+            The smallest scale factor that lets <paramref name="range"/> fit in <paramref name="bits"/> bits,
+            i.e. the finest resolution the width can carry: <c>(Max - Min) / (2^bits - 1)</c>.
+            </summary>
+            <remarks>
+            This is the number the editor shows when a user narrows a field's wire size. Pair it with an offset
+            of <see cref="P:ProtoDesigner.Core.Model.NumericRange.Min"/> and the top of the range lands exactly on the largest wire code:
+            a -40..70 temperature in 5 bits gives 110/31 = 3.548..., and (70 - -40) / 3.548... = 31.
+            A larger scale is always legal (coarser, still fits); a smaller one overflows the width.
+            </remarks>
+        </member>
+        <member name="M:ProtoDesigner.Core.Layout.BitMath.BitsForScale(ProtoDesigner.Core.Model.NumericRange,System.Decimal)">
+            <summary>
+            Inverse of <see cref="M:ProtoDesigner.Core.Layout.BitMath.MinimumScale(ProtoDesigner.Core.Model.NumericRange,System.Int32)"/>: the narrowest width that can carry <paramref name="range"/>
+            at the given <paramref name="scale"/>. Used to tell a user which width their chosen factor implies.
+            </summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Layout.BitMath.SnapToWholeCode(System.Decimal)">
+            <summary>
+            Treats a code that sits a hair either side of a whole number as being exactly that number.
+            </summary>
+            <remarks>
+            <see cref="M:ProtoDesigner.Core.Layout.BitMath.MinimumScale(ProtoDesigner.Core.Model.NumericRange,System.Int32)"/> returns <c>span / codes</c> rounded to decimal's 28 significant digits.
+            Dividing the span back by that scale therefore lands an ulp above or below <c>codes</c>, and which
+            way it falls is pure luck: 110/255 rounds up, so a -40..70 field in 8 bits reports 255 codes, while
+            100/255 rounds down, so a 0..100 field in the same 8 bits reports 256 and gets rejected as needing
+            9. Without this snap the validator refuses the very scale the editor derived for the width the user
+            picked. The tolerance is relative and far below any width a real protocol distinguishes.
+            </remarks>
+        </member>
+        <member name="T:ProtoDesigner.Core.Layout.LayoutEngine">
+            <summary>
+            Computes the wire layout of a message. Stateless and deterministic: the same model always produces the
+            same layout, and no offset is ever stored on the model. Resizing or reordering a field is a model edit
+            followed by a recompute, which is why neither operation needs to "shift" anything.
+            </summary>
+            <remarks>
+            Offset conventions:
+            <list type="bullet">
+            <item>A node's <see cref="P:ProtoDesigner.Core.Layout.LayoutNode.BitOffset"/> is relative to the start of its region. A message with
+            no dynamic arrays has exactly one region, so its offsets are absolute.</item>
+            <item>Struct fields expand inline and carry region-relative offsets.</item>
+            <item>Nodes beneath an array describe one element and carry element-relative offsets.</item>
+            </list>
+            Phase 0 limitations, each of which throws rather than producing a wrong answer:
+            an array element must be fixed size, and byte padding requires dynamic element strides to be whole bytes.
+            </remarks>
+        </member>
+        <member name="M:ProtoDesigner.Core.Layout.LayoutEngine.MeasureElement(ProtoDesigner.Core.Layout.LayoutEngine.Context,ProtoDesigner.Core.Model.FieldBinding,ProtoDesigner.Core.Model.ArrayType,System.String)">
+            <summary>
+            Lays out a single element in isolation so its offsets come out element-relative, and reports its stride.
+            A dynamic array nested inside an element would open a region here, which is how that case is rejected.
+            </summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Layout.LayoutEngine.Place(ProtoDesigner.Core.Layout.LayoutEngine.Context,System.Collections.Generic.List{ProtoDesigner.Core.Layout.LayoutNode},ProtoDesigner.Core.Model.FieldEncoding,System.String,System.Int32,System.Nullable{System.Int32})">
+            <summary>
+            Advances the cursor to where the next value may start. Explicit alignment wins; otherwise a field that
+            is not bit-packed takes the message default, and a packed field takes nothing in Contiguous mode or a
+            storage-unit boundary in StorageUnit mode.
+            </summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Layout.LayoutEngine.Context.Bit">
+            <summary>Cursor position within the current region, in bits.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Layout.LayoutEngine.Context.ForElement">
+            <summary>A nested cursor for measuring one array element. Shares the visiting set so cycles are still caught.</summary>
+        </member>
+        <member name="F:ProtoDesigner.Core.Layout.LayoutRegionKind.Fixed">
+            <summary>Every offset inside is a compile-time constant.</summary>
+        </member>
+        <member name="F:ProtoDesigner.Core.Layout.LayoutRegionKind.Variable">
+            <summary>Holds exactly one dynamic array. Its length is only known at parse time.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Layout.LayoutNode">
+            <summary>
+            One entry in the computed layout tree. Offsets are relative to the start of the node's region, and
+            relative to the start of one element for nodes beneath an array.
+            </summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Layout.LayoutNode.BitOffset">
+            <summary>Offset from the start of the enclosing region, or of the enclosing array element.</summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Layout.LayoutNode.BitWidth">
+            <summary>Total width of this node. For a static array this is stride times count; for a dynamic array, the stride.</summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Layout.LayoutNode.ElementBits">
+            <summary>Stride of one element. Zero for anything that is not an array.</summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Layout.LayoutNode.ElementCount">
+            <summary>Element count for a static array. Null for a dynamic one.</summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Layout.LayoutNode.IsScalar">
+            <summary>True for nodes that carry an actual value, as opposed to grouping or padding.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Layout.LayoutRegion">
+            <summary>
+            A span of the message whose internal offsets share a single origin. A message with no dynamic arrays
+            has exactly one Fixed region, so region offsets are absolute offsets.
+            </summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Layout.LayoutRegion.ElementBits">
+            <summary>Variable regions only: stride of one element.</summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Layout.LayoutRegion.MaxElements">
+            <summary>Variable regions only: declared capacity.</summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Layout.LayoutRegion.CountFieldId">
+            <summary>Variable regions only: the field carrying the element count, when the count comes from a field.</summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Layout.LayoutRegion.PrefixBits">
+            <summary>Variable regions only: width of an inline length prefix, which lives in the preceding fixed region.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Layout.MessageLayout">
+            <summary>
+            The computed wire layout of a message. Derived data — never persisted, always recomputed from the model,
+            which is what makes resize and reorder free.
+            </summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Layout.MessageLayout.Nodes">
+            <summary>Top-level nodes in wire order. Structs and arrays carry their children.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Layout.MessageLayout.Flatten">
+            <summary>Every node in wire order, parents before children.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Layout.MessageLayout.Values">
+            <summary>Every node that carries a value, padding excluded.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Layout.LayoutException">
+            <summary>
+            Thrown when a message cannot be laid out at all. Phase 1's validator reports these conditions as
+            diagnostics before the engine is ever reached; the exception is the backstop, not the user-facing path.
+            </summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Layout.LayoutException.Path">
+            <summary>Dotted path of the field that could not be laid out, when known.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.FieldEncoding">
+            <summary>
+            How a field is represented on the wire, independent of what it means. Every property is nullable:
+            null inherits from the message, then the bus, then the project, then the built-in default.
+            </summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Model.FieldEncoding.BitWidth">
+            <summary>
+            Serialized width in bits. Null uses the natural width of the type. For an array binding this is the
+            width of one *element*, not the whole array.
+            </summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Model.FieldEncoding.AllowBitPacking">
+            <summary>When true the field may share a storage byte with its neighbours and is not aligned.</summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Model.FieldEncoding.AlignmentBits">
+            <summary>Forces the field to start on a multiple of this many bits. Overrides the packing rules.</summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Model.FieldEncoding.Transform">
+            <summary>Affine value-to-wire-code mapping. Null means identity.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Model.FieldEncoding.Packed(System.Int32)">
+            <summary>Bit-packed at an explicit width — the "enum with 11 values in 4 bits" case.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Model.FieldEncoding.Sized(System.Int32)">
+            <summary>Explicit width, still aligned per the message default.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.CrcCoverage">
+            <summary>Inclusive span of fields a CRC covers. Null bounds mean "from the start" / "to the end, excluding the CRC itself".</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Model.CrcCoverage.#ctor(System.Nullable{ProtoDesigner.Core.Model.FieldId},System.Nullable{ProtoDesigner.Core.Model.FieldId})">
+            <summary>Inclusive span of fields a CRC covers. Null bounds mean "from the start" / "to the end, excluding the CRC itself".</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.CrcSpec">
+            <summary>
+            Marks a field as a CRC. Phase 0 places it like any other integer; polynomial evaluation and coverage
+            validation belong to later phases.
+            </summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.FieldBinding">
+            <summary>
+            A named occurrence of a type inside a message or struct. Order within the containing list *is* the
+            wire order. The binding owns the encoding, so one type may appear at different widths in different places.
+            </summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Model.FieldBinding.Name">
+            <summary>Display and codegen name. Mutable; references to this field are by <see cref="P:ProtoDesigner.Core.Model.FieldBinding.Id"/>.</summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Model.FieldBinding.Crc">
+            <summary>
+            Set when this field carries a CRC. Reserved for a future field library: a binding may point at a
+            shared definition and override only name, default, and encoding.
+            </summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.TypeId">
+            <summary>Identity of a <see cref="T:ProtoDesigner.Core.Model.TypeDefinition"/>. Stable for the lifetime of the type; names are display-only.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Model.TypeId.#ctor(System.Guid)">
+            <summary>Identity of a <see cref="T:ProtoDesigner.Core.Model.TypeDefinition"/>. Stable for the lifetime of the type; names are display-only.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.FieldId">
+            <summary>Identity of a <see cref="T:ProtoDesigner.Core.Model.FieldBinding"/>. Unique per binding, not per field definition.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Model.FieldId.#ctor(System.Guid)">
+            <summary>Identity of a <see cref="T:ProtoDesigner.Core.Model.FieldBinding"/>. Unique per binding, not per field definition.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.ModuleId">
+            <summary>Identity of a <see cref="T:ProtoDesigner.Core.Model.Module"/> on a bus. Routes reference this, so renaming a module is safe.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Model.ModuleId.#ctor(System.Guid)">
+            <summary>Identity of a <see cref="T:ProtoDesigner.Core.Model.Module"/> on a bus. Routes reference this, so renaming a module is safe.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.PrimitiveKind">
+            <summary>
+            The set of primitive value kinds the designer understands. These describe the *logical* value,
+            not its serialized width — see <see cref="P:ProtoDesigner.Core.Model.FieldEncoding.BitWidth"/> for that.
+            </summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.BitOrder">
+            <summary>Order in which bits of a value are written within its storage bits.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.BitPackingMode">
+            <summary>How consecutive bit-packed fields are placed.</summary>
+        </member>
+        <member name="F:ProtoDesigner.Core.Model.BitPackingMode.Contiguous">
+            <summary>Pure bit stream. Fields pack contiguously and may straddle byte boundaries.</summary>
+        </member>
+        <member name="F:ProtoDesigner.Core.Model.BitPackingMode.StorageUnit">
+            <summary>
+            C-style bitfields. A field that will not fit in the remainder of the current storage unit
+            starts a new unit. The unit size is the natural width of the field's primitive kind.
+            </summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Model.PrimitiveKindExtensions.NaturalBits(ProtoDesigner.Core.Model.PrimitiveKind)">
+            <summary>Width the value occupies in a host language struct, in bits.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Model.PrimitiveKindExtensions.IsSigned(ProtoDesigner.Core.Model.PrimitiveKind)">
+            <summary>True for kinds whose wire representation is a two's complement signed integer.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Model.PrimitiveKindExtensions.IsIntegral(ProtoDesigner.Core.Model.PrimitiveKind)">
+            <summary>False for F32/F64, whose bit pattern is IEEE-754 and cannot be range-compressed without a transform.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Model.PrimitiveKindExtensions.NaturalRange(ProtoDesigner.Core.Model.PrimitiveKind)">
+            <summary>
+            The full span of values the kind can hold, used to pre-fill a new type's range so a <c>uint8</c>
+            starts at 0..255 rather than empty.
+            </summary>
+            <remarks>
+            Null for <see cref="F:ProtoDesigner.Core.Model.PrimitiveKind.F32"/> and <see cref="F:ProtoDesigner.Core.Model.PrimitiveKind.F64"/>: their ranges exceed
+            what <see cref="T:System.Decimal"/> can represent, and a float that has not been given real-world bounds
+            cannot be range-compressed anyway. The editor asks for an explicit range in that case.
+            </remarks>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.NumericRange">
+            <summary>
+            Inclusive value range. Stored as <see cref="T:System.Decimal"/> so that the full 64-bit integer domain is
+            represented exactly (a <c>double</c> loses precision above 2^53). Float ranges beyond decimal's
+            magnitude are out of scope — such values are not range-compressible in any case.
+            </summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Model.NumericRange.IsConstant">
+            <summary>A range whose bounds are equal denotes a constant.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.ScalarTransform">
+            <summary>
+            Affine mapping between a logical value and its integer wire code: <c>wire = (value - Offset) / Scale</c>.
+            Turns "range 1000..1015" into 4 bits, and is how quantized floats are encoded.
+            </summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.LayoutOptions">
+            <summary>
+            Layout settings at one level of the hierarchy. Null means "inherit from the level above".
+            Resolution order is field, message, bus, project, built-in default.
+            </summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Model.LayoutOptions.DefaultAlignmentBits">
+            <summary>Alignment applied to fields that are not bit-packed. Default is 8 (byte-aligned).</summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Model.LayoutOptions.PadToByteBoundary">
+            <summary>Pads the message to a whole number of bytes. Set false for pure bit-stream protocols.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.EffectiveLayoutOptions">
+            <summary>Fully resolved layout settings. What <see cref="T:ProtoDesigner.Core.Layout.LayoutEngine"/> actually reads.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Model.EffectiveLayoutOptions.#ctor(ProtoDesigner.Core.Model.Endianness,ProtoDesigner.Core.Model.BitOrder,System.Int32,ProtoDesigner.Core.Model.BitPackingMode,System.Boolean)">
+            <summary>Fully resolved layout settings. What <see cref="T:ProtoDesigner.Core.Layout.LayoutEngine"/> actually reads.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Model.EffectiveLayoutOptions.Resolve(ProtoDesigner.Core.Model.LayoutOptions[])">
+            <summary>Resolves a chain of overrides, most specific first. Nulls fall through to the next level.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.TypeLibrary">
+            <summary>Flat, ID-keyed store of type definitions. Mirrors the persisted shape so a file entry maps to a row later.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Model.TypeLibrary.Remove(ProtoDesigner.Core.Model.TypeId)">
+            <summary>Removes a type by id. Returns true if a type was removed. Does not check for references.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.Module">
+            <summary>
+            A participant on a bus — an ECU, a service, a board. Named by the user at bus creation and referenced
+            by ID from every route, so renaming one never orphans a route.
+            </summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Model.Module.Name">
+            <summary>Display name. Mutable; references are by <see cref="P:ProtoDesigner.Core.Model.Module.Id"/>.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.MessageRoute">
+            <summary>
+            One sender-to-receiver leg of a message. A message carries a list of these, so the same layout can be
+            published on several legs — <c>Sensor → Controller</c> and <c>Sensor → Logger</c> — without duplicating it.
+            </summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Model.MessageRoute.#ctor(ProtoDesigner.Core.Model.ModuleId,ProtoDesigner.Core.Model.ModuleId)">
+            <summary>
+            One sender-to-receiver leg of a message. A message carries a list of these, so the same layout can be
+            published on several legs — <c>Sensor → Controller</c> and <c>Sensor → Logger</c> — without duplicating it.
+            </summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.Message">
+            <summary>The layout of data sent between modules on a bus. Field order is the wire order.</summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Model.Message.WireId">
+            <summary>On-wire discriminator, used when the receiver cannot infer the type from port or channel.</summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Model.Message.Routes">
+            <summary>
+            Who sends this message to whom, as (from, to) pairs over the modules of the owning bus. Empty means
+            the routing is not modelled — the message is still perfectly valid, it just says nothing about who
+            talks to whom.
+            </summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Model.Message.MoveField(ProtoDesigner.Core.Model.FieldId,System.Int32)">
+            <summary>Moves a field to a new index. Layout is recomputed from the new order; nothing is stored per field.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.Bus">
+            <summary>A communication bus connecting modules. Owns the messages exchanged over it.</summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Model.Bus.Modules">
+            <summary>The participants on this bus. Messages route between them.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Model.Bus.RemoveModule(ProtoDesigner.Core.Model.ModuleId)">
+            <summary>
+            Removes a module and every route that referenced it. Routes are dropped rather than left dangling:
+            a half-route names a module that no longer exists, which nothing downstream can act on.
+            </summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.Project">
+            <summary>Root aggregate. Owns the shared type library and every bus.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Model.Project.OptionsFor(ProtoDesigner.Core.Model.Bus,ProtoDesigner.Core.Model.Message)">
+            <summary>Resolves the settings that apply to a message, walking message then bus then project.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.TypeDefinition">
+            <summary>
+            Base of the closed type hierarchy. A type describes what a value *means*; how it is serialized is
+            carried separately by <see cref="T:ProtoDesigner.Core.Model.FieldEncoding"/> on each binding, so the same type can appear on
+            the wire at different widths in different messages.
+            </summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Model.TypeDefinition.Name">
+            <summary>Display name. Mutable and never used as identity — references are always by <see cref="P:ProtoDesigner.Core.Model.TypeDefinition.Id"/>.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.ITypeVisitor`1">
+            <summary>Dispatch over the closed type hierarchy. Adding a kind becomes a compile error here rather than a runtime bug.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.WireForm">
+            <summary>How a type is represented on the wire, as chosen once on the type itself.</summary>
+        </member>
+        <member name="F:ProtoDesigner.Core.Model.WireForm.Unsigned">
+            <summary>Unsigned integer of <see cref="P:ProtoDesigner.Core.Model.IWireSized.WireBits"/> bits. Any width from 1 bit up.</summary>
+        </member>
+        <member name="F:ProtoDesigner.Core.Model.WireForm.Signed">
+            <summary>
+            Two's-complement signed integer. Only the conventional widths are offered, because a signed field
+            of an odd bit count has no portable representation in a generated struct.
+            </summary>
+        </member>
+        <member name="F:ProtoDesigner.Core.Model.WireForm.Float">
+            <summary>IEEE-754. Only 32 or 64 bits are meaningful.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.IWireSized">
+            <summary>
+            Types that carry a default wire representation.
+            </summary>
+            <remarks>
+            This is a deliberate exception to "encoding lives on the binding". Every occurrence of a given type
+            is expected to serialise identically, so the choice is made once on the type and propagated to every
+            binding that references it. The per-binding <see cref="T:ProtoDesigner.Core.Model.FieldEncoding"/> remains the single source the
+            layout engine reads, which keeps the engine and its tests untouched.
+            </remarks>
+        </member>
+        <member name="P:ProtoDesigner.Core.Model.IWireSized.WireBits">
+            <summary>Serialised width in bits. Null means "use the natural width of the host kind".</summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Model.IWireSized.WireOffset">
+            <summary>
+            Value that wire code 0 represents. Null means "derive it" — the range minimum, which biases the
+            codes non-negative and buys the tightest possible width.
+            </summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Model.IWireSized.WireScale">
+            <summary>
+            Value represented by one wire step. Null means "derive it" — the finest resolution the declared
+            width can carry.
+            </summary>
+            <remarks>
+            Deriving is a good default but a poor constraint: real protocols usually want a round constant
+            (0.1, 0.01, a power of two) so the wire value is readable in a spec and on a scope. Setting this
+            explicitly is how you get that.
+            </remarks>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.ParameterType">
+            <summary>A primitive value, optionally constrained to a range. Min == Max denotes a constant.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.EnumType">
+            <summary>
+            A restricted value with named options. Members may start at any value and need not be contiguous.
+            When <see cref="P:ProtoDesigner.Core.Model.EnumType.IsFlags"/> is set, valid values are bitwise unions of the declared members.
+            </summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Model.EnumType.WireForm">
+            <summary>Integral on the wire; an enum has no floating-point representation.</summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Model.EnumType.MemberRange">
+            <summary>Range spanned by the declared members, or null when the enum has none.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.StructType">
+            <summary>An ordered collection of named fields. Expands inline into the containing layout.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.ArrayType">
+            <summary>
+            An ordered collection of same-typed elements. A string is an array of <see cref="F:ProtoDesigner.Core.Model.PrimitiveKind.Char"/>;
+            an enum list is an array of an <see cref="T:ProtoDesigner.Core.Model.EnumType"/>.
+            </summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.ArrayLength">
+            <summary>
+            How many elements an array holds. <see cref="T:ProtoDesigner.Core.Model.ArrayLength.Fixed"/> is always exactly that many; every other case
+            declares a maximum capacity with the actual count determined at parse time.
+            </summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Model.ArrayLength.Capacity">
+            <summary>Maximum number of elements. Equals the exact count for <see cref="T:ProtoDesigner.Core.Model.ArrayLength.Fixed"/>.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.ArrayLength.Fixed">
+            <summary>Exactly <paramref name="Count"/> elements, always.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Model.ArrayLength.Fixed.#ctor(System.Int32)">
+            <summary>Exactly <paramref name="Count"/> elements, always.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.ArrayLength.CountFromField">
+            <summary>Element count is carried by an earlier field in the same message.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Model.ArrayLength.CountFromField.#ctor(ProtoDesigner.Core.Model.FieldId,System.Int32)">
+            <summary>Element count is carried by an earlier field in the same message.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.ArrayLength.LengthPrefixed">
+            <summary>Element count is written immediately before the elements, in <paramref name="PrefixBits"/> bits.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Model.ArrayLength.LengthPrefixed.#ctor(System.Int32,System.Int32)">
+            <summary>Element count is written immediately before the elements, in <paramref name="PrefixBits"/> bits.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.ArrayLength.Terminated">
+            <summary>Elements run until a sentinel value is seen — the NUL-terminated string case.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Model.ArrayLength.Terminated.#ctor(System.Collections.Generic.IReadOnlyList{System.Byte},System.Int32)">
+            <summary>Elements run until a sentinel value is seen — the NUL-terminated string case.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Model.ArrayLength.FillRemaining">
+            <summary>Elements consume the remainder of the frame.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Model.ArrayLength.FillRemaining.#ctor(System.Int32)">
+            <summary>Elements consume the remainder of the frame.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Validation.EntityPath">
+            <summary>
+            Human-readable and stable machine-readable pointer to the entity a diagnostic targets. Deep-linkable so the
+            UI can jump to the offending field, and stable so a test can assert against it.
+            </summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Validation.EntityPath.#ctor(System.String,System.String,System.String,System.String)">
+            <summary>
+            Human-readable and stable machine-readable pointer to the entity a diagnostic targets. Deep-linkable so the
+            UI can jump to the offending field, and stable so a test can assert against it.
+            </summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Validation.QuickFix">
+            <summary>Optional programmatic fix. The UI decides whether to present it.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Validation.QuickFix.#ctor(System.String,System.Action{ProtoDesigner.Core.Model.Project})">
+            <summary>Optional programmatic fix. The UI decides whether to present it.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Validation.Diagnostic">
+            <summary>
+            A validation finding. <see cref="P:ProtoDesigner.Core.Validation.Diagnostic.Code"/> is stable across releases; once shipped it never changes meaning
+            and never gets renumbered — that's how tests assert, suppressions target, and users search for help.
+            </summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Validation.Diagnostic.#ctor(System.String,ProtoDesigner.Core.Validation.Severity,System.String,ProtoDesigner.Core.Validation.EntityPath,ProtoDesigner.Core.Validation.QuickFix)">
+            <summary>
+            A validation finding. <see cref="P:ProtoDesigner.Core.Validation.Diagnostic.Code"/> is stable across releases; once shipped it never changes meaning
+            and never gets renumbered — that's how tests assert, suppressions target, and users search for help.
+            </summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Validation.DiagnosticCodes">
+            <summary>
+            Stable diagnostic codes. Never renumber, never repurpose — once shipped a code means what it meant
+            on the day it shipped. Add new codes; retire old ones by leaving the constant in place and marking
+            the rule dead.
+            </summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Validation.IValidationRule">
+            <summary>A single check. Rules are pure over the context — a rule that mutates the model is a bug.</summary>
+        </member>
+        <member name="P:ProtoDesigner.Core.Validation.IValidationRule.Code">
+            <summary>Stable identifier of the primary code this rule emits. Aids test discovery.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Validation.Rules.CrcCoversItselfRule">
+            <summary>The CRC field must not be inside its own coverage span.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Validation.Rules.TransportBudgetRule">
+            <summary>Warns when a message might not fit in the transport's frame budget.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Validation.Rules.UnreferencedTypeRule">
+            <summary>Types no message uses, transitively. Informational — dead code warning for the type library.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Validation.Rules.DuplicateFieldNameRule">
+            <summary>
+            Catches duplicate names in messages and inside struct definitions. The engine also enforces this at
+            layout time; the rule surfaces it before the engine runs, with a friendlier message and location.
+            </summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Validation.Rules.DynamicArrayRule">
+            <summary>
+            Rules governing dynamic arrays: the count field must exist, precede the array, be an unsigned integer,
+            and its declared range must at least cover the array's capacity. A length prefix must be wide enough.
+            </summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Validation.Rules.EncodingFeasibilityRule">
+            <summary>
+            Runs across every field, applying width/range/default/alignment checks in a single pass so we walk
+            the graph once. Emits several distinct diagnostic codes.
+            </summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Validation.Rules.RouteUnknownModuleRule">
+            <summary>
+            A route names a module that is not on the owning bus. Modules are referenced by ID, so this can only
+            arise from a hand-edited file or a module deleted outside <see cref="M:ProtoDesigner.Core.Model.Bus.RemoveModule(ProtoDesigner.Core.Model.ModuleId)"/>.
+            </summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Validation.Rules.DuplicateRouteRule">
+            <summary>The same sender-to-receiver leg is declared twice on one message.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Validation.Rules.RouteToSelfRule">
+            <summary>
+            A module sends a message to itself. Legal — loopback and self-test paths exist — but far more often a
+            slip in the dropdown, so it is worth surfacing.
+            </summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Validation.Rules.RecursiveTypeRule">
+            <summary>
+            Rejects recursive type graphs. The engine already refuses to lay them out; this rule reports the cycle
+            with a stable code before the engine ever runs so the UI can surface it inline.
+            </summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Validation.Rules.UnknownTypeReferenceRule">
+            <summary>Field references a TypeId that isn't in the library.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Validation.Rules.EnumWithoutMembersRule">
+            <summary>An enum without members has no representable values and cannot have its width computed.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Validation.Rules.DuplicateEnumMemberRule">
+            <summary>
+            Two members of the same enum share the same integer value — an alias, as in C's
+            <c>enum { SUCCESS = 0, NO_ERROR = 0 }</c>.
+            </summary>
+            <remarks>
+            Reported at <see cref="F:ProtoDesigner.Core.Validation.Severity.Info"/>, not as a warning: aliases are a deliberate and common idiom,
+            so flagging them as suspect would train the user to ignore the diagnostics pane. It is still worth
+            stating, because decoding an aliased value can only ever yield one of the names.
+            </remarks>
+        </member>
+        <member name="T:ProtoDesigner.Core.Validation.ValidationContext">
+            <summary>
+            Shared, cached lookups a rule may need. Passed to every rule so rules stay pure and cheap; the
+            context does the expensive work (layout computation, cross-reference indices) once.
+            </summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Validation.ValidationContext.TryLayout(ProtoDesigner.Core.Model.Bus,ProtoDesigner.Core.Model.Message,ProtoDesigner.Core.Layout.LayoutException@)">
+            <summary>
+            Computes the layout of a message once and caches it. Returns null (and stores the exception) if the
+            engine refuses the model — the rule that needs the layout can skip its check without crashing.
+            </summary>
+        </member>
+        <member name="F:ProtoDesigner.Core.Validation.ValidationContext._reachable">
+            <summary>The set of every type transitively referenced by any message's fields.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Core.Validation.Validator">
+            <summary>
+            Runs the configured rules against a project. The default rule set is the shipped catalogue; pass a
+            custom set to unit-test one rule in isolation or to experiment with an in-progress rule.
+            </summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Validation.Validator.DefaultRules">
+            <summary>The shipped rule catalogue. Adding a rule to the product is a one-line edit here.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Validation.Validator.Validate(ProtoDesigner.Core.Model.Project)">
+            <summary>Runs every rule and returns the sorted, de-duplicated findings.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Core.Validation.Validator.HasBlockingErrors(ProtoDesigner.Core.Model.Project)">
+            <summary>True if <see cref="M:ProtoDesigner.Core.Validation.Validator.Validate(ProtoDesigner.Core.Model.Project)"/> would produce any Error.</summary>
+        </member>
+    </members>
+</doc>

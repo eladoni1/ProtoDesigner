@@ -1,0 +1,92 @@
+<Window x:Class="ProtoDesigner.Wpf.Views.Dialogs.PrimitiveEditorDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Primitive type"
+        Width="480" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False">
+  <Border Background="{StaticResource Surface1}" Padding="20">
+    <StackPanel>
+
+      <TextBlock Style="{StaticResource H3Text}" x:Name="HeadingText" Text="Primitive type"/>
+      <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,16"
+                 Text="A named value with a host representation and limits. The limits are what let a field be compressed on the wire later."/>
+
+      <TextBlock Style="{StaticResource SectionLabel}" Text="Name"/>
+      <TextBox x:Name="NameBox" Padding="10,7" Margin="0,4,0,14"/>
+
+      <TextBlock Style="{StaticResource SectionLabel}" Text="Host type"/>
+      <ComboBox x:Name="KindBox" Margin="0,4,0,4" SelectionChanged="OnKindChanged"/>
+      <TextBlock x:Name="HostSizeText" Style="{StaticResource CaptionText}" Margin="0,0,0,14"/>
+
+      <TextBlock Style="{StaticResource SectionLabel}" Text="Range"/>
+      <Grid Margin="0,4,0,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="12"/>
+          <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <StackPanel Grid.Column="0">
+          <TextBlock Text="Minimum" Style="{StaticResource CaptionText}"/>
+          <TextBox x:Name="MinBox" Padding="10,7" Margin="0,3,0,0" FontFamily="{StaticResource MonoFont}"/>
+        </StackPanel>
+        <StackPanel Grid.Column="2">
+          <TextBlock Text="Maximum" Style="{StaticResource CaptionText}"/>
+          <TextBox x:Name="MaxBox" Padding="10,7" Margin="0,3,0,0" FontFamily="{StaticResource MonoFont}"/>
+        </StackPanel>
+      </Grid>
+      <TextBlock x:Name="RangeHint" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,8,0,14"/>
+
+      <TextBlock Style="{StaticResource SectionLabel}" Text="On the wire"/>
+      <Grid Margin="0,4,0,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="12"/>
+          <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <StackPanel Grid.Column="0">
+          <TextBlock Text="Representation" Style="{StaticResource CaptionText}"/>
+          <ComboBox x:Name="WireFormBox" Margin="0,3,0,0" SelectionChanged="OnWireChanged"/>
+        </StackPanel>
+        <StackPanel Grid.Column="2">
+          <TextBlock Text="Size" Style="{StaticResource CaptionText}"/>
+          <ComboBox x:Name="WireSizeBox" Margin="0,3,0,0" SelectionChanged="OnWireChanged"/>
+        </StackPanel>
+      </Grid>
+      <TextBlock x:Name="WireHint" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,8,0,10"/>
+
+      <CheckBox x:Name="AutoScaleBox" Content="Fit the range automatically (finest resolution)"
+                IsChecked="True" Click="OnAutoScaleToggled" Margin="0,0,0,8"/>
+
+      <Grid x:Name="ManualScaleGrid" IsEnabled="False">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="12"/>
+          <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <StackPanel Grid.Column="0">
+          <TextBlock Text="Offset (value at wire 0)" Style="{StaticResource CaptionText}"/>
+          <TextBox x:Name="OffsetBox" Padding="10,7" Margin="0,3,0,0"
+                   FontFamily="{StaticResource MonoFont}" TextChanged="OnManualScaleChanged"/>
+        </StackPanel>
+        <StackPanel Grid.Column="2">
+          <TextBlock Text="Factor (value per step)" Style="{StaticResource CaptionText}"/>
+          <TextBox x:Name="ScaleBox" Padding="10,7" Margin="0,3,0,0"
+                   FontFamily="{StaticResource MonoFont}" TextChanged="OnManualScaleChanged"/>
+        </StackPanel>
+      </Grid>
+      <TextBlock x:Name="ScaleHint" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+
+      <Border x:Name="ErrorBanner" Background="{StaticResource Surface3}" CornerRadius="6"
+              Padding="10,7" Margin="0,14,0,0" Visibility="Collapsed">
+        <TextBlock x:Name="ErrorText" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap"/>
+      </Border>
+
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+        <Button Content="Cancel" Style="{StaticResource GhostButton}" Click="OnCancel" MinWidth="88"/>
+        <Button Content="Save" Style="{StaticResource PrimaryButton}" Click="OnSave" MinWidth="88" Margin="8,0,0,0"/>
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</Window>

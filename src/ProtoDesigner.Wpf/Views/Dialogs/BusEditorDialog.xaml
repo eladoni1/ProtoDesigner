@@ -1,0 +1,63 @@
+<Window x:Class="ProtoDesigner.Wpf.Views.Dialogs.BusEditorDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Bus"
+        Width="480" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False">
+  <Border Background="{StaticResource Surface1}" Padding="20">
+    <StackPanel>
+      <TextBlock Style="{StaticResource H3Text}" x:Name="HeadingText" Text="Bus"/>
+      <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,16"
+                 Text="A bus carries messages between modules. Name the modules here; each message then declares which of them send it to which."/>
+
+      <TextBlock Style="{StaticResource SectionLabel}" Text="Name"/>
+      <TextBox x:Name="NameBox" Padding="10,7" Margin="0,4,0,14"/>
+
+      <TextBlock Style="{StaticResource SectionLabel}" Text="Transport"/>
+      <ComboBox x:Name="TransportBox" Margin="0,4,0,4" SelectionChanged="OnTransportChanged"/>
+      <TextBlock x:Name="TransportHint" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,14"/>
+
+      <TextBlock Style="{StaticResource SectionLabel}" Text="Modules"/>
+      <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,2,0,6"
+                 Text="The participants on this bus — an ECU, a service, a board. Renaming one later never breaks a route."/>
+
+      <Border Background="{StaticResource Surface0}" BorderBrush="{StaticResource SurfaceStroke}"
+              BorderThickness="1" CornerRadius="6" Padding="2">
+        <ScrollViewer MaxHeight="180" VerticalScrollBarVisibility="Auto">
+          <ItemsControl x:Name="ModulesList">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Grid Margin="6,3">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBox Grid.Column="0" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                           FontFamily="{StaticResource MonoFont}" Padding="8,5"/>
+                  <Button Grid.Column="1" Style="{StaticResource IconButton}" Content="✕"
+                          Width="26" Height="26" Margin="6,0,0,0"
+                          ToolTip="Remove this module" Click="OnRemoveModule" Tag="{Binding}"/>
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </Border>
+
+      <Button Content="+ Add module" Style="{StaticResource GhostButton}" HorizontalAlignment="Left"
+              Margin="0,8,0,0" Click="OnAddModule"/>
+
+      <Border x:Name="ErrorBanner" Background="{StaticResource Surface3}" CornerRadius="6"
+              Padding="10,7" Margin="0,14,0,0" Visibility="Collapsed">
+        <TextBlock x:Name="ErrorText" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap"/>
+      </Border>
+
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+        <Button Content="Cancel" Style="{StaticResource GhostButton}" Click="OnCancel" MinWidth="88"/>
+        <Button Content="Save" Style="{StaticResource PrimaryButton}" Click="OnSave" MinWidth="88" Margin="8,0,0,0"/>
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</Window>

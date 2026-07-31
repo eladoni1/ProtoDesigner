@@ -1,0 +1,231 @@
+<UserControl x:Class="ProtoDesigner.Wpf.Views.MessageEditorView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:b="clr-namespace:ProtoDesigner.Wpf.Behaviors"
+             xmlns:vm="clr-namespace:ProtoDesigner.Wpf.ViewModels"
+             xmlns:sys="clr-namespace:System;assembly=mscorlib">
+  <UserControl.Resources>
+    <!-- Shared column widths so the header and the rows line up exactly. -->
+    <GridLength x:Key="ColDrag">22</GridLength>
+    <GridLength x:Key="ColType">118</GridLength>
+    <GridLength x:Key="ColName">118</GridLength>
+    <GridLength x:Key="ColHost">86</GridLength>
+    <GridLength x:Key="ColWire">86</GridLength>
+    <GridLength x:Key="ColFactor">86</GridLength>
+    <GridLength x:Key="ColRange">116</GridLength>
+
+    <DataTemplate x:Key="EmptyState">
+      <Border Padding="24">
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="340">
+          <Border Width="48" Height="48" CornerRadius="24" Background="{StaticResource AccentSoft}" HorizontalAlignment="Center">
+            <TextBlock Text="◇" Foreground="{StaticResource Accent}" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <TextBlock Style="{StaticResource H3Text}" Text="No message selected" HorizontalAlignment="Center" Margin="0,16,0,4"/>
+          <TextBlock Style="{StaticResource CaptionText}" TextAlignment="Center" TextWrapping="Wrap"
+                     Text="Pick a message on the left, or use Create message to add one to a bus."/>
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <Grid Background="{StaticResource Surface1}">
+    <ContentPresenter ContentTemplate="{StaticResource EmptyState}"
+                      Visibility="{Binding HasSelectedMessage, Converter={StaticResource BoolToVis}, ConverterParameter=invert}"/>
+
+    <Grid Background="{StaticResource Surface1}"
+          Visibility="{Binding HasSelectedMessage, Converter={StaticResource BoolToVis}}">
+      <Grid DataContext="{Binding SelectedMessage}">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Message header: name, id, size -->
+        <Border Grid.Row="0" Style="{StaticResource SectionHeaderBar}">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0" Margin="0,0,16,0">
+              <TextBlock Style="{StaticResource SectionLabel}" Text="Message name"/>
+              <TextBox Text="{Binding Name, UpdateSourceTrigger=LostFocus}"
+                       FontSize="{StaticResource TextXl}" FontWeight="SemiBold"
+                       Background="Transparent" BorderThickness="0" Padding="0" Margin="0,2,0,0"/>
+            </StackPanel>
+
+            <StackPanel Grid.Column="1" Margin="0,0,16,0" VerticalAlignment="Center">
+              <TextBlock Style="{StaticResource SectionLabel}" Text="Message ID"
+                         ToolTip="How a receiver identifies this message on the wire"/>
+              <TextBox Text="{Binding WireId, TargetNullValue='', UpdateSourceTrigger=LostFocus}"
+                       FontFamily="{StaticResource MonoFont}" MinWidth="56" Margin="0,4,0,0"
+                       ToolTip="How a receiver identifies this message on the wire"/>
+            </StackPanel>
+
+            <StackPanel Grid.Column="2" VerticalAlignment="Center">
+              <TextBlock Style="{StaticResource SectionLabel}" Text="Total size"/>
+              <Border Style="{StaticResource Chip}" Background="{StaticResource AccentSoft}" Margin="0,4,0,0">
+                <TextBlock Text="{Binding SizeLabel}" Foreground="{StaticResource Accent}"
+                           FontWeight="SemiBold" FontFamily="{StaticResource MonoFont}" FontSize="12"/>
+              </Border>
+            </StackPanel>
+          </Grid>
+        </Border>
+
+        <!-- Routes: who sends this message to whom -->
+        <Border Grid.Row="1" Background="{StaticResource Surface1}"
+                BorderBrush="{StaticResource SurfaceStroke}" BorderThickness="0,0,0,1" Padding="16,10">
+          <StackPanel>
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Style="{StaticResource SectionLabel}" Text="Routes"/>
+              <TextBlock Style="{StaticResource CaptionText}" Margin="10,0,0,0"
+                         Text="{Binding RouteHint}"/>
+            </StackPanel>
+
+            <ItemsControl ItemsSource="{Binding Routes}" Margin="0,6,0,0">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                    <ComboBox ItemsSource="{Binding Modules}" SelectedItem="{Binding From}"
+                              DisplayMemberPath="Name" MinWidth="130" ToolTip="Sender"/>
+                    <TextBlock Text="→" Margin="8,0" VerticalAlignment="Center"
+                               Foreground="{StaticResource Accent}" FontSize="15"/>
+                    <ComboBox ItemsSource="{Binding Modules}" SelectedItem="{Binding To}"
+                              DisplayMemberPath="Name" MinWidth="130" ToolTip="Receiver"/>
+                    <Button Style="{StaticResource IconButton}" Content="✕" Width="26" Height="26"
+                            Margin="8,0,0,0" ToolTip="Remove this route"
+                            Click="OnRemoveRoute" Tag="{Binding}"/>
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <Button Content="+ Add route" Style="{StaticResource GhostButton}" HorizontalAlignment="Left"
+                    Margin="0,4,0,0" Click="OnAddRoute"
+                    IsEnabled="{Binding CanAddRoute}" ToolTip="{Binding RouteHint}"/>
+          </StackPanel>
+        </Border>
+
+        <!-- Toolbar -->
+        <Border Grid.Row="2" Background="{StaticResource Surface0}"
+                BorderBrush="{StaticResource SurfaceStroke}" BorderThickness="0,0,0,1" Padding="16,8">
+          <StackPanel Orientation="Horizontal">
+            <Button Content="＋ Add field" Style="{StaticResource PrimaryButton}" Click="OnAddField"
+                    IsEnabled="{Binding Project.HasSelectedType}"
+                    ToolTip="{Binding Project.AddFieldHint}"/>
+            <TextBlock Style="{StaticResource CaptionText}" VerticalAlignment="Center" Margin="12,0,0,0"
+                       Text="{Binding Project.AddFieldHint}"/>
+            <TextBlock Style="{StaticResource CaptionText}" VerticalAlignment="Center" Margin="16,0,0,0"
+                       Text="Drag a row by its handle to change wire order."/>
+          </StackPanel>
+        </Border>
+
+        <!-- Column headers -->
+        <Border Grid.Row="3" Background="{StaticResource Surface0}"
+                BorderBrush="{StaticResource SurfaceStroke}" BorderThickness="0,0,0,1" Padding="22,6,22,6">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="{StaticResource ColDrag}"/>
+              <ColumnDefinition Width="{StaticResource ColType}"/>
+              <ColumnDefinition Width="{StaticResource ColName}"/>
+              <ColumnDefinition Width="{StaticResource ColHost}"/>
+              <ColumnDefinition Width="{StaticResource ColWire}"/>
+              <ColumnDefinition Width="{StaticResource ColRange}"/>
+              <ColumnDefinition Width="*" MinWidth="0"/>
+              <ColumnDefinition Width="30"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="1" Style="{StaticResource SectionLabel}" Text="Type"/>
+            <TextBlock Grid.Column="2" Style="{StaticResource SectionLabel}" Text="Field name"/>
+            <TextBlock Grid.Column="3" Style="{StaticResource SectionLabel}" Text="On host"
+                       ToolTip="How the value is stored in the generated struct — never compressed"/>
+            <TextBlock Grid.Column="4" Style="{StaticResource SectionLabel}" Text="On wire"
+                       ToolTip="Serialised size. Type a number, or a value like '5 bits'."/>
+            <TextBlock Grid.Column="5" Style="{StaticResource SectionLabel}" Text="Factor"
+                       ToolTip="Value represented by one wire step. Auto-set to the finest the width allows."/>
+            <TextBlock Grid.Column="6" Style="{StaticResource SectionLabel}" Text="Range"/>
+          </Grid>
+        </Border>
+
+        <!-- Field rows -->
+        <!-- Horizontal scrolling is a safety net: at a narrow window the fixed columns would otherwise
+             push the range and the remove button off the edge where they cannot be reached. -->
+        <ScrollViewer Grid.Row="4" Padding="12,8"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Auto">
+          <ItemsControl x:Name="FieldsList" MinWidth="660"
+                        ItemsSource="{Binding Fields}"
+                        b:DragReorder.IsEnabled="True"
+                        b:DragReorder.ReorderRequested="OnReorderRequested">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Border Padding="10,7" Margin="0,3" CornerRadius="8"
+                        Background="{StaticResource Surface2}"
+                        BorderBrush="{StaticResource SurfaceStroke}" BorderThickness="1">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="{StaticResource ColDrag}"/>
+                      <ColumnDefinition Width="{StaticResource ColType}"/>
+                      <ColumnDefinition Width="{StaticResource ColName}"/>
+                      <ColumnDefinition Width="{StaticResource ColHost}"/>
+                      <ColumnDefinition Width="{StaticResource ColWire}"/>
+                      <ColumnDefinition Width="{StaticResource ColRange}"/>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="30"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- drag handle -->
+                    <TextBlock Grid.Column="0" Text="⠿" Foreground="{StaticResource InkFaded}" FontSize="14"
+                               VerticalAlignment="Center" TextAlignment="Center" Cursor="SizeNS"
+                               ToolTip="Drag to reorder"/>
+
+                    <!-- type name comes before the instance name -->
+                    <TextBlock Grid.Column="1" Text="{Binding TypeName}" Margin="0,0,8,0"
+                               FontFamily="{StaticResource MonoFont}" FontWeight="SemiBold"
+                               Foreground="{StaticResource Teal}" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"/>
+
+                    <TextBox Grid.Column="2" Text="{Binding Name, UpdateSourceTrigger=LostFocus}"
+                             FontFamily="{StaticResource MonoFont}" Margin="0,0,8,0"/>
+
+                    <TextBlock Grid.Column="3" Text="{Binding HostLabel}" Style="{StaticResource CaptionText}"
+                               VerticalAlignment="Center" Margin="0,0,8,0"/>
+
+                    <!-- Wire size and factor are properties of the type, not of this occurrence: they are
+                         set once in the type's edit dialog and applied to every instance. Read-only here. -->
+                    <TextBlock Grid.Column="4" Text="{Binding WireLabel}" Margin="0,0,8,0"
+                               FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center"
+                               Foreground="{StaticResource InkMuted}"
+                               ToolTip="Serialised size. Change it by editing this type (right-click the type, Edit)."/>
+
+                    <TextBlock Grid.Column="5" Text="{Binding FactorLabel}" Margin="0,0,8,0"
+                               FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center"
+                               Foreground="{StaticResource InkMuted}"
+                               ToolTip="Value represented by one wire step. Derived from the type's range and wire size."/>
+
+                    <TextBlock Grid.Column="6" Text="{Binding RangeLabel}" Style="{StaticResource CaptionText}"
+                               FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis"
+                               VerticalAlignment="Center" Margin="4,0,6,0"
+                               ToolTip="{Binding RangeLabel}"/>
+
+                    <TextBlock Grid.Column="7" Text="{Binding FactorProblem}" Foreground="{StaticResource ErrorBrush}"
+                               FontSize="11" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                               ToolTip="{Binding FactorProblem}"
+                               Visibility="{Binding HasFactorProblem, Converter={StaticResource BoolToVis}}"/>
+
+                    <Button Grid.Column="8" Style="{StaticResource IconButton}" Content="✕" Width="26" Height="26"
+                            ToolTip="Remove field" Click="OnRemoveField" Tag="{Binding}"/>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </Grid>
+    </Grid>
+  </Grid>
+</UserControl>

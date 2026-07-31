@@ -1,0 +1,11 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:conv="clr-namespace:ProtoDesigner.Wpf.Converters">
+  <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+  <conv:InverseBoolConverter x:Key="InverseBool"/>
+  <conv:NullToVisibilityConverter x:Key="NullToVis"/>
+  <conv:EmptyToVisibilityConverter x:Key="EmptyToVis"/>
+  <conv:SeverityToBrushConverter x:Key="SeverityToBrush"/>
+  <conv:SeverityToGlyphConverter x:Key="SeverityToGlyph"/>
+  <conv:NodeKindToBrushConverter x:Key="NodeKindToBrush"/>
+</ResourceDictionary>

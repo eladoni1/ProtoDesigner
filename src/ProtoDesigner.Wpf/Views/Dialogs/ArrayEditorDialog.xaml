@@ -1,0 +1,38 @@
+<Window x:Class="ProtoDesigner.Wpf.Views.Dialogs.ArrayEditorDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Array type"
+        Width="480" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False">
+  <Border Background="{StaticResource Surface1}" Padding="20">
+    <StackPanel>
+      <TextBlock Style="{StaticResource H3Text}" x:Name="HeadingText" Text="Array type"/>
+      <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,16"
+                 Text="A repeated element. Its wire size comes from the element type multiplied by the count, so there is nothing to set here."/>
+
+      <TextBlock Style="{StaticResource SectionLabel}" Text="Name"/>
+      <TextBox x:Name="NameBox" Padding="10,7" Margin="0,4,0,14"/>
+
+      <TextBlock Style="{StaticResource SectionLabel}" Text="Element type"/>
+      <ComboBox x:Name="ElementBox" Margin="0,4,0,4" SelectionChanged="OnElementChanged"/>
+      <TextBlock x:Name="ElementHint" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,14"/>
+
+      <TextBlock Style="{StaticResource SectionLabel}" Text="Number of elements"/>
+      <TextBox x:Name="CountBox" Padding="10,7" Margin="0,4,0,4"
+               FontFamily="{StaticResource MonoFont}" TextChanged="OnCountChanged"/>
+      <TextBlock x:Name="SizeHint" Style="{StaticResource CaptionText}" TextWrapping="Wrap"/>
+
+      <Border x:Name="ErrorBanner" Background="{StaticResource Surface3}" CornerRadius="6"
+              Padding="10,7" Margin="0,14,0,0" Visibility="Collapsed">
+        <TextBlock x:Name="ErrorText" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap"/>
+      </Border>
+
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+        <Button Content="Cancel" Style="{StaticResource GhostButton}" Click="OnCancel" MinWidth="88"/>
+        <Button Content="Save" Style="{StaticResource PrimaryButton}" Click="OnSave" MinWidth="88" Margin="8,0,0,0"/>
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</Window>

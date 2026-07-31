@@ -1,0 +1,97 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>ProtoDesigner.Application</name>
+    </assembly>
+    <members>
+        <member name="T:ProtoDesigner.Application.Commands.CommandJournal">
+            <summary>
+            The single mutation bus for a Project. Applies commands, tracks the dirty flag, and supports linear
+            undo/redo. Doing a new command clears the redo stack — the standard model.
+            </summary>
+        </member>
+        <member name="M:ProtoDesigner.Application.Commands.CommandJournal.MarkDirty">
+            <summary>
+            Flags unsaved changes for an edit made outside the command stack. Used by bulk operations such as
+            propagating a type's wire encoding, which touch many bindings at once and are re-derivable from
+            the type rather than individually undoable.
+            </summary>
+        </member>
+        <member name="M:ProtoDesigner.Application.Commands.CommandJournal.MarkSaved">
+            <summary>Called after a successful save. Clears dirty; keeps undo history intact.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Application.Commands.IEditCommand">
+            <summary>
+            An undoable mutation of the model. Every edit made by the UI goes through the journal — that gives
+            undo/redo, dirty tracking, an audit trail, and the operation stream Phase 6 collaboration ships.
+            </summary>
+        </member>
+        <member name="M:ProtoDesigner.Application.Commands.IEditCommand.Describe">
+            <summary>Human-readable label shown in the undo menu.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Application.Commands.RemoveModuleCommand">
+            <summary>
+            Removes a module and every route that used it, restoring both on undo. Routes have to travel with the
+            module: leaving them behind would point at a module that no longer exists.
+            </summary>
+        </member>
+        <member name="T:ProtoDesigner.Application.Commands.ChangeRouteCommand">
+            <summary>Swaps one leg for another in place, which is what changing a dropdown on an existing row means.</summary>
+        </member>
+        <member name="T:ProtoDesigner.Application.Commands.ChangeEncodingCommand">
+            <summary>
+            Replaces the encoding wholesale. The undo restores the previous instance — cheaper and simpler
+            than tracking individual property changes, and encoding edits are already coarse-grained in the UI.
+            </summary>
+        </member>
+        <member name="T:ProtoDesigner.Application.IProjectRepository">
+            <summary>
+            Read/write port for a project. WPF, CLI, and future backends (SQL in Phase 6) depend on this,
+            not on any concrete storage. The JSON implementation lives in ProtoDesigner.Persistence.Json.
+            </summary>
+        </member>
+        <member name="T:ProtoDesigner.Application.WireEncodingPropagator">
+             <summary>
+             Pushes a type's wire representation onto every field binding that references it, anywhere in the
+             project.
+             </summary>
+             <remarks>
+             The layout engine only ever reads <see cref="T:ProtoDesigner.Core.Model.FieldEncoding"/> on a binding, which is what keeps it
+             language- and policy-free. But the product rule is that a type serialises the same way everywhere, so
+             this is the one place that reconciles the two: edit the type, and every occurrence follows.
+            
+             The scale is derived, never typed by hand: given a range and a width, the finest factor that still
+             covers the range is <c>(max - min) / (2^bits - 1)</c>, with the offset pinned to the range minimum.
+             </remarks>
+        </member>
+        <member name="M:ProtoDesigner.Application.WireEncodingPropagator.ApplyAll(ProtoDesigner.Core.Model.Project)">
+            <summary>Applies every type's wire settings across the whole project. Returns the number of bindings changed.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Application.WireEncodingPropagator.Apply(ProtoDesigner.Core.Model.Project,ProtoDesigner.Core.Model.TypeDefinition)">
+            <summary>Applies one type's wire settings to every binding that uses it.</summary>
+        </member>
+        <member name="M:ProtoDesigner.Application.WireEncodingPropagator.Apply(ProtoDesigner.Core.Model.TypeDefinition,ProtoDesigner.Core.Model.FieldBinding)">
+            <summary>
+            Writes the type's representation onto a single binding. Returns true if anything changed.
+            Structs and arrays are skipped: their size is the sum of what they are built from, all the way
+            down to primitives and enums, so they have no width of their own to set.
+            </summary>
+        </member>
+        <member name="M:ProtoDesigner.Application.WireEncodingPropagator.ResolveTransform(ProtoDesigner.Core.Model.TypeDefinition,ProtoDesigner.Core.Model.IWireSized,System.Nullable{ProtoDesigner.Core.Model.NumericRange},System.Int32,System.Int32)">
+            <summary>
+            Works out the value-to-wire mapping for a type, honouring an explicit offset/scale when the user
+            has set one and deriving the tightest fit otherwise.
+            </summary>
+            <remarks>
+            The subtle case is a floating-point host sent as an <em>integer</em>. An integer wire code cannot
+            carry a fractional value directly, so such a field needs a scale even at full width — a
+            <c>double</c> in 8 wire bytes still has to map 64 bits of integer onto its declared range. Only a
+            <see cref="F:ProtoDesigner.Core.Model.WireForm.Float"/> wire skips scaling, because there the IEEE bit pattern passes through
+            untouched and scaling would corrupt it.
+            </remarks>
+        </member>
+        <member name="M:ProtoDesigner.Application.WireEncodingPropagator.AllBindings(ProtoDesigner.Core.Model.Project)">
+            <summary>Every binding in the project: message fields and struct members alike.</summary>
+        </member>
+    </members>
+</doc>

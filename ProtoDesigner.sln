@@ -1,0 +1,76 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ProtoDesigner.Core", "src\ProtoDesigner.Core\ProtoDesigner.Core.csproj", "{2E1B4B9C-0001-4C6E-9F1A-0000000000C0}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ProtoDesigner.Core.Tests", "tests\ProtoDesigner.Core.Tests\ProtoDesigner.Core.Tests.csproj", "{2E1B4B9C-0002-4C6E-9F1A-0000000000C1}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ProtoDesigner.Application", "src\ProtoDesigner.Application\ProtoDesigner.Application.csproj", "{2E1B4B9C-0003-4C6E-9F1A-0000000000C2}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ProtoDesigner.Persistence.Json", "src\ProtoDesigner.Persistence.Json\ProtoDesigner.Persistence.Json.csproj", "{2E1B4B9C-0004-4C6E-9F1A-0000000000C3}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ProtoDesigner.Persistence.Json.Tests", "tests\ProtoDesigner.Persistence.Json.Tests\ProtoDesigner.Persistence.Json.Tests.csproj", "{2E1B4B9C-0005-4C6E-9F1A-0000000000C4}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ProtoDesigner.Wpf", "src\ProtoDesigner.Wpf\ProtoDesigner.Wpf.csproj", "{2E1B4B9C-0006-4C6E-9F1A-0000000000C5}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ProtoDesigner.CodeGen", "src\ProtoDesigner.CodeGen\ProtoDesigner.CodeGen.csproj", "{2E1B4B9C-0007-4C6E-9F1A-0000000000C6}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ProtoDesigner.CodeGen.Tests", "tests\ProtoDesigner.CodeGen.Tests\ProtoDesigner.CodeGen.Tests.csproj", "{2E1B4B9C-0008-4C6E-9F1A-0000000000C7}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ProtoDesigner.Cli", "src\ProtoDesigner.Cli\ProtoDesigner.Cli.csproj", "{2E1B4B9C-0009-4C6E-9F1A-0000000000C8}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ProtoDesigner.Cli.Tests", "tests\ProtoDesigner.Cli.Tests\ProtoDesigner.Cli.Tests.csproj", "{2E1B4B9C-000A-4C6E-9F1A-0000000000C9}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ProtoDesigner.Application.Tests", "tests\ProtoDesigner.Application.Tests\ProtoDesigner.Application.Tests.csproj", "{2E1B4B9C-000B-4C6E-9F1A-0000000000CA}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2E1B4B9C-0001-4C6E-9F1A-0000000000C0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2E1B4B9C-0001-4C6E-9F1A-0000000000C0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2E1B4B9C-0001-4C6E-9F1A-0000000000C0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2E1B4B9C-0001-4C6E-9F1A-0000000000C0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2E1B4B9C-0002-4C6E-9F1A-0000000000C1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2E1B4B9C-0002-4C6E-9F1A-0000000000C1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2E1B4B9C-0002-4C6E-9F1A-0000000000C1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2E1B4B9C-0002-4C6E-9F1A-0000000000C1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2E1B4B9C-0003-4C6E-9F1A-0000000000C2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2E1B4B9C-0003-4C6E-9F1A-0000000000C2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2E1B4B9C-0003-4C6E-9F1A-0000000000C2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2E1B4B9C-0003-4C6E-9F1A-0000000000C2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2E1B4B9C-0004-4C6E-9F1A-0000000000C3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2E1B4B9C-0004-4C6E-9F1A-0000000000C3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2E1B4B9C-0004-4C6E-9F1A-0000000000C3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2E1B4B9C-0004-4C6E-9F1A-0000000000C3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2E1B4B9C-0005-4C6E-9F1A-0000000000C4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2E1B4B9C-0005-4C6E-9F1A-0000000000C4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2E1B4B9C-0005-4C6E-9F1A-0000000000C4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2E1B4B9C-0005-4C6E-9F1A-0000000000C4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2E1B4B9C-0006-4C6E-9F1A-0000000000C5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2E1B4B9C-0006-4C6E-9F1A-0000000000C5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2E1B4B9C-0006-4C6E-9F1A-0000000000C5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2E1B4B9C-0006-4C6E-9F1A-0000000000C5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2E1B4B9C-0007-4C6E-9F1A-0000000000C6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2E1B4B9C-0007-4C6E-9F1A-0000000000C6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2E1B4B9C-0007-4C6E-9F1A-0000000000C6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2E1B4B9C-0007-4C6E-9F1A-0000000000C6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2E1B4B9C-0008-4C6E-9F1A-0000000000C7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2E1B4B9C-0008-4C6E-9F1A-0000000000C7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2E1B4B9C-0008-4C6E-9F1A-0000000000C7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2E1B4B9C-0008-4C6E-9F1A-0000000000C7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2E1B4B9C-0009-4C6E-9F1A-0000000000C8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2E1B4B9C-0009-4C6E-9F1A-0000000000C8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2E1B4B9C-0009-4C6E-9F1A-0000000000C8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2E1B4B9C-0009-4C6E-9F1A-0000000000C8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2E1B4B9C-000A-4C6E-9F1A-0000000000C9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2E1B4B9C-000A-4C6E-9F1A-0000000000C9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2E1B4B9C-000A-4C6E-9F1A-0000000000C9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2E1B4B9C-000A-4C6E-9F1A-0000000000C9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2E1B4B9C-000B-4C6E-9F1A-0000000000CA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2E1B4B9C-000B-4C6E-9F1A-0000000000CA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2E1B4B9C-000B-4C6E-9F1A-0000000000CA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2E1B4B9C-000B-4C6E-9F1A-0000000000CA}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

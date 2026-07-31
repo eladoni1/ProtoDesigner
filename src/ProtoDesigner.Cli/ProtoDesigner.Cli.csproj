@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>protodesigner</AssemblyName>
+    <RootNamespace>ProtoDesigner.Cli</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ProtoDesigner.Core\ProtoDesigner.Core.csproj" />
+    <ProjectReference Include="..\ProtoDesigner.Application\ProtoDesigner.Application.csproj" />
+    <ProjectReference Include="..\ProtoDesigner.Persistence.Json\ProtoDesigner.Persistence.Json.csproj" />
+    <ProjectReference Include="..\ProtoDesigner.CodeGen\ProtoDesigner.CodeGen.csproj" />
+  </ItemGroup>
+
+</Project>
