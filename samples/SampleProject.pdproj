@@ -1,0 +1,219 @@
+{
+  "schemaVersion": 1,
+  "name": "SampleProject",
+  "options": {},
+  "types": {
+    "1e6ad55e-6cd5-4233-b7fd-b002611d3e25": {
+      "name": "Header",
+      "kind": "struct",
+      "fields": [
+        {
+          "id": "08b86cbb-4345-41da-a1e0-6f42c5d46b19",
+          "name": "messageId",
+          "typeId": "8f19168f-5d44-4974-a4b6-f45d0e9fc20d",
+          "encoding": {
+            "bitWidth": 8,
+            "allowBitPacking": true
+          }
+        },
+        {
+          "id": "fe4bb61d-de63-4abd-b3bb-2a0f018fbe74",
+          "name": "flags",
+          "typeId": "8f19168f-5d44-4974-a4b6-f45d0e9fc20d",
+          "encoding": {
+            "bitWidth": 8,
+            "allowBitPacking": true
+          }
+        },
+        {
+          "id": "fccad7e4-e046-44a6-b7ca-1f6da1cd635b",
+          "name": "timestamp",
+          "typeId": "df991674-a757-431e-bb10-264685eeb845",
+          "encoding": {
+            "bitWidth": 32,
+            "allowBitPacking": true
+          }
+        },
+        {
+          "id": "8a737a58-f5a1-44d5-b577-8338a10bf4ec",
+          "name": "randomType",
+          "typeId": "ff7af080-5128-43ae-91c6-5240ac3e563d",
+          "encoding": {
+            "bitWidth": 4,
+            "allowBitPacking": true,
+            "transform": {
+              "offset": "1000",
+              "scale": "1"
+            }
+          }
+        }
+      ]
+    },
+    "2e83ef6f-b134-4051-9627-82d52f3d259f": {
+      "name": "u16",
+      "kind": "parameter",
+      "primitive": "U16",
+      "rangeMin": "0",
+      "rangeMax": "65535",
+      "wireForm": "Unsigned"
+    },
+    "8f19168f-5d44-4974-a4b6-f45d0e9fc20d": {
+      "name": "u8",
+      "kind": "parameter",
+      "primitive": "U8",
+      "rangeMin": "0",
+      "rangeMax": "255",
+      "wireForm": "Unsigned"
+    },
+    "9070e396-26dc-4fba-b40d-c6e4f18e98e2": {
+      "name": "Mode",
+      "kind": "enum",
+      "underlying": "U32",
+      "isFlags": false,
+      "wireBits": 4,
+      "wireForm": "Unsigned",
+      "members": [
+        {
+          "name": "Idle",
+          "value": 0
+        },
+        {
+          "name": "Arming",
+          "value": 1
+        },
+        {
+          "name": "Running",
+          "value": 5
+        },
+        {
+          "name": "Fault",
+          "value": 10
+        }
+      ]
+    },
+    "bfabcb79-ce75-4641-a850-f12fff84d727": {
+      "name": "Samples",
+      "kind": "array",
+      "elementTypeId": "2e83ef6f-b134-4051-9627-82d52f3d259f",
+      "length": {
+        "kind": "fixed",
+        "count": 4
+      }
+    },
+    "df991674-a757-431e-bb10-264685eeb845": {
+      "name": "u32",
+      "kind": "parameter",
+      "primitive": "U32",
+      "rangeMin": "0",
+      "rangeMax": "4294967295",
+      "wireForm": "Unsigned"
+    },
+    "ff7af080-5128-43ae-91c6-5240ac3e563d": {
+      "name": "RandomType",
+      "kind": "parameter",
+      "primitive": "U16",
+      "rangeMin": "1000",
+      "rangeMax": "1015",
+      "wireBits": 4,
+      "wireForm": "Unsigned"
+    }
+  },
+  "buses": [
+    {
+      "id": "4d437acf-4594-45bb-8628-0ec1f5228457",
+      "name": "Main",
+      "transport": "Ethernet",
+      "options": {},
+      "modules": [
+        {
+          "id": "2cfe5806-7c91-4233-8fed-930755185df2",
+          "name": "Sensor"
+        },
+        {
+          "id": "56070bc4-6be1-4710-9827-38db20ee5e3e",
+          "name": "Controller"
+        },
+        {
+          "id": "1fc2b295-88ac-43e6-b0ab-57345232da79",
+          "name": "Logger"
+        }
+      ],
+      "messages": [
+        {
+          "id": "62e7b527-fd50-4be9-a27e-ea9ef1d43740",
+          "name": "Telemetry",
+          "wireId": 42,
+          "options": {},
+          "routes": [
+            {
+              "from": "2cfe5806-7c91-4233-8fed-930755185df2",
+              "to": "56070bc4-6be1-4710-9827-38db20ee5e3e"
+            },
+            {
+              "from": "2cfe5806-7c91-4233-8fed-930755185df2",
+              "to": "1fc2b295-88ac-43e6-b0ab-57345232da79"
+            }
+          ],
+          "fields": [
+            {
+              "id": "20f3e7ea-3f0a-40fc-890b-a13c3f665beb",
+              "name": "header",
+              "typeId": "1e6ad55e-6cd5-4233-b7fd-b002611d3e25",
+              "encoding": {}
+            },
+            {
+              "id": "33947fd9-2af9-489f-b2fc-5a576fde756f",
+              "name": "mode",
+              "typeId": "9070e396-26dc-4fba-b40d-c6e4f18e98e2",
+              "encoding": {
+                "bitWidth": 4,
+                "allowBitPacking": true
+              }
+            },
+            {
+              "id": "e8f2c31e-96d9-42cc-97c4-f46fcdc886a2",
+              "name": "samples",
+              "typeId": "bfabcb79-ce75-4641-a850-f12fff84d727",
+              "encoding": {}
+            },
+            {
+              "id": "5add3efb-9001-498f-aa99-4a16482014cb",
+              "name": "crc",
+              "typeId": "2e83ef6f-b134-4051-9627-82d52f3d259f",
+              "encoding": {
+                "bitWidth": 16,
+                "allowBitPacking": true
+              },
+              "crc": {
+                "algorithm": "Crc16Ccitt"
+              }
+            }
+          ]
+        },
+        {
+          "id": "86ab3167-1962-404f-b5a0-8f62cd12f922",
+          "name": "Ping",
+          "wireId": 1,
+          "options": {},
+          "routes": [
+            {
+              "from": "56070bc4-6be1-4710-9827-38db20ee5e3e",
+              "to": "2cfe5806-7c91-4233-8fed-930755185df2"
+            }
+          ],
+          "fields": [
+            {
+              "id": "af3f0cad-d213-4b8f-bdb1-044d55856c9d",
+              "name": "counter",
+              "typeId": "df991674-a757-431e-bb10-264685eeb845",
+              "encoding": {
+                "bitWidth": 32,
+                "allowBitPacking": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

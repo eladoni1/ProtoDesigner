@@ -1,0 +1,15 @@
+# Normalise text on commit, and check most things out with the platform's endings.
+* text=auto
+
+# Project files and golden files are byte-compared, so their line endings are part of the contract.
+#
+# JsonProjectRepository writes LF deliberately: the canonical form is what makes two saves of the same
+# model byte-identical and keeps merges to the entities people actually touched. If git checked these out
+# as CRLF, opening and saving a project would rewrite every line and the guarantee would be worthless.
+*.pdproj text eol=lf
+
+# Golden files are diffed against generator output that is normalised to LF by the test harness.
+tests/**/Golden/* text eol=lf
+
+# Keep shell scripts LF so they stay runnable from Git Bash and CI.
+*.sh text eol=lf
