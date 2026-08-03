@@ -103,3 +103,32 @@ public sealed class DynamicArrayRule : IValidationRule
         }
     }
 }
+
+/// <summary>
+/// An array whose elements are themselves a struct or another array.
+/// </summary>
+/// <remarks>
+/// The layout engine handles these — it flattens the element into <c>items[].x</c> nodes and computes a
+/// stride — but code generation writes one scalar per element, so it has no way to emit them. Until it
+/// does, saying so here beats emitting an array of the wrong type: the previous behaviour fell back to
+/// <c>uint8_t</c> elements, which compiled cleanly and encoded nothing like the declared model.
+/// </remarks>
+public sealed class ArrayOfCompositeElementRule : IValidationRule
+{
+    public string Code => DiagnosticCodes.ArrayOfCompositeElement;
+
+    public IEnumerable<Diagnostic> Validate(ValidationContext ctx)
+    {
+        foreach (var array in ctx.Project.Types.All.OfType<ArrayType>())
+        {
+            if (!ctx.Project.Types.TryGet(array.ElementTypeId, out var element) || element is null) continue;
+            if (element is not (StructType or ArrayType)) continue;
+
+            var what = element is StructType ? "struct" : "array";
+            yield return new Diagnostic(Code, Severity.Error,
+                $"Array '{array.Name}' has elements of type '{element.Name}', which is a {what}. "
+                + "Code generation supports arrays of primitives and enums only.",
+                EntityPath.ForType(array));
+        }
+    }
+}

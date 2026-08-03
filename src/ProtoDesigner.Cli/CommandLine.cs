@@ -1,3 +1,4 @@
+using ProtoDesigner.Application;
 using ProtoDesigner.CodeGen;
 using ProtoDesigner.CodeGen.Cpp;
 using ProtoDesigner.Core.Ir;
@@ -96,7 +97,8 @@ public static class CommandLine
     {
         if (args.Length == 0)
         {
-            stderr.WriteLine("usage: protodesigner generate <file.pdproj> --target <id> --out <dir> [--bus <name>] [--namespace <ns>]");
+            stderr.WriteLine("usage: protodesigner generate <file.pdproj> --out <dir> [--target <id>]");
+            stderr.WriteLine("       [--bus <name> [--messages <a,b,c>]] | [--module <name>] [--namespace <ns>]");
             return ExitUsage;
         }
 
@@ -104,11 +106,27 @@ public static class CommandLine
         var target = GetOption(args, "--target") ?? "cpp";
         var outDir = GetOption(args, "--out");
         var busName = GetOption(args, "--bus");
+        var moduleName = GetOption(args, "--module");
+        var messageList = GetOption(args, "--messages");
         var ns = GetOption(args, "--namespace") ?? "proto";
 
         if (outDir is null)
         {
             stderr.WriteLine("Missing required --out <dir>.");
+            return ExitUsage;
+        }
+
+        // --module already says which buses and which messages; combining it with either would leave two
+        // answers to the same question and no obvious winner.
+        if (moduleName is not null && (busName is not null || messageList is not null))
+        {
+            stderr.WriteLine("--module selects its own buses and messages; do not combine it with --bus or --messages.");
+            return ExitUsage;
+        }
+
+        if (messageList is not null && busName is null)
+        {
+            stderr.WriteLine("--messages needs --bus, since message names are only unique within a bus.");
             return ExitUsage;
         }
 
@@ -133,17 +151,8 @@ public static class CommandLine
             return ExitValidationErrors;
         }
 
-        var buses = busName is null
-            ? project!.Buses.ToArray()
-            : project!.Buses.Where(b => string.Equals(b.Name, busName, StringComparison.Ordinal)).ToArray();
-
-        if (buses.Length == 0)
-        {
-            stderr.WriteLine(busName is null
-                ? "Project contains no buses."
-                : $"No bus named '{busName}'.");
+        if (!TryResolveScopes(project!, busName, moduleName, messageList, stderr, out var scopes))
             return ExitUsage;
-        }
 
         var builder = new IrBuilder();
         var written = 0;
@@ -151,19 +160,21 @@ public static class CommandLine
         try
         {
             Directory.CreateDirectory(outDir);
-            foreach (var bus in buses)
+
+            // All buses in one call. Generating them one at a time would have each write its own copy of
+            // the shared type declarations, and the last bus would win — leaving the others referring to
+            // structs that are no longer declared.
+            var irs = scopes.Select(s => builder.Build(project!, s.Bus, s.MessageIds)).ToList();
+            var set = generator.Generate(irs, new GeneratorOptions(Namespace: ns));
+
+            foreach (var file in set.Files)
             {
-                var ir = builder.Build(project!, bus);
-                var set = generator.Generate(ir, new GeneratorOptions(Namespace: ns));
-                foreach (var file in set.Files)
-                {
-                    var full = Path.Combine(outDir, file.RelativePath);
-                    var dir = Path.GetDirectoryName(full);
-                    if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-                    File.WriteAllText(full, file.Contents);
-                    stdout.WriteLine($"  wrote {file.RelativePath}");
-                    written++;
-                }
+                var full = Path.Combine(outDir, file.RelativePath);
+                var dir = Path.GetDirectoryName(full);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                File.WriteAllText(full, file.Contents);
+                stdout.WriteLine($"  wrote {file.RelativePath}");
+                written++;
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -172,8 +183,84 @@ public static class CommandLine
             return ExitIoError;
         }
 
-        stdout.WriteLine($"Generated {written} file(s) for {buses.Length} bus(es) into {outDir}.");
+        var messageCount = scopes.Sum(s => s.Messages.Count);
+        stdout.WriteLine(
+            $"Generated {written} file(s) covering {messageCount} message(s) across {scopes.Count} bus(es) into {outDir}.");
         return ExitOk;
+    }
+
+    /// <summary>
+    /// Turns the selection flags into the buses and messages to generate. Reports precisely what went
+    /// wrong rather than silently producing an empty output directory.
+    /// </summary>
+    private static bool TryResolveScopes(Project project, string? busName, string? moduleName,
+        string? messageList, TextWriter stderr, out IReadOnlyList<GenerationScope> scopes)
+    {
+        scopes = Array.Empty<GenerationScope>();
+
+        if (moduleName is not null)
+        {
+            scopes = GenerationScopes.ForModuleNamed(project, moduleName);
+            if (scopes.Count == 0)
+            {
+                var known = GenerationScopes.ModuleNames(project);
+                stderr.WriteLine(known.Count == 0
+                    ? $"No module named '{moduleName}'. This project declares no modules."
+                    : $"No messages are routed to or from a module named '{moduleName}'. "
+                      + $"Known modules: {string.Join(", ", known)}.");
+                return false;
+            }
+            return true;
+        }
+
+        if (busName is null)
+        {
+            scopes = GenerationScopes.ForProject(project);
+            if (scopes.Count == 0)
+            {
+                stderr.WriteLine("Project contains no buses with messages.");
+                return false;
+            }
+            return true;
+        }
+
+        var bus = project.Buses.FirstOrDefault(b => string.Equals(b.Name, busName, StringComparison.Ordinal));
+        if (bus is null)
+        {
+            stderr.WriteLine($"No bus named '{busName}'.");
+            return false;
+        }
+
+        if (messageList is null)
+        {
+            scopes = GenerationScopes.ForBus(bus);
+            if (scopes.Count == 0)
+            {
+                stderr.WriteLine($"Bus '{bus.Name}' has no messages.");
+                return false;
+            }
+            return true;
+        }
+
+        var wantedNames = messageList
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToArray();
+
+        var unknown = wantedNames
+            .Where(n => bus.Messages.All(m => !string.Equals(m.Name, n, StringComparison.Ordinal)))
+            .ToArray();
+        if (unknown.Length > 0)
+        {
+            stderr.WriteLine($"Bus '{bus.Name}' has no message(s) named: {string.Join(", ", unknown)}.");
+            return false;
+        }
+
+        var ids = bus.Messages
+            .Where(m => wantedNames.Contains(m.Name, StringComparer.Ordinal))
+            .Select(m => m.Id);
+
+        scopes = GenerationScopes.ForMessages(bus, ids);
+        return true;
     }
 
     // ---- helpers -------------------------------------------------------------------------------
@@ -212,8 +299,14 @@ public static class CommandLine
         stdout.WriteLine();
         stdout.WriteLine("Usage:");
         stdout.WriteLine("  protodesigner validate <file.pdproj> [--quiet]");
-        stdout.WriteLine("  protodesigner generate <file.pdproj> --out <dir> [--target cpp] [--bus <name>] [--namespace <ns>]");
+        stdout.WriteLine("  protodesigner generate <file.pdproj> --out <dir> [--target cpp] [--namespace <ns>]");
         stdout.WriteLine("  protodesigner targets");
+        stdout.WriteLine();
+        stdout.WriteLine("Choosing what to generate (default: every bus):");
+        stdout.WriteLine("  --bus <name>              one bus, all of its messages");
+        stdout.WriteLine("  --bus <name> --messages A,B   one bus, only those messages");
+        stdout.WriteLine("  --module <name>           every message that module sends or receives, on every");
+        stdout.WriteLine("                            bus it sits on — both directions, so loopback works");
         stdout.WriteLine();
         stdout.WriteLine("Exit codes:");
         stdout.WriteLine($"  {ExitOk}  success");

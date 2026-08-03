@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 1,
+  "name": "Untitled",
+  "options": {},
+  "types": {
+    "05b7afe9-26b9-4787-8a98-26a4fe65e67f": {
+      "name": "MessageID",
+      "kind": "enum",
+      "underlying": "U16",
+      "isFlags": false,
+      "wireBits": 16,
+      "wireForm": "Unsigned",
+      "members": [
+        {
+          "name": "NotAssigned",
+          "value": 0
+        },
+        {
+          "name": "MessageA",
+          "value": 1
+        },
+        {
+          "name": "MessageB",
+          "value": 2
+        }
+      ]
+    },
+    "41641d05-61b3-4ca4-92c1-6e972635e707": {
+      "name": "Timestamp",
+      "kind": "parameter",
+      "primitive": "F64",
+      "wireBits": 64,
+      "wireForm": "Float"
+    },
+    "578101a4-56c8-4e6a-b335-2f6e7e94365d": {
+      "name": "DeviceID",
+      "kind": "enum",
+      "underlying": "U16",
+      "isFlags": false,
+      "wireBits": 8,
+      "wireForm": "Unsigned",
+      "members": [
+        {
+          "name": "ModuleA",
+          "value": 0
+        },
+        {
+          "name": "ModuleB",
+          "value": 1
+        },
+        {
+          "name": "ModuleC",
+          "value": 2
+        }
+      ]
+    },
+    "8adda120-7b7f-4f0a-90c2-94c71cb0f58a": {
+      "name": "CRC",
+      "kind": "parameter",
+      "primitive": "U32",
+      "rangeMin": "0",
+      "rangeMax": "4294967295",
+      "wireBits": 32,
+      "wireForm": "Unsigned"
+    },
+    "9a998cb6-ac6f-4b11-86a9-80b68442a5e4": {
+      "name": "Header",
+      "kind": "struct",
+      "fields": [
+        {
+          "id": "e1555af3-45d8-4739-bf69-ebc3983993bb",
+          "name": "msgId",
+          "typeId": "05b7afe9-26b9-4787-8a98-26a4fe65e67f",
+          "encoding": {
+            "bitWidth": 16,
+            "allowBitPacking": true
+          }
+        },
+        {
+          "id": "c9b5a025-be71-4554-98c3-627da70414fd",
+          "name": "len",
+          "typeId": "c08be330-77c7-44cf-9349-d53343091ce1",
+          "encoding": {
+            "bitWidth": 16,
+            "allowBitPacking": true,
+            "transform": {
+              "offset": "0",
+              "scale": "1"
+            }
+          }
+        },
+        {
+          "id": "eb23e574-12b5-4a84-af49-aeeb1fe738d6",
+          "name": "src",
+          "typeId": "578101a4-56c8-4e6a-b335-2f6e7e94365d",
+          "encoding": {
+            "bitWidth": 8,
+            "allowBitPacking": true
+          }
+        },
+        {
+          "id": "5fbb9320-8ac5-476a-b266-5ba702095feb",
+          "name": "dst",
+          "typeId": "578101a4-56c8-4e6a-b335-2f6e7e94365d",
+          "encoding": {
+            "bitWidth": 8,
+            "allowBitPacking": true
+          }
+        },
+        {
+          "id": "8f1cb813-57dc-4a76-aa1b-9cebe30ecfe9",
+          "name": "tm",
+          "typeId": "41641d05-61b3-4ca4-92c1-6e972635e707",
+          "encoding": {
+            "bitWidth": 64,
+            "allowBitPacking": true
+          }
+        }
+      ]
+    },
+    "a0608103-2dec-4ec4-8d48-afcb41a7b053": {
+      "name": "Byte",
+      "kind": "parameter",
+      "primitive": "U8",
+      "rangeMin": "0",
+      "rangeMax": "255",
+      "wireBits": 8,
+      "wireForm": "Unsigned"
+    },
+    "c08be330-77c7-44cf-9349-d53343091ce1": {
+      "name": "TotalLength",
+      "kind": "parameter",
+      "primitive": "U32",
+      "rangeMin": "0",
+      "rangeMax": "65535",
+      "wireBits": 16,
+      "wireForm": "Unsigned"
+    },
+    "c7859bf9-751b-42f1-bf65-9017ced2425a": {
+      "name": "Buffer",
+      "kind": "array",
+      "elementTypeId": "a0608103-2dec-4ec4-8d48-afcb41a7b053",
+      "length": {
+        "kind": "fixed",
+        "count": 1024
+      }
+    }
+  },
+  "buses": [
+    {
+      "id": "b8a1f9dd-4580-47b4-8ca1-d982f57ace5b",
+      "name": "BusA",
+      "transport": "Ethernet",
+      "options": {},
+      "modules": [
+        {
+          "id": "ab224417-40b0-4676-aeca-29655a499fba",
+          "name": "ModuleA"
+        },
+        {
+          "id": "94235cff-7509-4333-b664-c1cfbbb92d39",
+          "name": "ModuleB"
+        },
+        {
+          "id": "e968a2ec-0503-4c45-981e-c074644195d0",
+          "name": "ModuleC"
+        }
+      ],
+      "messages": [
+        {
+          "id": "b87cf7b7-dbaa-4d6f-8fbe-d8a66aa6d021",
+          "name": "MessageA",
+          "wireId": 1,
+          "options": {},
+          "routes": [
+            {
+              "from": "ab224417-40b0-4676-aeca-29655a499fba",
+              "to": "94235cff-7509-4333-b664-c1cfbbb92d39"
+            },
+            {
+              "from": "ab224417-40b0-4676-aeca-29655a499fba",
+              "to": "e968a2ec-0503-4c45-981e-c074644195d0"
+            }
+          ],
+          "fields": [
+            {
+              "id": "e4dabceb-a6ee-4826-9e12-3b8776b1d787",
+              "name": "header",
+              "typeId": "9a998cb6-ac6f-4b11-86a9-80b68442a5e4",
+              "encoding": {
+                "allowBitPacking": true
+              }
+            },
+            {
+              "id": "d2951111-5814-454b-9595-0de8c0656f18",
+              "name": "buffer",
+              "typeId": "c7859bf9-751b-42f1-bf65-9017ced2425a",
+              "encoding": {
+                "allowBitPacking": true
+              }
+            },
+            {
+              "id": "8e0428f7-88ec-4af6-9d52-e53d09876382",
+              "name": "crc",
+              "typeId": "8adda120-7b7f-4f0a-90c2-94c71cb0f58a",
+              "encoding": {
+                "bitWidth": 32,
+                "allowBitPacking": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

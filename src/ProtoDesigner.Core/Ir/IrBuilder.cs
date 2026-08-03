@@ -13,26 +13,177 @@ public sealed class IrBuilder
 {
     private readonly LayoutEngine _engine = new();
 
-    public ProtocolIr Build(Project project, Bus bus)
+    /// <summary>
+    /// Builds the IR for a bus, optionally narrowed to a subset of its messages.
+    /// </summary>
+    /// <param name="only">
+    /// The messages to include, or null for all of them. Filtering happens before anything else is
+    /// collected, so the enum and struct tables end up holding only what the chosen messages actually
+    /// reach — asking for one message does not drag in the types only its neighbours used.
+    /// </param>
+    public ProtocolIr Build(Project project, Bus bus, IReadOnlySet<MessageId>? only = null)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(bus);
+
+        var selected = only is null
+            ? bus.Messages
+            : bus.Messages.Where(m => only.Contains(m.Id)).ToList();
 
         // Collect enums first so every IrField.EnumIndex points into the same list.
         var enumTable = new Dictionary<TypeId, int>();
         var enums = new List<IrEnum>();
 
-        foreach (var message in bus.Messages)
+        foreach (var message in selected)
             CollectEnums(project, message.Fields, enumTable, enums);
 
+        // Then structs, post-order, so a struct always lands after everything it depends on and a
+        // generator can emit the list top to bottom without sorting it again.
+        var structTable = new Dictionary<TypeId, int>();
+        var structs = new List<IrStruct>();
+
+        foreach (var message in selected)
+            foreach (var field in message.Fields)
+                CollectStructs(project, field.TypeId, enumTable, structTable, structs);
+
         var messages = new List<IrMessage>();
-        foreach (var message in bus.Messages)
+        foreach (var message in selected)
         {
             var layout = _engine.Compute(project, bus, message);
-            messages.Add(BuildMessage(project, message, layout, enumTable));
+            messages.Add(BuildMessage(project, message, layout, enumTable, structTable));
         }
 
-        return new ProtocolIr(project.Name, bus.Name, bus.Transport, enums, messages);
+        return new ProtocolIr(project.Name, bus.Name, bus.Transport, enums, structs, messages);
+    }
+
+    // ---- struct collection ------------------------------------------------------------------
+
+    /// <summary>
+    /// Registers a struct and everything it reaches, depth first, so dependencies precede dependants.
+    /// </summary>
+    /// <remarks>
+    /// The entry is reserved before the members are built. Recursion is impossible in a valid model — the
+    /// layout engine rejects it and <c>PD0010</c> reports it — so the reservation is only there to stop a
+    /// malformed one from recursing forever before those checks run.
+    /// </remarks>
+    private static void CollectStructs(Project project, TypeId typeId,
+        Dictionary<TypeId, int> enumTable, Dictionary<TypeId, int> structTable, List<IrStruct> sink)
+    {
+        if (!project.Types.TryGet(typeId, out var type) || type is null) return;
+
+        switch (type)
+        {
+            case StructType s:
+                if (structTable.ContainsKey(s.Id)) return;
+
+                foreach (var member in s.Fields)
+                    CollectStructs(project, member.TypeId, enumTable, structTable, sink);
+
+                structTable[s.Id] = sink.Count;
+                sink.Add(new IrStruct(s.Name, BuildMembers(project, s.Fields, enumTable, structTable)));
+                break;
+
+            case ArrayType a:
+                CollectStructs(project, a.ElementTypeId, enumTable, structTable, sink);
+                break;
+        }
+    }
+
+    // ---- host-shape members -----------------------------------------------------------------
+
+    /// <summary>
+    /// Describes a list of bindings as host struct members — the shape the user declared, not the
+    /// flattened wire order.
+    /// </summary>
+    private static IReadOnlyList<IrMember> BuildMembers(Project project, IReadOnlyList<FieldBinding> fields,
+        Dictionary<TypeId, int> enumTable, Dictionary<TypeId, int> structTable)
+    {
+        var members = new List<IrMember>(fields.Count);
+
+        foreach (var binding in fields)
+        {
+            if (!project.Types.TryGet(binding.TypeId, out var type) || type is null)
+                throw new InvalidOperationException(
+                    $"Field '{binding.Name}' references unknown type {binding.TypeId}.");
+
+            members.Add(BuildMember(project, binding, type, enumTable, structTable));
+        }
+
+        return members;
+    }
+
+    private static IrMember BuildMember(Project project, FieldBinding binding, TypeDefinition type,
+        Dictionary<TypeId, int> enumTable, Dictionary<TypeId, int> structTable)
+    {
+        switch (type)
+        {
+            case ParameterType p:
+                return new IrMember(binding.Name, IrMemberKind.Scalar, p.Kind,
+                    EnumIndex: null, StructIndex: null, ArrayCapacity: null,
+                    NeedsCountMember: false, Note: DescribeScalar(binding, p));
+
+            case EnumType e:
+                return new IrMember(binding.Name, IrMemberKind.EnumRef, e.UnderlyingKind,
+                    EnumIndex: enumTable[e.Id], StructIndex: null, ArrayCapacity: null,
+                    NeedsCountMember: false, Note: null);
+
+            case StructType s:
+                return new IrMember(binding.Name, IrMemberKind.StructRef, PrimitiveKind.U8,
+                    EnumIndex: null, StructIndex: structTable[s.Id], ArrayCapacity: null,
+                    NeedsCountMember: false, Note: null);
+
+            case ArrayType a:
+                return BuildArrayMember(project, binding, a, enumTable, structTable);
+
+            default:
+                throw new InvalidOperationException(
+                    $"Field '{binding.Name}' has unsupported type kind {type.GetType().Name}.");
+        }
+    }
+
+    private static IrMember BuildArrayMember(Project project, FieldBinding binding, ArrayType array,
+        Dictionary<TypeId, int> enumTable, Dictionary<TypeId, int> structTable)
+    {
+        if (!project.Types.TryGet(array.ElementTypeId, out var element) || element is null)
+            throw new InvalidOperationException(
+                $"Array '{array.Name}' references unknown element type {array.ElementTypeId}.");
+
+        // A self-describing array carries its own count. A Fixed one does not (the count is a constant)
+        // and neither does a CountFromField one (its count already lives in another field, and a second
+        // copy could disagree with it and silently desynchronise the encoder).
+        var needsCount = array.Length is not (ArrayLength.Fixed or ArrayLength.CountFromField);
+        var note = $"{DescribeLength(array.Length)}";
+
+        return element switch
+        {
+            ParameterType p => new IrMember(binding.Name, IrMemberKind.Scalar, p.Kind,
+                null, null, array.Length.Capacity, needsCount, note),
+
+            EnumType e => new IrMember(binding.Name, IrMemberKind.EnumRef, e.UnderlyingKind,
+                enumTable[e.Id], null, array.Length.Capacity, needsCount, note),
+
+            StructType s => new IrMember(binding.Name, IrMemberKind.StructRef, PrimitiveKind.U8,
+                null, structTable[s.Id], array.Length.Capacity, needsCount, note),
+
+            _ => throw new InvalidOperationException(
+                $"Array '{array.Name}' has unsupported element kind {element.GetType().Name}."),
+        };
+    }
+
+    private static string DescribeLength(ArrayLength length) => length switch
+    {
+        ArrayLength.Fixed f => $"exactly {f.Count} elements",
+        ArrayLength.CountFromField c => $"up to {c.MaxCount}, count from an earlier field",
+        ArrayLength.LengthPrefixed l => $"up to {l.MaxCount}, {l.PrefixBits}-bit length prefix",
+        ArrayLength.Terminated t => $"up to {t.MaxCount}, sentinel-terminated",
+        ArrayLength.FillRemaining r => $"up to {r.MaxCount}, fills the frame",
+        _ => "array",
+    };
+
+    private static string? DescribeScalar(FieldBinding binding, ParameterType type)
+    {
+        var bits = binding.Encoding.BitWidth;
+        return bits is null ? null : $"{bits} bits";
     }
 
     // ---- enum collection --------------------------------------------------------------------
@@ -71,7 +222,7 @@ public sealed class IrBuilder
     // ---- per-message build ------------------------------------------------------------------
 
     private static IrMessage BuildMessage(Project project, Message message, MessageLayout layout,
-        Dictionary<TypeId, int> enumTable)
+        Dictionary<TypeId, int> enumTable, Dictionary<TypeId, int> structTable)
     {
         // First pass: flatten every leaf node into a raw IrField, remembering which flattened index
         // each layout FieldId ended up at. Both region-level and array-level count references resolve
@@ -116,7 +267,10 @@ public sealed class IrBuilder
                 r.PrefixBits))
             .ToArray();
 
-        return new IrMessage(message.Name, message.WireId, layout.MinBits, layout.MaxBits, regions, fields);
+        var members = BuildMembers(project, message.Fields, enumTable, structTable);
+
+        return new IrMessage(message.Name, message.WireId, layout.MinBits, layout.MaxBits,
+            regions, fields, members);
     }
 
     // ---- per-node build ---------------------------------------------------------------------
@@ -134,17 +288,42 @@ public sealed class IrBuilder
             ParameterType p => new IrField(
                 node.Path, IrFieldKind.Scalar, p.Kind, EnumIndex: null,
                 node.RegionIndex, node.BitOffset, node.BitWidth,
-                node.Endianness, node.BitOrder, node.Transform, Array: null),
+                node.Endianness, node.BitOrder, node.Transform, Array: null,
+                WireIsSigned: WireIsSigned(p.Kind, p.Range, node.Transform)),
 
             EnumType e => new IrField(
                 node.Path, IrFieldKind.EnumRef, e.UnderlyingKind, EnumIndex: enumTable[e.Id],
                 node.RegionIndex, node.BitOffset, node.BitWidth,
-                node.Endianness, node.BitOrder, node.Transform, Array: null),
+                node.Endianness, node.BitOrder, node.Transform, Array: null,
+                WireIsSigned: WireIsSigned(e.UnderlyingKind, e.MemberRange, node.Transform)),
 
             ArrayType a => BuildArrayField(project, node, a, enumTable),
 
             _ => throw new InvalidOperationException($"Layout node '{node.Path}' has unsupported type kind {type.GetType().Name}."),
         };
+    }
+
+    /// <summary>
+    /// Whether the wire codes for a field can go negative, and therefore need a two's-complement field.
+    /// </summary>
+    /// <remarks>
+    /// This is a property of the <em>transform applied to the range</em>, not of the host kind. An
+    /// unsigned host can never produce a negative code, so it is always unsigned. A signed host usually
+    /// can — but not when its transform biases the range non-negative, which is exactly what the editor
+    /// derives when a user narrows a -100..100 field onto a byte. Getting this from the host kind instead
+    /// meant those codes were written unsigned and read back signed, silently corrupting every value from
+    /// 0x80 up.
+    ///
+    /// With no declared range there is nothing to reason about, so the host kind is the honest fallback.
+    /// </remarks>
+    private static bool WireIsSigned(PrimitiveKind host, NumericRange? range, ScalarTransform transform)
+    {
+        if (!host.IsSigned()) return false;
+        if (range is not { } r) return true;
+
+        // The lowest code the field can ever hold. Negative means the field must carry a sign.
+        var lowest = Math.Min(transform.ToWire(r.Min), transform.ToWire(r.Max));
+        return lowest < 0m;
     }
 
     private static IrField BuildArrayField(Project project, LayoutNode node, ArrayType type,
@@ -155,11 +334,28 @@ public sealed class IrBuilder
         var elementBits = node.ElementBits > 0 ? node.ElementBits : elementNode.BitWidth;
 
         var elemType = project.Types.TryGet(type.ElementTypeId, out var t) ? t : null;
+
+        // An array of structs has no single element primitive, and the conversion loop below writes one
+        // scalar per element. Falling through to a default here produced an array of u8 that silently
+        // encoded nothing like the declared type, so it is refused instead. PD0064 reports it in the
+        // editor first; this is the backstop for anything that reaches the builder anyway.
+        if (elemType is StructType or ArrayType)
+            throw new InvalidOperationException(
+                $"Array '{node.Path}' has elements of type '{elemType.Name}'. Code generation supports "
+                + "arrays of primitives and enums only; wrap the element in a message field, or flatten it.");
+
         var (elemKind, elemEnumIdx) = elemType switch
         {
             ParameterType pt => (pt.Kind, (int?)null),
             EnumType et => (et.UnderlyingKind, enumTable.TryGetValue(et.Id, out var i) ? i : (int?)null),
             _ => (PrimitiveKind.U8, (int?)null),
+        };
+
+        var elemRange = elemType switch
+        {
+            ParameterType pt => pt.Range,
+            EnumType et => et.MemberRange,
+            _ => null,
         };
 
         // CountFieldIndex uses the original binding's FieldId here; the second pass in BuildMessage
@@ -181,6 +377,7 @@ public sealed class IrBuilder
 
         return new IrField(node.Path, IrFieldKind.Array, elemKind, elemEnumIdx,
             node.RegionIndex, node.BitOffset, elementBits,
-            node.Endianness, node.BitOrder, node.Transform, info);
+            node.Endianness, node.BitOrder, node.Transform, info,
+            WireIsSigned: WireIsSigned(elemKind, elemRange, node.Transform));
     }
 }

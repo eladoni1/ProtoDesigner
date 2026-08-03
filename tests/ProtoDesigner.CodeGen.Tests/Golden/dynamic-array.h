@@ -5,9 +5,25 @@
 #ifndef PROTODESIGNER_BULK_H
 #define PROTODESIGNER_BULK_H
 
-#include "protodesigner_runtime.h"
+#include "proto_types.h"
 
 namespace proto {
+
+// Every message on bus 'Bulk' that carries an id. Ids are unique within a
+// bus and start at 1, so 0 is free to mean "no such message".
+enum class BulkMessageId : uint32_t {
+    NotAssigned = 0,
+    Batch = 21u,
+};
+
+// Maps a wire id onto the message it identifies, or NotAssigned if this bus has none.
+inline BulkMessageId Bulk_MessageIdFromWire(uint32_t id) {
+    switch (id) {
+        case 21u: return BulkMessageId::Batch;
+        default: break;
+    }
+    return BulkMessageId::NotAssigned;
+}
 
 // Message 'Batch' (wire id 21) — 24..280 bits / 3..35 bytes.
 struct Batch {
@@ -16,15 +32,15 @@ struct Batch {
     static constexpr size_t kMaxBits  = 280;
     static constexpr size_t kMaxBytes = 35;
 
-    uint8_t count;   // 8 bits
-    // 'payload': up to 32, count from an earlier field, 8 bits per element
+    uint8_t count;
+    // 'payload': up to 32, count from an earlier field
     uint8_t payload[32];
-    uint16_t crc;   // 16 bits
+    uint16_t crc;
 };
 
 // Converts the host struct `msg` into its on-wire form in `wire` (capacity `cap` bytes).
 // Returns the number of bytes written, or 0 if the buffer was too small.
-inline size_t ConvertToWire(const Batch& msg, uint8_t* wire, size_t cap) {
+inline size_t Batch_ConvertToWire(const Batch& msg, uint8_t* wire, size_t cap) {
     protodesigner::BitWriter w(wire, cap);
 
     // --- region 0 (Fixed) ---
@@ -54,13 +70,13 @@ inline size_t ConvertToWire(const Batch& msg, uint8_t* wire, size_t cap) {
 }
 
 // Same conversion into a correctly sized array. The capacity is checked at compile time.
-inline size_t ConvertToWire(const Batch& msg, uint8_t (&wire)[Batch::kMaxBytes]) {
-    return ConvertToWire(msg, wire, Batch::kMaxBytes);
+inline size_t Batch_ConvertToWire(const Batch& msg, uint8_t (&wire)[Batch::kMaxBytes]) {
+    return Batch_ConvertToWire(msg, wire, Batch::kMaxBytes);
 }
 
 // Converts the on-wire bytes `wire` (`len` of them) back into the host struct `msg`.
 // Returns DecodeResult::Ok() on success, or Fail(bit) if the frame ran out early.
-inline protodesigner::DecodeResult ConvertToHost(const uint8_t* wire, size_t len, Batch& msg) {
+inline protodesigner::DecodeResult Batch_ConvertToHost(const uint8_t* wire, size_t len, Batch& msg) {
     protodesigner::BitReader r(wire, len);
 
     // --- region 0 (Fixed) ---

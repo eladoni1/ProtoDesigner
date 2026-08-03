@@ -23,10 +23,18 @@ internal static class CppNaming
     };
 
     /// <summary>The C++ storage type that holds a field's decoded value.</summary>
+    /// <remarks>
+    /// <see cref="PrimitiveKind.Char"/> deliberately maps to <c>uint8_t</c> rather than <c>char</c>.
+    /// Plain <c>char</c> has implementation-defined signedness — signed on MSVC and x86 GCC, unsigned on
+    /// ARM — so the identical generated header would decode wire byte 254 as -2 on one target and 254 on
+    /// another. A protocol type cannot mean two different things depending on who compiled it. Printing a
+    /// generated string therefore needs a cast, which is a small price for a value that is the same
+    /// everywhere; a field that genuinely wants a signed byte declares <see cref="PrimitiveKind.I8"/>.
+    /// </remarks>
     public static string StorageType(PrimitiveKind kind) => kind switch
     {
         PrimitiveKind.Bool => "bool",
-        PrimitiveKind.Char => "char",
+        PrimitiveKind.Char => "uint8_t",
         PrimitiveKind.I8 => "int8_t",
         PrimitiveKind.U8 => "uint8_t",
         PrimitiveKind.I16 => "int16_t",
@@ -43,11 +51,27 @@ internal static class CppNaming
     /// <summary>A struct/enum type name: PascalCase, keyword-safe.</summary>
     public static string TypeName(string raw) => Sanitize(raw, pascal: true);
 
-    /// <summary>A member name derived from a (possibly dotted) IR field path: header.messageId → header_messageId.</summary>
+    /// <summary>A single member name: <c>messageId</c> → <c>messageId</c>.</summary>
     public static string MemberName(string path)
     {
         var flattened = path.Replace(".", "_").Replace("[]", "");
         return Sanitize(flattened, pascal: false);
+    }
+
+    /// <summary>
+    /// An access path into a host struct, keeping the dots: <c>header.messageId</c> stays
+    /// <c>header.messageId</c> so it addresses the nested member the generator declared.
+    /// </summary>
+    /// <remarks>
+    /// The counterpart to <see cref="MemberName"/>, which flattens. Each segment is sanitised on its own
+    /// so a name that needs escaping still gets it, but the structure survives.
+    /// </remarks>
+    public static string MemberPath(string path)
+    {
+        var segments = path.Replace("[]", "").Split('.', StringSplitOptions.RemoveEmptyEntries);
+        return segments.Length == 0
+            ? "_"
+            : string.Join(".", segments.Select(s => Sanitize(s, pascal: false)));
     }
 
     /// <summary>An enum member name, prefixed to avoid clashing with the enclosing scope.</summary>

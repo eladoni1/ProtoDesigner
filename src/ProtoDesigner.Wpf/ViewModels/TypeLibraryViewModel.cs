@@ -157,18 +157,27 @@ public sealed class TypeLibraryViewModel : ObservableObject
         return true;
     }
 
-    /// <summary>Seeds the plain host primitives so a new project can build a message immediately.</summary>
+    /// <summary>
+    /// Seeds the plain host primitives so a project can build a message immediately.
+    /// </summary>
+    /// <remarks>
+    /// Safe to call on an existing project: an entry is skipped when a primitive of that kind and name is
+    /// already present, so it adds what is missing and leaves everything else alone.
+    /// </remarks>
     public void SeedBuiltIns()
     {
         var kinds = new (PrimitiveKind Kind, string Name)[]
         {
             (PrimitiveKind.Bool, "bool"),
+            (PrimitiveKind.Char, "char"),
+            // Same kind as u8 and the same uint8_t on the wire — this is the C spelling, offered so a
+            // field can say "this is a byte of text" where that is what it means.
+            (PrimitiveKind.U8, "unsigned char"),
             (PrimitiveKind.U8, "u8"),   (PrimitiveKind.I8, "i8"),
             (PrimitiveKind.U16, "u16"), (PrimitiveKind.I16, "i16"),
             (PrimitiveKind.U32, "u32"), (PrimitiveKind.I32, "i32"),
             (PrimitiveKind.U64, "u64"), (PrimitiveKind.I64, "i64"),
             (PrimitiveKind.F32, "float"), (PrimitiveKind.F64, "double"),
-            (PrimitiveKind.Char, "char"),
         };
 
         foreach (var (kind, name) in kinds)
@@ -176,7 +185,7 @@ public sealed class TypeLibraryViewModel : ObservableObject
             var exists = _project.Project.Types.All
                 .OfType<ParameterType>()
                 .Any(p => p.Kind == kind && p.Name == name);
-            if (!exists) AddPrimitive(name, kind);
+            if (!exists) AddPrimitive(name, kind, kind.NaturalRange());
         }
     }
 

@@ -5,17 +5,25 @@
 #ifndef PROTODESIGNER_CONTROL_H
 #define PROTODESIGNER_CONTROL_H
 
-#include "protodesigner_runtime.h"
+#include "proto_types.h"
 
 namespace proto {
 
-// Enumeration 'Mode'.
-enum class Mode : uint32_t {
-    Idle = 0,
-    Arming = 1,
-    Running = 5,
-    Fault = 10,
+// Every message on bus 'Control' that carries an id. Ids are unique within a
+// bus and start at 1, so 0 is free to mean "no such message".
+enum class ControlMessageId : uint32_t {
+    NotAssigned = 0,
+    Status = 9u,
 };
+
+// Maps a wire id onto the message it identifies, or NotAssigned if this bus has none.
+inline ControlMessageId Control_MessageIdFromWire(uint32_t id) {
+    switch (id) {
+        case 9u: return ControlMessageId::Status;
+        default: break;
+    }
+    return ControlMessageId::NotAssigned;
+}
 
 // Message 'Status' (wire id 9) — fixed 24 bits / 3 bytes.
 struct Status {
@@ -24,14 +32,14 @@ struct Status {
     static constexpr size_t kMaxBits  = 24;
     static constexpr size_t kMaxBytes = 3;
 
-    Mode mode;   // 4 bits
-    uint16_t temperature;   // 4 bits, wire = (value - 1000) / 1
-    uint16_t checksum;   // 16 bits
+    Mode mode;
+    uint16_t temperature;   // 4 bits
+    uint16_t checksum;
 };
 
 // Converts the host struct `msg` into its on-wire form in `wire` (capacity `cap` bytes).
 // Returns the number of bytes written, or 0 if the buffer was too small.
-inline size_t ConvertToWire(const Status& msg, uint8_t* wire, size_t cap) {
+inline size_t Status_ConvertToWire(const Status& msg, uint8_t* wire, size_t cap) {
     protodesigner::BitWriter w(wire, cap);
 
     // --- region 0 (Fixed) ---
@@ -52,13 +60,13 @@ inline size_t ConvertToWire(const Status& msg, uint8_t* wire, size_t cap) {
 }
 
 // Same conversion into a correctly sized array. The capacity is checked at compile time.
-inline size_t ConvertToWire(const Status& msg, uint8_t (&wire)[Status::kMaxBytes]) {
-    return ConvertToWire(msg, wire, Status::kMaxBytes);
+inline size_t Status_ConvertToWire(const Status& msg, uint8_t (&wire)[Status::kMaxBytes]) {
+    return Status_ConvertToWire(msg, wire, Status::kMaxBytes);
 }
 
 // Converts the on-wire bytes `wire` (`len` of them) back into the host struct `msg`.
 // Returns DecodeResult::Ok() on success, or Fail(bit) if the frame ran out early.
-inline protodesigner::DecodeResult ConvertToHost(const uint8_t* wire, size_t len, Status& msg) {
+inline protodesigner::DecodeResult Status_ConvertToHost(const uint8_t* wire, size_t len, Status& msg) {
     protodesigner::BitReader r(wire, len);
 
     // --- region 0 (Fixed) ---
@@ -79,8 +87,8 @@ inline protodesigner::DecodeResult ConvertToHost(const uint8_t* wire, size_t len
 }
 
 // Same conversion from a full frame. Fixed-size message, so the length is implied.
-inline protodesigner::DecodeResult ConvertToHost(const uint8_t (&wire)[Status::kMaxBytes], Status& msg) {
-    return ConvertToHost(wire, Status::kMaxBytes, msg);
+inline protodesigner::DecodeResult Status_ConvertToHost(const uint8_t (&wire)[Status::kMaxBytes], Status& msg) {
+    return Status_ConvertToHost(wire, Status::kMaxBytes, msg);
 }
 
 } // namespace proto

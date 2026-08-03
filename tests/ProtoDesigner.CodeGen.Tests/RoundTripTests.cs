@@ -149,18 +149,20 @@ public class RoundTripTests
     {
         var ir = Corpus.BuildIr(Corpus.Quantized());
         var msg = ir.Messages.Single();
-        var step = 110m / 255m;   // one wire code, in degrees
+        var step = 110d / 255d;   // one wire code, in degrees
 
         var bytes = _codec.Encode(msg, new Dictionary<string, object?>
         {
-            ["temperature"] = (decimal)input,
-            ["battery"] = 0m,
+            ["temperature"] = input,
+            ["battery"] = 0d,
         });
         var decoded = _codec.Decode(msg, bytes);
 
-        var error = Math.Abs((decimal)decoded["temperature"]! - (decimal)input);
-        Assert.True(error <= step / 2m + 0.0000001m,
-            $"{input} came back with error {error}, more than half a code ({step / 2m}).");
+        // A float host decodes to a double: the full IEEE domain does not fit a decimal, and the
+        // conversion is evaluated in double anyway so that it matches the generated code bit for bit.
+        var error = Math.Abs((double)decoded["temperature"]! - input);
+        Assert.True(error <= step / 2d + 1e-9,
+            $"{input} came back with error {error}, more than half a code ({step / 2d}).");
     }
 
     /// <summary>
@@ -173,15 +175,68 @@ public class RoundTripTests
     [InlineData(-0.5)]
     [InlineData(0)]
     [InlineData(1e-9)]
+    [InlineData(1e300)]           // far outside decimal's range: a raw field must still carry it
+    [InlineData(double.MaxValue)]
+    [InlineData(double.Epsilon)]
     public void A_raw_float_field_round_trips_bit_exactly(double value)
     {
         var ir = Corpus.BuildIr(Corpus.RawFloats());
         var msg = ir.Messages.Single();
 
-        var bytes = _codec.Encode(msg, new Dictionary<string, object?> { ["reading"] = (decimal)value });
+        var bytes = _codec.Encode(msg, new Dictionary<string, object?> { ["reading"] = value });
         var decoded = _codec.Decode(msg, bytes);
 
-        Assert.Equal(value, (double)(decimal)decoded["reading"]!, precision: 12);
+        // Raw means raw: the bit pattern went out untouched, so it comes back identical, not merely close.
+        Assert.Equal(value, (double)decoded["reading"]!);
+    }
+
+    /// <summary>
+    /// A signed host biased onto non-negative codes must round-trip across the whole range. Taking the
+    /// wire's signedness from the host kind wrote code 0x80 and read it back as -128, so an input of 0
+    /// decoded as -200 and every value above the midpoint was silently destroyed.
+    /// </summary>
+    [Theory]
+    [InlineData(-100)]
+    [InlineData(-50)]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(50)]
+    [InlineData(100)]
+    public void A_signed_host_biased_onto_unsigned_codes_round_trips(int input)
+    {
+        var ir = Corpus.BuildIr(Corpus.BiasedSigned());
+        var msg = ir.Messages.Single();
+
+        var bytes = _codec.Encode(msg, new Dictionary<string, object?> { ["tilt"] = input });
+        var decoded = _codec.Decode(msg, bytes);
+
+        // 200 units across 255 codes, so half a code is a shade under 0.4.
+        var step = 200m / 255m;
+        var error = Math.Abs((decimal)decoded["tilt"]! - input);
+        Assert.True(error <= step / 2m + 0.0000001m,
+            $"{input} came back as {decoded["tilt"]} (error {error}, half a code is {step / 2m}).");
+    }
+
+    [Fact]
+    public void The_biased_signed_field_is_marked_unsigned_on_the_wire()
+    {
+        var ir = Corpus.BuildIr(Corpus.BiasedSigned());
+        var field = ir.Messages.Single().Fields.Single();
+
+        // The host is I16; the wire is not signed, because the transform cannot produce a negative code.
+        Assert.Equal(PrimitiveKind.I16, field.Primitive);
+        Assert.False(field.WireIsSigned);
+    }
+
+    [Fact]
+    public void An_unbiased_signed_field_is_still_signed_on_the_wire()
+    {
+        var ir = Corpus.BuildIr(Corpus.Scalars());
+        var delta = ir.Messages.Single().Fields.Single(f => f.Path == "delta");
+
+        Assert.Equal(PrimitiveKind.I32, delta.Primitive);
+        Assert.True(delta.WireIsSigned);
     }
 
     [Fact]

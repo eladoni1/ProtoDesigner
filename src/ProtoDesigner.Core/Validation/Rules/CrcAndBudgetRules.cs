@@ -93,10 +93,19 @@ public sealed class UnreferencedTypeRule : IValidationRule
     {
         var reachable = ctx.ReachableTypes;
         foreach (var type in ctx.Project.Types.All)
+        {
+            // Plain primitives are vocabulary, not design. A project seeds bool, char and the integer
+            // widths so they are there when a field needs one; flagging each unused u64 buried the real
+            // findings under a dozen notes about types the user never chose to create. An unused enum,
+            // struct or array is different — somebody built that and then did not use it, which is worth
+            // saying. Nothing is generated for an unreferenced type either way.
+            if (type is ParameterType) continue;
+
             if (!reachable.Contains(type.Id))
                 yield return new Diagnostic(Code, Severity.Info,
                     $"Type '{type.Name}' is not used by any message. Remove it or add a field that references it.",
                     EntityPath.ForType(type));
+        }
     }
 }
 

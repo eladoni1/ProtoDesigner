@@ -154,6 +154,100 @@ internal static class Corpus
         return (p, bus);
     }
 
+    /// <summary>
+    /// A signed host whose transform biases its range non-negative. The wire codes run 0..255, so the
+    /// field must be written and read <em>unsigned</em> even though the host type is signed — the case
+    /// that silently corrupted every value from code 0x80 up while signedness was taken from the host.
+    /// </summary>
+    public static (Project Project, Bus Bus) BiasedSigned()
+    {
+        var p = new Project("BiasedSignedSample");
+        var range = new NumericRange(-100, 100);
+
+        var tilt = p.Types.Add(new ParameterType(TypeId.New(), "Tilt", PrimitiveKind.I16, range)
+        {
+            WireForm = WireForm.Unsigned,
+            WireBits = 8,
+        });
+
+        var bus = new Bus(BusId.New(), "Attitude", Transport.Uart);
+        var m = new Message(MessageId.New(), "Angles") { WireId = 4 };
+        m.Fields.Add(new FieldBinding(FieldId.New(), "tilt", tilt.Id, new FieldEncoding
+        {
+            BitWidth = 8,
+            AllowBitPacking = true,
+            Transform = new ScalarTransform(range.Min, BitMath.MinimumScale(range, 8)),
+        }));
+        bus.Messages.Add(m);
+        p.Buses.Add(bus);
+        return (p, bus);
+    }
+
+    /// <summary>
+    /// One struct used by two messages, plus a struct nested inside another. Proves the shared type is
+    /// declared once and referenced by name rather than flattened into each user.
+    /// </summary>
+    public static (Project Project, Bus Bus) SharedStruct()
+    {
+        var p = new Project("SharedStructSample");
+        var u8 = p.Types.Add(new ParameterType(TypeId.New(), "u8", PrimitiveKind.U8));
+        var u16 = p.Types.Add(new ParameterType(TypeId.New(), "u16", PrimitiveKind.U16));
+        var u32 = p.Types.Add(new ParameterType(TypeId.New(), "u32", PrimitiveKind.U32));
+
+        var header = p.Types.Add(new StructType(TypeId.New(), "Header")
+            .With(new FieldBinding(FieldId.New(), "messageId", u8.Id),
+                  new FieldBinding(FieldId.New(), "timestamp", u32.Id)));
+
+        // A struct inside a struct: the inner one must be declared before the outer.
+        var envelope = p.Types.Add(new StructType(TypeId.New(), "Envelope")
+            .With(new FieldBinding(FieldId.New(), "head", header.Id),
+                  new FieldBinding(FieldId.New(), "sequence", u16.Id)));
+
+        var bus = new Bus(BusId.New(), "Shared", Transport.Ethernet);
+
+        var first = new Message(MessageId.New(), "Alpha") { WireId = 1 };
+        first.Fields.Add(new FieldBinding(FieldId.New(), "header", header.Id));
+        first.Fields.Add(new FieldBinding(FieldId.New(), "value", u16.Id));
+
+        var second = new Message(MessageId.New(), "Beta") { WireId = 2 };
+        second.Fields.Add(new FieldBinding(FieldId.New(), "header", header.Id));
+        second.Fields.Add(new FieldBinding(FieldId.New(), "envelope", envelope.Id));
+
+        bus.Messages.Add(first);
+        bus.Messages.Add(second);
+        p.Buses.Add(bus);
+        return (p, bus);
+    }
+
+    /// <summary>
+    /// One project, two buses, both using the same Header. Types are project-wide, so this is one struct
+    /// used twice — and both bus headers have to be includable in the same translation unit.
+    /// </summary>
+    public static (Project Project, Bus First) TwoBusesSharingAStruct()
+    {
+        var p = new Project("TwoBusSample");
+        var u8 = p.Types.Add(new ParameterType(TypeId.New(), "u8", PrimitiveKind.U8));
+        var u32 = p.Types.Add(new ParameterType(TypeId.New(), "u32", PrimitiveKind.U32));
+
+        var header = p.Types.Add(new StructType(TypeId.New(), "Header")
+            .With(new FieldBinding(FieldId.New(), "messageId", u8.Id),
+                  new FieldBinding(FieldId.New(), "timestamp", u32.Id)));
+
+        var primary = new Bus(BusId.New(), "Primary", Transport.Ethernet);
+        var m1 = new Message(MessageId.New(), "Status") { WireId = 1 };
+        m1.Fields.Add(new FieldBinding(FieldId.New(), "header", header.Id));
+        primary.Messages.Add(m1);
+
+        var backup = new Bus(BusId.New(), "Backup", Transport.Uart);
+        var m2 = new Message(MessageId.New(), "Heartbeat") { WireId = 1 };   // ids restart per bus
+        m2.Fields.Add(new FieldBinding(FieldId.New(), "header", header.Id));
+        backup.Messages.Add(m2);
+
+        p.Buses.Add(primary);
+        p.Buses.Add(backup);
+        return (p, primary);
+    }
+
     public static ProtocolIr BuildIr((Project Project, Bus Bus) sample) =>
         new IrBuilder().Build(sample.Project, sample.Bus);
 
@@ -165,5 +259,7 @@ internal static class Corpus
         yield return ("dynamic-array", DynamicArray);
         yield return ("quantized", Quantized);
         yield return ("raw-floats", RawFloats);
+        yield return ("biased-signed", BiasedSigned);
+        yield return ("shared-struct", SharedStruct);
     }
 }

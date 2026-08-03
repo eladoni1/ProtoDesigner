@@ -13,4 +13,10 @@
     <ProjectReference Include="..\ProtoDesigner.Core\ProtoDesigner.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The C++ cross-check emits a driver that has to name the same structs the generator named, so it
+         needs CppNaming rather than a second copy of the sanitising rules that could drift. -->
+    <InternalsVisibleTo Include="ProtoDesigner.CodeGen.Tests" />
+  </ItemGroup>
+
 </Project>

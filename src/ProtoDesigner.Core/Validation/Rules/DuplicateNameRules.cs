@@ -56,6 +56,31 @@ public sealed class DuplicateTypeNameRule : IValidationRule
     }
 }
 
+/// <summary>
+/// Message id 0 is reserved to mean "not assigned", so no message may carry it.
+/// </summary>
+/// <remarks>
+/// Ids are scoped to a bus and start at 1. Keeping 0 out of circulation is what lets a receiver treat it
+/// as "I do not recognise this frame" — the generated <c>&lt;Bus&gt;MessageId</c> enum returns
+/// <c>NotAssigned = 0</c> for an unknown id, which would be indistinguishable from a real message if 0
+/// were ever handed out.
+/// </remarks>
+public sealed class WireIdNotAssignedRule : IValidationRule
+{
+    public string Code => DiagnosticCodes.WireIdNotAssigned;
+
+    public IEnumerable<Diagnostic> Validate(ValidationContext ctx)
+    {
+        foreach (var bus in ctx.Project.Buses)
+            foreach (var message in bus.Messages)
+                if (message.WireId == 0)
+                    yield return new Diagnostic(Code, Severity.Error,
+                        $"Message '{message.Name}' has id 0, which is reserved to mean 'not assigned'. "
+                        + "Message ids start at 1 and are unique within a bus.",
+                        EntityPath.ForMessage(bus, message));
+    }
+}
+
 public sealed class DuplicateWireIdRule : IValidationRule
 {
     public string Code => DiagnosticCodes.DuplicateWireId;

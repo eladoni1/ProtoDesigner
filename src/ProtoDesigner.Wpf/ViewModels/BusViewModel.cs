@@ -109,14 +109,8 @@ public sealed class BusViewModel : ObservableObject
         ? "no modules"
         : string.Join(", ", Modules.Select(m => m.Name));
 
-    /// <summary>Lowest non-negative integer not already used on this bus.</summary>
-    private int NextWireId()
-    {
-        var used = Messages.Select(m => m.WireId).Where(id => id.HasValue).Select(id => id!.Value).ToHashSet();
-        var candidate = 0;
-        while (used.Contains(candidate)) candidate++;
-        return candidate;
-    }
+    /// <summary>Next free message id. The rule lives on <see cref="Core.Model.Bus"/>; this just asks.</summary>
+    private int NextWireId() => Bus.NextMessageId();
 
     private string NextMessageName(string? preferred)
     {

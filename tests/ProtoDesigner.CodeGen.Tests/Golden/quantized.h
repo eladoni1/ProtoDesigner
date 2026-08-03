@@ -5,9 +5,25 @@
 #ifndef PROTODESIGNER_SENSORS_H
 #define PROTODESIGNER_SENSORS_H
 
-#include "protodesigner_runtime.h"
+#include "proto_types.h"
 
 namespace proto {
+
+// Every message on bus 'Sensors' that carries an id. Ids are unique within a
+// bus and start at 1, so 0 is free to mean "no such message".
+enum class SensorsMessageId : uint32_t {
+    NotAssigned = 0,
+    Ambient = 5u,
+};
+
+// Maps a wire id onto the message it identifies, or NotAssigned if this bus has none.
+inline SensorsMessageId Sensors_MessageIdFromWire(uint32_t id) {
+    switch (id) {
+        case 5u: return SensorsMessageId::Ambient;
+        default: break;
+    }
+    return SensorsMessageId::NotAssigned;
+}
 
 // Message 'Ambient' (wire id 5) — fixed 16 bits / 2 bytes.
 struct Ambient {
@@ -16,13 +32,13 @@ struct Ambient {
     static constexpr size_t kMaxBits  = 16;
     static constexpr size_t kMaxBytes = 2;
 
-    double temperature;   // 8 bits, wire = (value + 40) / 0.43137254901960786
-    float battery;   // 8 bits, wire = (value + 0) / 0.3921568627450981
+    double temperature;   // 8 bits
+    float battery;   // 8 bits
 };
 
 // Converts the host struct `msg` into its on-wire form in `wire` (capacity `cap` bytes).
 // Returns the number of bytes written, or 0 if the buffer was too small.
-inline size_t ConvertToWire(const Ambient& msg, uint8_t* wire, size_t cap) {
+inline size_t Ambient_ConvertToWire(const Ambient& msg, uint8_t* wire, size_t cap) {
     protodesigner::BitWriter w(wire, cap);
 
     // --- region 0 (Fixed) ---
@@ -40,13 +56,13 @@ inline size_t ConvertToWire(const Ambient& msg, uint8_t* wire, size_t cap) {
 }
 
 // Same conversion into a correctly sized array. The capacity is checked at compile time.
-inline size_t ConvertToWire(const Ambient& msg, uint8_t (&wire)[Ambient::kMaxBytes]) {
-    return ConvertToWire(msg, wire, Ambient::kMaxBytes);
+inline size_t Ambient_ConvertToWire(const Ambient& msg, uint8_t (&wire)[Ambient::kMaxBytes]) {
+    return Ambient_ConvertToWire(msg, wire, Ambient::kMaxBytes);
 }
 
 // Converts the on-wire bytes `wire` (`len` of them) back into the host struct `msg`.
 // Returns DecodeResult::Ok() on success, or Fail(bit) if the frame ran out early.
-inline protodesigner::DecodeResult ConvertToHost(const uint8_t* wire, size_t len, Ambient& msg) {
+inline protodesigner::DecodeResult Ambient_ConvertToHost(const uint8_t* wire, size_t len, Ambient& msg) {
     protodesigner::BitReader r(wire, len);
 
     // --- region 0 (Fixed) ---
@@ -64,8 +80,8 @@ inline protodesigner::DecodeResult ConvertToHost(const uint8_t* wire, size_t len
 }
 
 // Same conversion from a full frame. Fixed-size message, so the length is implied.
-inline protodesigner::DecodeResult ConvertToHost(const uint8_t (&wire)[Ambient::kMaxBytes], Ambient& msg) {
-    return ConvertToHost(wire, Ambient::kMaxBytes, msg);
+inline protodesigner::DecodeResult Ambient_ConvertToHost(const uint8_t (&wire)[Ambient::kMaxBytes], Ambient& msg) {
+    return Ambient_ConvertToHost(wire, Ambient::kMaxBytes, msg);
 }
 
 } // namespace proto

@@ -126,9 +126,13 @@ public sealed class CommandLineTests : IDisposable
     [Fact]
     public void Quiet_suppresses_non_error_diagnostics()
     {
-        // A clean project still emits Info diagnostics (unreferenced types etc.).
+        // A clean project still emits Info diagnostics. An unreferenced STRUCT is the trigger here:
+        // unused primitives are deliberately not reported, since every project seeds the integer widths
+        // and reporting each unused one would drown the real findings.
         var project = CleanProject();
-        project.Types.Add(new ParameterType(TypeId.New(), "Unused", PrimitiveKind.U32));
+        var payload = project.Types.All.OfType<ParameterType>().First();
+        project.Types.Add(new StructType(TypeId.New(), "Unused")
+            .With(new FieldBinding(FieldId.New(), "x", payload.Id)));
         var path = WriteProject(project);
 
         var (_, verbose, _) = Run("validate", path);
@@ -226,5 +230,136 @@ public sealed class CommandLineTests : IDisposable
         var (code, _, err) = Run("generate", path, "--out", Path.Combine(_dir, "x"), "--bus", "Ghost");
         Assert.Equal(CommandLine.ExitUsage, code);
         Assert.Contains("Ghost", err, StringComparison.Ordinal);
+    }
+
+    // ---- scoped generation ---------------------------------------------------------------------
+
+    /// <summary>
+    /// Two buses. Sensor sits on both, so a module-scoped build must cover both. Beta involves neither
+    /// Sensor nor Logger, which is what proves the filter is doing something.
+    /// </summary>
+    private static Project RoutedProject()
+    {
+        var p = new Project("Routed");
+        var u8 = p.Types.Add(new ParameterType(TypeId.New(), "u8", PrimitiveKind.U8));
+
+        var main = new Bus(BusId.New(), "Main", Transport.Ethernet);
+        var sensor = main.AddModule("Sensor");
+        var controller = main.AddModule("Controller");
+
+        var alpha = new Message(MessageId.New(), "Alpha") { WireId = 1 };
+        alpha.Fields.Add(new FieldBinding(FieldId.New(), "x", u8.Id));
+        alpha.Routes.Add(new MessageRoute(sensor.Id, controller.Id));
+
+        var beta = new Message(MessageId.New(), "Beta") { WireId = 2 };
+        beta.Fields.Add(new FieldBinding(FieldId.New(), "y", u8.Id));
+        beta.Routes.Add(new MessageRoute(controller.Id, controller.Id));
+
+        main.Messages.Add(alpha);
+        main.Messages.Add(beta);
+
+        var aux = new Bus(BusId.New(), "Aux", Transport.Uart);
+        var sensorOnAux = aux.AddModule("Sensor");
+        var logger = aux.AddModule("Logger");
+
+        var gamma = new Message(MessageId.New(), "Gamma") { WireId = 1 };
+        gamma.Fields.Add(new FieldBinding(FieldId.New(), "z", u8.Id));
+        gamma.Routes.Add(new MessageRoute(sensorOnAux.Id, logger.Id));
+        aux.Messages.Add(gamma);
+
+        p.Buses.Add(main);
+        p.Buses.Add(aux);
+        return p;
+    }
+
+    [Fact]
+    public void A_subset_of_a_buses_messages_can_be_generated()
+    {
+        var path = WriteProject(RoutedProject());
+        var outDir = Path.Combine(_dir, "subset");
+
+        var (code, output, _) = Run("generate", path, "--out", outDir, "--bus", "Main", "--messages", "Alpha");
+
+        Assert.Equal(CommandLine.ExitOk, code);
+        var header = File.ReadAllText(Path.Combine(outDir, "main.h"));
+        Assert.Contains("struct Alpha {", header, StringComparison.Ordinal);
+        Assert.DoesNotContain("struct Beta {", header, StringComparison.Ordinal);
+        Assert.Contains("1 message(s)", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_module_generates_every_bus_it_sits_on()
+    {
+        var path = WriteProject(RoutedProject());
+        var outDir = Path.Combine(_dir, "bymodule");
+
+        var (code, output, _) = Run("generate", path, "--out", outDir, "--module", "Sensor");
+
+        Assert.Equal(CommandLine.ExitOk, code);
+        Assert.Contains("2 bus(es)", output, StringComparison.Ordinal);
+
+        // Alpha (Main) and Gamma (Aux) involve Sensor; Beta does not.
+        Assert.Contains("struct Alpha {", File.ReadAllText(Path.Combine(outDir, "main.h")), StringComparison.Ordinal);
+        Assert.DoesNotContain("struct Beta {", File.ReadAllText(Path.Combine(outDir, "main.h")), StringComparison.Ordinal);
+        Assert.Contains("struct Gamma {", File.ReadAllText(Path.Combine(outDir, "aux.h")), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_module_on_one_bus_only_generates_that_bus()
+    {
+        var path = WriteProject(RoutedProject());
+        var outDir = Path.Combine(_dir, "logger");
+
+        var (code, _, _) = Run("generate", path, "--out", outDir, "--module", "Logger");
+
+        Assert.Equal(CommandLine.ExitOk, code);
+        Assert.True(File.Exists(Path.Combine(outDir, "aux.h")));
+        Assert.False(File.Exists(Path.Combine(outDir, "main.h")));
+    }
+
+    [Fact]
+    public void An_unknown_module_lists_the_ones_that_do_exist()
+    {
+        var path = WriteProject(RoutedProject());
+        var (code, _, err) = Run("generate", path, "--out", Path.Combine(_dir, "x"), "--module", "Ghost");
+
+        Assert.Equal(CommandLine.ExitUsage, code);
+        Assert.Contains("Ghost", err, StringComparison.Ordinal);
+        Assert.Contains("Sensor", err, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_unknown_message_name_is_reported_rather_than_silently_skipped()
+    {
+        var path = WriteProject(RoutedProject());
+        var (code, _, err) = Run("generate", path, "--out", Path.Combine(_dir, "x"),
+            "--bus", "Main", "--messages", "Alpha,Nope");
+
+        Assert.Equal(CommandLine.ExitUsage, code);
+        Assert.Contains("Nope", err, StringComparison.Ordinal);
+    }
+
+    // --module already answers both questions; combining leaves two answers and no winner.
+    [Fact]
+    public void Module_cannot_be_combined_with_bus_or_messages()
+    {
+        var path = WriteProject(RoutedProject());
+        var outDir = Path.Combine(_dir, "x");
+
+        var (busCode, _, _) = Run("generate", path, "--out", outDir, "--module", "Sensor", "--bus", "Main");
+        Assert.Equal(CommandLine.ExitUsage, busCode);
+
+        var (msgCode, _, _) = Run("generate", path, "--out", outDir, "--module", "Sensor", "--messages", "Alpha");
+        Assert.Equal(CommandLine.ExitUsage, msgCode);
+    }
+
+    [Fact]
+    public void Messages_without_a_bus_is_a_usage_error()
+    {
+        var path = WriteProject(RoutedProject());
+        var (code, _, err) = Run("generate", path, "--out", Path.Combine(_dir, "x"), "--messages", "Alpha");
+
+        Assert.Equal(CommandLine.ExitUsage, code);
+        Assert.Contains("--bus", err, StringComparison.Ordinal);
     }
 }

@@ -102,11 +102,10 @@ public sealed class ReferenceCodec
             return;
         }
 
-        var value = ToDecimal(raw);
-        var code = Quantize(field.Transform.ToWire(value));
+        var code = ToWireCode(field.Primitive, field.Transform, raw);
         // The wire code must fit the width. Signed vs unsigned is decided by whether the transform
         // (or an inherently signed primitive) can produce negative codes.
-        if (IsSigned(field.Primitive))
+        if (field.WireIsSigned)
             buf.WriteSigned(code, field.BitWidth, field.Endianness);
         else
             buf.WriteUnsigned((ulong)code, field.BitWidth, field.Endianness);
@@ -137,8 +136,8 @@ public sealed class ReferenceCodec
                 continue;
             }
 
-            var code = Quantize(field.Transform.ToWire(ToDecimal(element)));
-            if (IsSigned(arr.ElementPrimitive))
+            var code = ToWireCode(arr.ElementPrimitive, field.Transform, element);
+            if (field.WireIsSigned)
                 buf.WriteSigned(code, arr.ElementBits, field.Endianness);
             else
                 buf.WriteUnsigned((ulong)code, arr.ElementBits, field.Endianness);
@@ -172,10 +171,10 @@ public sealed class ReferenceCodec
         if (IsRawFloat(field.Primitive, field.Transform))
             return BitsToFloat(field.Primitive, buf.ReadUnsigned(field.BitWidth, field.Endianness));
 
-        long wire = IsSigned(field.Primitive)
+        long wire = field.WireIsSigned
             ? buf.ReadSigned(field.BitWidth, field.Endianness)
             : (long)buf.ReadUnsigned(field.BitWidth, field.Endianness);
-        return field.Transform.FromWire(wire);
+        return FromWireCode(field.Primitive, field.Transform, wire);
     }
 
     private static object ReadArray(BitBuffer buf, IrMessage message, IrField field, IrArrayInfo arr,
@@ -200,10 +199,10 @@ public sealed class ReferenceCodec
                 continue;
             }
 
-            long wire = IsSigned(arr.ElementPrimitive)
+            long wire = field.WireIsSigned
                 ? buf.ReadSigned(arr.ElementBits, field.Endianness)
                 : (long)buf.ReadUnsigned(arr.ElementBits, field.Endianness);
-            list.Add(field.Transform.FromWire(wire));
+            list.Add(FromWireCode(arr.ElementPrimitive, field.Transform, wire));
         }
         return list;
     }
@@ -216,23 +215,56 @@ public sealed class ReferenceCodec
     private static bool IsFloat(PrimitiveKind kind) => kind is PrimitiveKind.F32 or PrimitiveKind.F64;
 
     /// <summary>
+    /// Clamps a value to what its host type can actually represent.
+    /// </summary>
+    /// <remarks>
+    /// Only <see cref="PrimitiveKind.Bool"/> needs it, and it is not pedantry: a generated struct holds a
+    /// bool in a C++ <c>bool</c> (or a C# <c>bool</c>), which turns every non-zero value into 1. A
+    /// reference that stored 14 in a 4-bit bool field would be promising a wire format no generator can
+    /// produce — and the two really did disagree, on the bytes, until this was added.
+    /// </remarks>
+    private static decimal Normalise(PrimitiveKind kind, decimal value) =>
+        kind == PrimitiveKind.Bool ? (value != 0m ? 1m : 0m) : value;
+
+    /// <summary>
     /// A float host with no transform: the IEEE bit pattern goes on the wire untouched. The wire-encoding
     /// propagator guarantees the pairing — a float wire form produces no transform, and an integer wire
     /// form on a float host always produces one.
     /// </summary>
     private static bool IsRawFloat(PrimitiveKind kind, ScalarTransform t) => IsFloat(kind) && t.IsIdentity;
 
+    /// <summary>
+    /// Reads a raw float field's value as a <see cref="double"/>, never via <see cref="decimal"/>.
+    /// </summary>
+    /// <remarks>
+    /// A raw IEEE field carries the full floating-point domain, which <see cref="decimal"/> cannot hold:
+    /// <c>float.MaxValue</c> is ~3.4e38 against decimal's ~7.9e28, so routing through decimal throws on
+    /// perfectly ordinary values. Quantized fields are different — those have a declared range and stay in
+    /// decimal, which is what keeps their scale arithmetic exact.
+    /// </remarks>
     private static ulong FloatBits(PrimitiveKind kind, object? raw)
     {
-        var value = (double)ToDecimal(raw);
+        var value = ToDouble(raw);
         return kind == PrimitiveKind.F32
             ? BitConverter.SingleToUInt32Bits((float)value)
             : BitConverter.DoubleToUInt64Bits(value);
     }
 
-    private static decimal BitsToFloat(PrimitiveKind kind, ulong bits) => kind == PrimitiveKind.F32
-        ? (decimal)BitConverter.UInt32BitsToSingle((uint)bits)
-        : (decimal)BitConverter.UInt64BitsToDouble(bits);
+    /// <summary>Boxes a <see cref="double"/> — again, the full IEEE domain does not fit a decimal.</summary>
+    private static object BitsToFloat(PrimitiveKind kind, ulong bits) => kind == PrimitiveKind.F32
+        ? (double)BitConverter.UInt32BitsToSingle((uint)bits)
+        : BitConverter.UInt64BitsToDouble(bits);
+
+    private static double ToDouble(object? value) => value switch
+    {
+        null => 0d,
+        double d => d,
+        float f => f,
+        decimal m => (double)m,
+        bool b => b ? 1d : 0d,
+        IConvertible c => c.ToDouble(System.Globalization.CultureInfo.InvariantCulture),
+        _ => throw new InvalidOperationException($"Cannot use {value.GetType().Name} as a floating-point value."),
+    };
 
     /// <summary>
     /// Rounds a scaled value to the nearest wire code, half away from zero — the exact rule the generated
@@ -242,6 +274,54 @@ public sealed class ReferenceCodec
     /// </summary>
     private static long Quantize(decimal wire) =>
         decimal.ToInt64(decimal.Round(wire, MidpointRounding.AwayFromZero));
+
+    /// <summary>Bit-identical to <c>protodesigner::quantize</c> in the emitted C++ runtime.</summary>
+    private static long QuantizeDouble(double wire) => (long)(wire < 0.0 ? wire - 0.5 : wire + 0.5);
+
+    /// <summary>
+    /// Whether a field's value-to-wire conversion is evaluated in floating point.
+    /// </summary>
+    /// <remarks>
+    /// This mirrors the identically named predicate in the C++ generator, and the two must agree: it is
+    /// what decides whether this reference computes in <see cref="double"/> or in <see cref="decimal"/>.
+    /// </remarks>
+    private static bool IsFloatingMath(PrimitiveKind host, ScalarTransform t) =>
+        IsFloat(host) || decimal.Truncate(t.Scale) != t.Scale;
+
+    /// <summary>
+    /// Converts a host value to its wire code, in whichever arithmetic the generated code will use.
+    /// </summary>
+    /// <remarks>
+    /// The arithmetic has to match, not merely be more accurate. Generated C++ evaluates a fractional
+    /// scale in <c>double</c>; computing the same expression here in exact <see cref="decimal"/> put the
+    /// two on opposite sides of a rounding tie and produced genuinely different bytes — the midpoint of a
+    /// -40..70 range in 8 bits landed on code 127 here and 128 there. An integer pipeline with an integral
+    /// transform stays in decimal, where it is exact and where a detour through double would start losing
+    /// precision above 2^53.
+    /// </remarks>
+    private static long ToWireCode(PrimitiveKind host, ScalarTransform t, object? raw)
+    {
+        if (!IsFloatingMath(host, t))
+            return Quantize(t.ToWire(Normalise(host, ToDecimal(raw))));
+
+        var value = host == PrimitiveKind.Bool ? (ToDouble(raw) != 0d ? 1d : 0d) : ToDouble(raw);
+        var wire = (value - (double)t.Offset) / (double)t.Scale;
+        return QuantizeDouble(wire);
+    }
+
+    /// <summary>The inverse of <see cref="ToWireCode"/>, in the same arithmetic.</summary>
+    private static object FromWireCode(PrimitiveKind host, ScalarTransform t, long wire)
+    {
+        if (!IsFloatingMath(host, t))
+            return Normalise(host, t.FromWire(wire));
+
+        var value = (wire * (double)t.Scale) + (double)t.Offset;
+
+        // A float host keeps the fractional part — that IS the decoded value. An integer host rounds,
+        // exactly as the generated cast-through-quantize does.
+        if (IsFloat(host)) return value;
+        return Normalise(host, QuantizeDouble(value));
+    }
 
     private static decimal ToDecimal(object? value) => value switch
     {

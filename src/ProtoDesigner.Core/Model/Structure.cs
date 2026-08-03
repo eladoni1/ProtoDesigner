@@ -214,6 +214,26 @@ public sealed class Bus
 
     public Module? FindModule(ModuleId id) => Modules.FirstOrDefault(m => m.Id == id);
 
+    /// <summary>The lowest id a message may carry. 0 is reserved to mean "not assigned".</summary>
+    public const int FirstValidMessageId = 1;
+
+    /// <summary>
+    /// Lowest unused message id on this bus, starting at <see cref="FirstValidMessageId"/>.
+    /// </summary>
+    /// <remarks>
+    /// Ids are scoped to a bus — two buses may both use 1, and normally do — and 0 is never handed out.
+    /// Reserving it is what lets a receiver read 0 as "I do not recognise this frame": the generated
+    /// per-bus id enum returns <c>NotAssigned = 0</c> for an unknown id, which would be ambiguous if a
+    /// real message could also be 0.
+    /// </remarks>
+    public int NextMessageId()
+    {
+        var used = Messages.Where(m => m.WireId.HasValue).Select(m => m.WireId!.Value).ToHashSet();
+        var candidate = FirstValidMessageId;
+        while (used.Contains(candidate)) candidate++;
+        return candidate;
+    }
+
     /// <summary>
     /// Removes a module and every route that referenced it. Routes are dropped rather than left dangling:
     /// a half-route names a module that no longer exists, which nothing downstream can act on.

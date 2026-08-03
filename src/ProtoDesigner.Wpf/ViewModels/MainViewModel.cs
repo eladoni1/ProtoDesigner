@@ -55,6 +55,10 @@ public sealed class MainViewModel : ObservableObject
         var project = new Core.Model.Project("Untitled");
         Project = new ProjectViewModel(project);
         Project.Types.SeedBuiltIns();
+
+        // Seeding routes through the journal, which marks the project dirty. A brand-new project holding
+        // nothing but the built-ins has no work in it worth warning about on close.
+        Project.MarkSaved();
     }
 
     private void OpenProject(object? _)
@@ -200,6 +204,12 @@ public sealed class MainViewModel : ObservableObject
         project.Buses.Add(bus);
 
         var vm = new ProjectViewModel(project);
+
+        // The sample declares only the handful of types its own messages need, so bool, char and the
+        // wider integers were absent from the Types tab on launch and looked as though the tool did not
+        // support them. Seeding fills in the rest; entries the sample already declared are skipped.
+        vm.Types.SeedBuiltIns();
+
         vm.MarkSaved();
         vm.SelectedMessage = vm.Buses.FirstOrDefault()?.Messages.FirstOrDefault();
         return vm;

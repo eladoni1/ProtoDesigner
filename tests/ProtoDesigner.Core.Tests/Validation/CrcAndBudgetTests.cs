@@ -47,13 +47,45 @@ public class CrcAndBudgetTests
         b.Run().HasNo(DiagnosticCodes.MtuExceeded);
     }
 
+    // A composed type nobody uses is worth saying: somebody built it and then did not wire it up.
     [Fact]
-    public void Unreferenced_type_reports_PD0060_info()
+    public void An_unreferenced_struct_reports_PD0060_info()
     {
         var b = new ValidationBuilder();
-        b.Prim("Unused", PrimitiveKind.U8);
+        var u8 = b.Prim("u8", PrimitiveKind.U8);
+        b.Struct("Unused", ValidationBuilder.F("x", u8));
+        b.NewMessage("M", ValidationBuilder.F("y", u8));
 
         var d = b.Run().Has(DiagnosticCodes.UnreferencedType);
         Assert.Equal(Severity.Info, d.Severity);
+        Assert.Contains("Unused", d.Message);
+    }
+
+    [Fact]
+    public void An_unreferenced_enum_reports_PD0060_info()
+    {
+        var b = new ValidationBuilder();
+        var u8 = b.Prim("u8", PrimitiveKind.U8);
+        b.Enum("Unused", PrimitiveKind.U8, ("A", 0));
+        b.NewMessage("M", ValidationBuilder.F("y", u8));
+
+        b.Run().Has(DiagnosticCodes.UnreferencedType);
+    }
+
+    /// <summary>
+    /// Primitives are vocabulary, not design. A project seeds bool, char and every integer width so one
+    /// is there when a field needs it; reporting each unused u64 put a dozen notes in the pane about
+    /// types the user never chose to create, and buried the findings that mattered.
+    /// </summary>
+    [Fact]
+    public void An_unreferenced_primitive_is_not_reported()
+    {
+        var b = new ValidationBuilder();
+        var u8 = b.Prim("u8", PrimitiveKind.U8);
+        b.Prim("i64", PrimitiveKind.I64);
+        b.Prim("bool", PrimitiveKind.Bool);
+        b.NewMessage("M", ValidationBuilder.F("y", u8));
+
+        b.Run().HasNo(DiagnosticCodes.UnreferencedType);
     }
 }

@@ -5,9 +5,25 @@
 #ifndef PROTODESIGNER_TELEMETRY_H
 #define PROTODESIGNER_TELEMETRY_H
 
-#include "protodesigner_runtime.h"
+#include "proto_types.h"
 
 namespace proto {
+
+// Every message on bus 'Telemetry' that carries an id. Ids are unique within a
+// bus and start at 1, so 0 is free to mean "no such message".
+enum class TelemetryMessageId : uint32_t {
+    NotAssigned = 0,
+    Frame = 12u,
+};
+
+// Maps a wire id onto the message it identifies, or NotAssigned if this bus has none.
+inline TelemetryMessageId Telemetry_MessageIdFromWire(uint32_t id) {
+    switch (id) {
+        case 12u: return TelemetryMessageId::Frame;
+        default: break;
+    }
+    return TelemetryMessageId::NotAssigned;
+}
 
 // Message 'Frame' (wire id 12) — fixed 104 bits / 13 bytes.
 struct Frame {
@@ -16,25 +32,24 @@ struct Frame {
     static constexpr size_t kMaxBits  = 104;
     static constexpr size_t kMaxBytes = 13;
 
-    uint8_t header_messageId;   // 8 bits
-    uint32_t header_timestamp;   // 32 bits
-    // 'samples': exactly 4 elements, 16 bits per element
+    Header header;
+    // 'samples': exactly 4 elements
     uint16_t samples[4];
 };
 
 // Converts the host struct `msg` into its on-wire form in `wire` (capacity `cap` bytes).
 // Returns the number of bytes written, or 0 if the buffer was too small.
-inline size_t ConvertToWire(const Frame& msg, uint8_t* wire, size_t cap) {
+inline size_t Frame_ConvertToWire(const Frame& msg, uint8_t* wire, size_t cap) {
     protodesigner::BitWriter w(wire, cap);
 
     // --- region 0 (Fixed) ---
     const size_t r0 = w.bit_length();
     // header.messageId
     if (w.bit_length() < r0 + 0) w.skip(r0 + 0 - w.bit_length());
-    w.write_unsigned(static_cast<uint64_t>(msg.header_messageId), 8, protodesigner::Endian::Little);
+    w.write_unsigned(static_cast<uint64_t>(msg.header.messageId), 8, protodesigner::Endian::Little);
     // header.timestamp
     if (w.bit_length() < r0 + 8) w.skip(r0 + 8 - w.bit_length());
-    w.write_unsigned(static_cast<uint64_t>(msg.header_timestamp), 32, protodesigner::Endian::Little);
+    w.write_unsigned(static_cast<uint64_t>(msg.header.timestamp), 32, protodesigner::Endian::Little);
     // samples
     if (w.bit_length() < r0 + 40) w.skip(r0 + 40 - w.bit_length());
     for (size_t i = 0; i < static_cast<size_t>(4) && i < 4; ++i) {
@@ -47,23 +62,23 @@ inline size_t ConvertToWire(const Frame& msg, uint8_t* wire, size_t cap) {
 }
 
 // Same conversion into a correctly sized array. The capacity is checked at compile time.
-inline size_t ConvertToWire(const Frame& msg, uint8_t (&wire)[Frame::kMaxBytes]) {
-    return ConvertToWire(msg, wire, Frame::kMaxBytes);
+inline size_t Frame_ConvertToWire(const Frame& msg, uint8_t (&wire)[Frame::kMaxBytes]) {
+    return Frame_ConvertToWire(msg, wire, Frame::kMaxBytes);
 }
 
 // Converts the on-wire bytes `wire` (`len` of them) back into the host struct `msg`.
 // Returns DecodeResult::Ok() on success, or Fail(bit) if the frame ran out early.
-inline protodesigner::DecodeResult ConvertToHost(const uint8_t* wire, size_t len, Frame& msg) {
+inline protodesigner::DecodeResult Frame_ConvertToHost(const uint8_t* wire, size_t len, Frame& msg) {
     protodesigner::BitReader r(wire, len);
 
     // --- region 0 (Fixed) ---
     const size_t r0 = r.bit_offset();
     // header.messageId
     if (r.bit_offset() < r0 + 0) r.skip(r0 + 0 - r.bit_offset());
-    msg.header_messageId = static_cast<uint8_t>(r.read_unsigned(8, protodesigner::Endian::Little));
+    msg.header.messageId = static_cast<uint8_t>(r.read_unsigned(8, protodesigner::Endian::Little));
     // header.timestamp
     if (r.bit_offset() < r0 + 8) r.skip(r0 + 8 - r.bit_offset());
-    msg.header_timestamp = static_cast<uint32_t>(r.read_unsigned(32, protodesigner::Endian::Little));
+    msg.header.timestamp = static_cast<uint32_t>(r.read_unsigned(32, protodesigner::Endian::Little));
     // samples
     if (r.bit_offset() < r0 + 40) r.skip(r0 + 40 - r.bit_offset());
     for (size_t i = 0; i < static_cast<size_t>(4) && i < 4; ++i) {
@@ -76,8 +91,8 @@ inline protodesigner::DecodeResult ConvertToHost(const uint8_t* wire, size_t len
 }
 
 // Same conversion from a full frame. Fixed-size message, so the length is implied.
-inline protodesigner::DecodeResult ConvertToHost(const uint8_t (&wire)[Frame::kMaxBytes], Frame& msg) {
-    return ConvertToHost(wire, Frame::kMaxBytes, msg);
+inline protodesigner::DecodeResult Frame_ConvertToHost(const uint8_t (&wire)[Frame::kMaxBytes], Frame& msg) {
+    return Frame_ConvertToHost(wire, Frame::kMaxBytes, msg);
 }
 
 } // namespace proto

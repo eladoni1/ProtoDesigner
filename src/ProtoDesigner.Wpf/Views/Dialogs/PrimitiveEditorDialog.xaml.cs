@@ -24,21 +24,21 @@ public partial class PrimitiveEditorDialog : Window
         _project = project;
         _existing = existing;
 
-        KindBox.ItemsSource = Enum.GetValues<PrimitiveKind>();
+        KindBox.ItemsSource = HostKinds;
         WireFormBox.ItemsSource = Enum.GetValues<WireForm>();
 
         if (existing is null)
         {
             HeadingText.Text = "Create primitive";
             NameBox.Text = "NewPrimitive";
-            KindBox.SelectedItem = PrimitiveKind.U8;
+            KindBox.SelectedItem = KindOptionFor(PrimitiveKind.U8);
             WireFormBox.SelectedItem = WireForm.Unsigned;
         }
         else
         {
             HeadingText.Text = $"Edit '{existing.Name}'";
             NameBox.Text = existing.Name;
-            KindBox.SelectedItem = existing.Kind;
+            KindBox.SelectedItem = KindOptionFor(existing.Kind);
             WireFormBox.SelectedItem = existing.WireForm;
             if (existing.Range is { } r)
             {
@@ -75,8 +75,40 @@ public partial class PrimitiveEditorDialog : Window
 
     public ParameterType? Result { get; private set; }
 
+    /// <summary>
+    /// One entry in the host-type dropdown.
+    /// </summary>
+    /// <remarks>
+    /// The raw enum names (<c>U8</c>, <c>I16</c>, <c>F64</c>) are how the model spells these, but nobody
+    /// designing a protocol thinks in them — they think in <c>uint8_t</c> and <c>double</c>. This is a
+    /// display wrapper only; <see cref="PrimitiveKind"/> is untouched.
+    /// </remarks>
+    private sealed record KindOption(PrimitiveKind Kind, string Label)
+    {
+        public override string ToString() => Label;
+    }
+
+    private static readonly KindOption[] HostKinds =
+    {
+        new(PrimitiveKind.Bool, "bool  ·  true / false"),
+        new(PrimitiveKind.Char, "char  ·  one byte of text"),
+        new(PrimitiveKind.U8,   "uint8_t  ·  unsigned char, 1 byte"),
+        new(PrimitiveKind.I8,   "int8_t  ·  signed char, 1 byte"),
+        new(PrimitiveKind.U16,  "uint16_t  ·  2 bytes"),
+        new(PrimitiveKind.I16,  "int16_t  ·  2 bytes"),
+        new(PrimitiveKind.U32,  "uint32_t  ·  4 bytes"),
+        new(PrimitiveKind.I32,  "int32_t  ·  4 bytes"),
+        new(PrimitiveKind.U64,  "uint64_t  ·  8 bytes"),
+        new(PrimitiveKind.I64,  "int64_t  ·  8 bytes"),
+        new(PrimitiveKind.F32,  "float  ·  4 bytes"),
+        new(PrimitiveKind.F64,  "double  ·  8 bytes"),
+    };
+
+    private static KindOption KindOptionFor(PrimitiveKind kind) =>
+        HostKinds.FirstOrDefault(k => k.Kind == kind) ?? HostKinds[2];
+
     private PrimitiveKind SelectedKind =>
-        KindBox.SelectedItem is PrimitiveKind k ? k : PrimitiveKind.U8;
+        KindBox.SelectedItem is KindOption o ? o.Kind : PrimitiveKind.U8;
 
     private void OnKindChanged(object sender, SelectionChangedEventArgs e)
     {

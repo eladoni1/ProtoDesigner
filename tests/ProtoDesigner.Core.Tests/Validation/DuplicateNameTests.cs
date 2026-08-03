@@ -72,6 +72,52 @@ public class DuplicateNameTests
         b.Run().HasNo(DiagnosticCodes.DuplicateWireId);
     }
 
+    // Ids are scoped to a bus, so the same number on two buses is not a collision — it is the norm.
+    [Fact]
+    public void The_same_wire_id_on_two_buses_is_not_a_duplicate()
+    {
+        var b = new ValidationBuilder();
+        b.NewMessage("A").WireId = 1;
+
+        var other = new Bus(BusId.New(), "Other", Transport.Ethernet);
+        other.Messages.Add(new Message(MessageId.New(), "B") { WireId = 1 });
+        b.Project.Buses.Add(other);
+
+        b.Run().HasNo(DiagnosticCodes.DuplicateWireId);
+    }
+
+    // 0 is reserved for "not assigned", so it must never identify a real message: the generated
+    // <Bus>MessageId enum returns NotAssigned = 0 for an id it does not recognise, and a message
+    // holding 0 would be indistinguishable from that.
+    [Fact]
+    public void Wire_id_zero_reports_PD0063()
+    {
+        var b = new ValidationBuilder();
+        b.NewMessage("A").WireId = 0;
+
+        var d = b.Run().Has(DiagnosticCodes.WireIdNotAssigned);
+        Assert.Equal(Severity.Error, d.Severity);
+    }
+
+    [Fact]
+    public void The_lowest_valid_wire_id_is_one()
+    {
+        var b = new ValidationBuilder();
+        b.NewMessage("A").WireId = 1;
+
+        b.Run().HasNo(DiagnosticCodes.WireIdNotAssigned);
+    }
+
+    // A message that simply has no id yet is not the same as one claiming id 0.
+    [Fact]
+    public void An_unset_wire_id_is_not_reported()
+    {
+        var b = new ValidationBuilder();
+        b.NewMessage("A").WireId = null;
+
+        b.Run().HasNo(DiagnosticCodes.WireIdNotAssigned);
+    }
+
     [Fact]
     public void Duplicate_field_name_in_a_message_reports_PD0001()
     {

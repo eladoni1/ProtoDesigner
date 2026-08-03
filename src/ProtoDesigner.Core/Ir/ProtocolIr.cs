@@ -12,6 +12,7 @@ public sealed record ProtocolIr(
     string BusName,
     Transport Transport,
     IReadOnlyList<IrEnum> Enums,
+    IReadOnlyList<IrStruct> Structs,
     IReadOnlyList<IrMessage> Messages);
 
 /// <summary>An enum type referenced by one or more fields. Emitted as a first-class type by generators.</summary>
@@ -23,14 +24,60 @@ public sealed record IrEnum(
 
 public sealed record IrEnumMember(string Name, long Value);
 
-/// <summary>One message. Fields are flattened in wire order (structs and static arrays are expanded).</summary>
+/// <summary>
+/// A struct type referenced by one or more messages, in declaration order — a struct always appears
+/// after everything it depends on, so a generator can emit the list top to bottom.
+/// </summary>
+public sealed record IrStruct(string Name, IReadOnlyList<IrMember> Members);
+
+public enum IrMemberKind
+{
+    Scalar,
+    EnumRef,
+    StructRef,
+}
+
+/// <summary>
+/// One member of a host struct, describing the shape a value has <em>in memory</em>.
+/// </summary>
+/// <remarks>
+/// This is the deliberate counterpart to <see cref="IrField"/>: **flat for the wire, nested for the
+/// host**. <see cref="IrMessage.Fields"/> stays flattened because offsets, regions and the variable-region
+/// cursor are all defined over leaves in wire order. Members describe the struct the user actually
+/// declared, so a <c>Header</c> used by ten messages is emitted once and referenced by name rather than
+/// inlined ten times. A generator reads Members to declare types and Fields to convert them, and
+/// <see cref="IrField.Path"/> (<c>header.messageId</c>) is what ties the two together.
+/// </remarks>
+public sealed record IrMember(
+    string Name,
+    IrMemberKind Kind,
+    // Meaningful when Kind is Scalar; for an array it is the element's kind.
+    PrimitiveKind Primitive,
+    // Index into ProtocolIr.Enums when Kind is EnumRef.
+    int? EnumIndex,
+    // Index into ProtocolIr.Structs when Kind is StructRef.
+    int? StructIndex,
+    // Element capacity when this member is an array; null when it is a single value.
+    int? ArrayCapacity,
+    // True when the array carries its own element count at runtime (length-prefixed, sentinel or
+    // fill-remaining). Fixed arrays and count-from-field arrays do not: the first is a constant and the
+    // second already has a count field, and a second copy could disagree with it.
+    bool NeedsCountMember,
+    // Human-readable note the generator can put in a comment — width, transform, array length rule.
+    string? Note);
+
+/// <summary>
+/// One message. <see cref="Fields"/> are flattened in wire order (structs and static arrays expanded);
+/// <see cref="Members"/> describe the host struct's shape.
+/// </summary>
 public sealed record IrMessage(
     string Name,
     int? WireId,
     int MinBits,
     int MaxBits,
     IReadOnlyList<IrRegion> Regions,
-    IReadOnlyList<IrField> Fields);
+    IReadOnlyList<IrField> Fields,
+    IReadOnlyList<IrMember> Members);
 
 public enum IrRegionKind
 {
@@ -90,7 +137,13 @@ public sealed record IrField(
     Endianness Endianness,
     BitOrder BitOrder,
     ScalarTransform Transform,
-    IrArrayInfo? Array);
+    IrArrayInfo? Array,
+    // Whether the wire code is two's-complement signed. Resolved here rather than inferred by each
+    // generator from the host kind, because the two are not the same question: a signed host whose
+    // transform biases its range non-negative — -100..100 offset by -100 — produces codes 0..255, which
+    // only fit an unsigned field. Reading those back as signed turned code 200 into -56, and the inverse
+    // transform then into a value nowhere near the original.
+    bool WireIsSigned);
 
 /// <summary>Everything a generator needs to code an array element in isolation.</summary>
 public sealed record IrArrayInfo(

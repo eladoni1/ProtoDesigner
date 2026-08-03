@@ -32,11 +32,23 @@ public class GoldenFileTests
         var ir = new IrBuilder().Build(project, bus);
 
         var set = Generator.Generate(ir, new GeneratorOptions(Namespace: "proto"));
-        var header = set.Files.Single(f => f.RelativePath.EndsWith(".h") && f.RelativePath != "protodesigner_runtime.h");
 
-        var goldenPath = Path.Combine(GoldenDirectory(), $"{corpusName}.h");
-        AssertMatchesGolden(goldenPath, header.Contents);
+        // Two goldens per corpus: the shared declarations and the bus's own messages. Both matter —
+        // a type moving between them is exactly the kind of change that should show up in review. They
+        // go through one call so that an update pass writes both; failing on the first would leave the
+        // second stale and need a second run to notice.
+        AssertMatchGoldens(
+            (Path.Combine(GoldenDirectory(), $"{corpusName}_types.h"),
+             set.Files.Single(f => f.RelativePath == "proto_types.h").Contents),
+            (Path.Combine(GoldenDirectory(), $"{corpusName}.h"),
+             BusHeader(set).Contents));
     }
+
+    /// <summary>The one bus header in a set: not the runtime, not the shared declarations.</summary>
+    private static GeneratedFile BusHeader(GeneratedFileSet set) => set.Files.Single(f =>
+        f.RelativePath.EndsWith(".h", StringComparison.Ordinal) &&
+        f.RelativePath != "protodesigner_runtime.h" &&
+        !f.RelativePath.EndsWith("_types.h", StringComparison.Ordinal));
 
     [Fact]
     public void The_runtime_header_matches_its_golden_file()
@@ -71,9 +83,81 @@ public class GoldenFileTests
             .Single(f => f.RelativePath == "bulk.h").Contents;
 
         Assert.Contains("struct Batch {", header, StringComparison.Ordinal);
-        Assert.Contains("inline size_t ConvertToWire(const Batch& msg, uint8_t* wire, size_t cap)", header, StringComparison.Ordinal);
-        Assert.Contains("ConvertToHost(const uint8_t* wire, size_t len, Batch& msg)", header, StringComparison.Ordinal);
+        Assert.Contains("inline size_t Batch_ConvertToWire(const Batch& msg, uint8_t* wire, size_t cap)", header, StringComparison.Ordinal);
+        Assert.Contains("Batch_ConvertToHost(const uint8_t* wire, size_t len, Batch& msg)", header, StringComparison.Ordinal);
         Assert.Contains("static constexpr uint32_t kWireId = 21u;", header, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A struct type is declared once and referenced by name. It used to be flattened into every message
+    /// that used it, so a Header shared by ten messages appeared as ten copies of its members and the
+    /// shape the user designed vanished from the output.
+    /// </summary>
+    [Fact]
+    public void A_shared_struct_is_declared_once_and_referenced_by_name()
+    {
+        var ir = Corpus.BuildIr(Corpus.SharedStruct());
+        var set = new CppGenerator().Generate(ir, new GeneratorOptions(Namespace: "proto"));
+        var types = set.Files.Single(f => f.RelativePath == "proto_types.h").Contents;
+        var header = set.Files.Single(f => f.RelativePath == "shared.h").Contents;
+
+        // Declared once, in the shared header rather than in the bus's.
+        Assert.Equal(1, types.Split("struct Header {").Length - 1);
+        Assert.DoesNotContain("struct Header {", header, StringComparison.Ordinal);
+
+        // An inner struct is declared before the outer one that contains it.
+        Assert.True(types.IndexOf("struct Header {", StringComparison.Ordinal)
+                    < types.IndexOf("struct Envelope {", StringComparison.Ordinal),
+            "Header must be declared before Envelope, which contains it.");
+
+        // Used by name in both messages, rather than inlined into either.
+        Assert.Contains("    Header header;", header, StringComparison.Ordinal);
+        Assert.DoesNotContain("header_messageId", header, StringComparison.Ordinal);
+
+        // And the conversion addresses the nested member, however deep.
+        Assert.Contains("msg.header.messageId", header, StringComparison.Ordinal);
+        Assert.Contains("msg.envelope.head.timestamp", header, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Two buses sharing a struct must be includable in the same translation unit. Declaring the struct
+    /// in each bus header made that a redefinition error the moment generated code stopped flattening.
+    /// </summary>
+    [Fact]
+    public void Types_shared_across_buses_are_declared_once_for_the_whole_set()
+    {
+        var (project, _) = Corpus.TwoBusesSharingAStruct();
+        var irs = project.Buses.Select(b => new IrBuilder().Build(project, b)).ToList();
+
+        var set = new CppGenerator().Generate(irs, new GeneratorOptions(Namespace: "proto"));
+
+        var types = set.Files.Single(f => f.RelativePath == "proto_types.h").Contents;
+        Assert.Equal(1, types.Split("struct Header {").Length - 1);
+
+        // One header per bus, each including the shared declarations rather than repeating them.
+        foreach (var ir in irs)
+        {
+            var busHeader = set.Files.Single(f => f.RelativePath == $"{ir.BusName.ToLowerInvariant()}.h").Contents;
+            Assert.Contains("#include \"proto_types.h\"", busHeader, StringComparison.Ordinal);
+            Assert.DoesNotContain("struct Header {", busHeader, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// Ids are unique within a bus and start at 1, so NotAssigned = 0 can never collide with a real
+    /// message — which is what makes it usable as "I do not recognise this frame".
+    /// </summary>
+    [Fact]
+    public void A_bus_gets_a_message_id_enum_and_a_lookup()
+    {
+        var ir = Corpus.BuildIr(Corpus.SharedStruct());
+        var header = new CppGenerator().Generate(ir, new GeneratorOptions(Namespace: "proto")).Files
+            .Single(f => f.RelativePath == "shared.h").Contents;
+
+        Assert.Contains("enum class SharedMessageId : uint32_t {", header, StringComparison.Ordinal);
+        Assert.Contains("    NotAssigned = 0,", header, StringComparison.Ordinal);
+        Assert.Contains("inline SharedMessageId Shared_MessageIdFromWire(uint32_t id)", header, StringComparison.Ordinal);
+        Assert.Contains("return SharedMessageId::NotAssigned;", header, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -88,8 +172,8 @@ public class GoldenFileTests
         var header = Generator.Generate(ir, new GeneratorOptions()).Files
             .Single(f => f.RelativePath == "control.h").Contents;
 
-        Assert.Contains("ConvertToWire(const Status& msg, uint8_t (&wire)[Status::kMaxBytes])", header, StringComparison.Ordinal);
-        Assert.Contains("ConvertToHost(const uint8_t (&wire)[Status::kMaxBytes], Status& msg)", header, StringComparison.Ordinal);
+        Assert.Contains("Status_ConvertToWire(const Status& msg, uint8_t (&wire)[Status::kMaxBytes])", header, StringComparison.Ordinal);
+        Assert.Contains("Status_ConvertToHost(const uint8_t (&wire)[Status::kMaxBytes], Status& msg)", header, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -99,7 +183,7 @@ public class GoldenFileTests
         var header = Generator.Generate(ir, new GeneratorOptions()).Files
             .Single(f => f.RelativePath == "bulk.h").Contents;
 
-        Assert.Contains("ConvertToWire(const Batch& msg, uint8_t (&wire)[Batch::kMaxBytes])", header, StringComparison.Ordinal);
+        Assert.Contains("Batch_ConvertToWire(const Batch& msg, uint8_t (&wire)[Batch::kMaxBytes])", header, StringComparison.Ordinal);
         Assert.DoesNotContain("ConvertToHost(const uint8_t (&wire)", header, StringComparison.Ordinal);
     }
 
@@ -127,14 +211,14 @@ public class GoldenFileTests
     public void An_enum_is_emitted_once_with_its_declared_members()
     {
         var ir = Corpus.BuildIr(Corpus.PackedBits());
-        var header = Generator.Generate(ir, new GeneratorOptions()).Files
-            .Single(f => f.RelativePath == "control.h").Contents;
+        var types = Generator.Generate(ir, new GeneratorOptions()).Files
+            .Single(f => f.RelativePath == "proto_types.h").Contents;
 
-        Assert.Contains("enum class Mode : uint32_t {", header, StringComparison.Ordinal);
-        Assert.Contains("Idle = 0,", header, StringComparison.Ordinal);
-        Assert.Contains("Fault = 10,", header, StringComparison.Ordinal);
+        Assert.Contains("enum class Mode : uint32_t {", types, StringComparison.Ordinal);
+        Assert.Contains("Idle = 0,", types, StringComparison.Ordinal);
+        Assert.Contains("Fault = 10,", types, StringComparison.Ordinal);
         // Emitted exactly once even though several fields could reference it.
-        var occurrences = header.Split("enum class Mode").Length - 1;
+        var occurrences = types.Split("enum class Mode").Length - 1;
         Assert.Equal(1, occurrences);
     }
 
@@ -177,18 +261,40 @@ public class GoldenFileTests
     private static bool ShouldUpdate =>
         Environment.GetEnvironmentVariable("PROTODESIGNER_UPDATE_GOLDEN") is "1" or "true";
 
-    private static void AssertMatchesGolden(string path, string actual)
-    {
-        actual = actual.Replace("\r\n", "\n");
+    private static void AssertMatchesGolden(string path, string actual) =>
+        AssertMatchGoldens((path, actual));
 
-        if (ShouldUpdate || !File.Exists(path))
+    /// <summary>
+    /// Compares several outputs against their golden files, or rewrites them all in update mode.
+    /// </summary>
+    /// <remarks>
+    /// Writing every file before failing matters: with one assert per file, an update pass would write
+    /// the first, fail, and leave the rest stale — and the run after that would report a mismatch on a
+    /// file the update was supposed to have refreshed.
+    /// </remarks>
+    private static void AssertMatchGoldens(params (string Path, string Actual)[] goldens)
+    {
+        var normalised = goldens
+            .Select(g => (g.Path, Actual: g.Actual.Replace("\r\n", "\n")))
+            .ToArray();
+
+        var written = new List<string>();
+        foreach (var (path, actual) in normalised)
         {
+            if (!ShouldUpdate && File.Exists(path)) continue;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             File.WriteAllText(path, actual);
-            Assert.Fail($"Golden file written to {path}. Review the diff and re-run without PROTODESIGNER_UPDATE_GOLDEN.");
+            written.Add(path);
         }
 
-        var expected = File.ReadAllText(path).Replace("\r\n", "\n");
-        Assert.Equal(expected, actual);
+        if (written.Count > 0)
+            Assert.Fail($"Golden file(s) written:\n  {string.Join("\n  ", written)}\n"
+                        + "Review the diff and re-run without PROTODESIGNER_UPDATE_GOLDEN.");
+
+        foreach (var (path, actual) in normalised)
+        {
+            var expected = File.ReadAllText(path).Replace("\r\n", "\n");
+            Assert.Equal(expected, actual);
+        }
     }
 }

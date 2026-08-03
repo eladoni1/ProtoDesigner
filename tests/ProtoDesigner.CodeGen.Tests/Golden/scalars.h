@@ -5,9 +5,25 @@
 #ifndef PROTODESIGNER_MAIN_H
 #define PROTODESIGNER_MAIN_H
 
-#include "protodesigner_runtime.h"
+#include "proto_types.h"
 
 namespace proto {
+
+// Every message on bus 'Main' that carries an id. Ids are unique within a
+// bus and start at 1, so 0 is free to mean "no such message".
+enum class MainMessageId : uint32_t {
+    NotAssigned = 0,
+    Reading = 3u,
+};
+
+// Maps a wire id onto the message it identifies, or NotAssigned if this bus has none.
+inline MainMessageId Main_MessageIdFromWire(uint32_t id) {
+    switch (id) {
+        case 3u: return MainMessageId::Reading;
+        default: break;
+    }
+    return MainMessageId::NotAssigned;
+}
 
 // Message 'Reading' (wire id 3) — fixed 56 bits / 7 bytes.
 struct Reading {
@@ -16,14 +32,14 @@ struct Reading {
     static constexpr size_t kMaxBits  = 56;
     static constexpr size_t kMaxBytes = 7;
 
-    uint8_t id;   // 8 bits
-    uint16_t sequence;   // 16 bits
-    int32_t delta;   // 32 bits
+    uint8_t id;
+    uint16_t sequence;
+    int32_t delta;
 };
 
 // Converts the host struct `msg` into its on-wire form in `wire` (capacity `cap` bytes).
 // Returns the number of bytes written, or 0 if the buffer was too small.
-inline size_t ConvertToWire(const Reading& msg, uint8_t* wire, size_t cap) {
+inline size_t Reading_ConvertToWire(const Reading& msg, uint8_t* wire, size_t cap) {
     protodesigner::BitWriter w(wire, cap);
 
     // --- region 0 (Fixed) ---
@@ -44,13 +60,13 @@ inline size_t ConvertToWire(const Reading& msg, uint8_t* wire, size_t cap) {
 }
 
 // Same conversion into a correctly sized array. The capacity is checked at compile time.
-inline size_t ConvertToWire(const Reading& msg, uint8_t (&wire)[Reading::kMaxBytes]) {
-    return ConvertToWire(msg, wire, Reading::kMaxBytes);
+inline size_t Reading_ConvertToWire(const Reading& msg, uint8_t (&wire)[Reading::kMaxBytes]) {
+    return Reading_ConvertToWire(msg, wire, Reading::kMaxBytes);
 }
 
 // Converts the on-wire bytes `wire` (`len` of them) back into the host struct `msg`.
 // Returns DecodeResult::Ok() on success, or Fail(bit) if the frame ran out early.
-inline protodesigner::DecodeResult ConvertToHost(const uint8_t* wire, size_t len, Reading& msg) {
+inline protodesigner::DecodeResult Reading_ConvertToHost(const uint8_t* wire, size_t len, Reading& msg) {
     protodesigner::BitReader r(wire, len);
 
     // --- region 0 (Fixed) ---
@@ -71,8 +87,8 @@ inline protodesigner::DecodeResult ConvertToHost(const uint8_t* wire, size_t len
 }
 
 // Same conversion from a full frame. Fixed-size message, so the length is implied.
-inline protodesigner::DecodeResult ConvertToHost(const uint8_t (&wire)[Reading::kMaxBytes], Reading& msg) {
-    return ConvertToHost(wire, Reading::kMaxBytes, msg);
+inline protodesigner::DecodeResult Reading_ConvertToHost(const uint8_t (&wire)[Reading::kMaxBytes], Reading& msg) {
+    return Reading_ConvertToHost(wire, Reading::kMaxBytes, msg);
 }
 
 } // namespace proto

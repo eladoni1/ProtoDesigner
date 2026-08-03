@@ -15,7 +15,22 @@ public interface IProtocolGenerator
     /// <summary>Human-readable name for menus.</summary>
     string DisplayName { get; }
 
-    GeneratedFileSet Generate(ProtocolIr ir, GeneratorOptions options);
+    /// <summary>
+    /// Generates for several buses at once, sharing one set of type declarations between them.
+    /// </summary>
+    /// <remarks>
+    /// This is the primary entry point, not a convenience wrapper. Types live in a project-wide library,
+    /// so a struct used by two buses is one type — and once generated code declares real structs rather
+    /// than flattening them, emitting it into both bus headers makes the two impossible to include in the
+    /// same translation unit. Generating the set together is what lets the shared declarations go in one
+    /// place. It also matches how the buses are actually selected: "everything module X touches" spans
+    /// however many buses that module sits on.
+    /// </remarks>
+    GeneratedFileSet Generate(IReadOnlyList<ProtocolIr> buses, GeneratorOptions options);
+
+    /// <summary>Convenience for the single-bus case.</summary>
+    GeneratedFileSet Generate(ProtocolIr ir, GeneratorOptions options) =>
+        Generate(new[] { ir }, options);
 }
 
 /// <summary>Options every generator understands. Language-specific options belong on the concrete generator.</summary>
