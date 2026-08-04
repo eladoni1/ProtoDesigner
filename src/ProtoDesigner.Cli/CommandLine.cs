@@ -1,7 +1,5 @@
 using ProtoDesigner.Application;
 using ProtoDesigner.CodeGen;
-using ProtoDesigner.CodeGen.Cpp;
-using ProtoDesigner.Core.Ir;
 using ProtoDesigner.Core.Model;
 using ProtoDesigner.Core.Validation;
 using ProtoDesigner.Persistence.Json;
@@ -19,7 +17,7 @@ public static class CommandLine
     public const int ExitUsage = 2;
     public const int ExitIoError = 3;
 
-    private static readonly IProtocolGenerator[] Generators = { new CppGenerator() };
+    private static IReadOnlyList<IProtocolGenerator> Generators => GeneratorCatalog.All;
 
     public static int Run(string[] args) => Run(args, Console.Out, Console.Error);
 
@@ -130,7 +128,7 @@ public static class CommandLine
             return ExitUsage;
         }
 
-        var generator = Generators.FirstOrDefault(g => string.Equals(g.Id, target, StringComparison.OrdinalIgnoreCase));
+        var generator = GeneratorCatalog.Find(target);
         if (generator is null)
         {
             stderr.WriteLine($"Unknown target '{target}'. Run 'protodesigner targets' to list them.");
@@ -139,43 +137,28 @@ public static class CommandLine
 
         if (!TryLoad(path, stderr, out var project)) return ExitIoError;
 
-        // Never generate from an unvalidated model — that rule exists so a broken protocol fails at
-        // the CLI with a diagnostic rather than at the compiler with a mystery.
-        var diagnostics = new Validator().Validate(project!);
-        var errors = diagnostics.Where(d => d.Severity == Severity.Error).ToArray();
-        if (errors.Length > 0)
+        if (!TryResolveScopes(project!, busName, moduleName, messageList, stderr, out var scopes))
+            return ExitUsage;
+
+        // The validate-then-build-IR-then-generate sequence lives in the application layer so this command
+        // and the editor's Generate dialog cannot drift apart. Refusing on an Error is part of it: a broken
+        // protocol fails here with a diagnostic rather than at the compiler with a mystery.
+        var result = CodeGenerationService.Generate(
+            project!, generator, scopes, new GeneratorOptions(Namespace: ns));
+
+        if (result.Refused)
         {
-            stderr.WriteLine($"Refusing to generate: {errors.Length} validation error(s).");
-            foreach (var d in errors)
+            stderr.WriteLine($"Refusing to generate: {result.BlockingErrors.Count} validation error(s).");
+            foreach (var d in result.BlockingErrors)
                 stderr.WriteLine($"  {d.Code} {d.Message} [{d.Target}]");
             return ExitValidationErrors;
         }
 
-        if (!TryResolveScopes(project!, busName, moduleName, messageList, stderr, out var scopes))
-            return ExitUsage;
-
-        var builder = new IrBuilder();
-        var written = 0;
-
         try
         {
-            Directory.CreateDirectory(outDir);
-
-            // All buses in one call. Generating them one at a time would have each write its own copy of
-            // the shared type declarations, and the last bus would win — leaving the others referring to
-            // structs that are no longer declared.
-            var irs = scopes.Select(s => builder.Build(project!, s.Bus, s.MessageIds)).ToList();
-            var set = generator.Generate(irs, new GeneratorOptions(Namespace: ns));
-
-            foreach (var file in set.Files)
-            {
-                var full = Path.Combine(outDir, file.RelativePath);
-                var dir = Path.GetDirectoryName(full);
-                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-                File.WriteAllText(full, file.Contents);
+            CodeGenerationService.Write(result.Files, outDir);
+            foreach (var file in result.Files.Files)
                 stdout.WriteLine($"  wrote {file.RelativePath}");
-                written++;
-            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -183,9 +166,9 @@ public static class CommandLine
             return ExitIoError;
         }
 
-        var messageCount = scopes.Sum(s => s.Messages.Count);
         stdout.WriteLine(
-            $"Generated {written} file(s) covering {messageCount} message(s) across {scopes.Count} bus(es) into {outDir}.");
+            $"Generated {result.Files.Files.Count} file(s) covering {result.MessageCount} message(s) "
+            + $"across {scopes.Count} bus(es) into {outDir}.");
         return ExitOk;
     }
 

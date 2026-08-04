@@ -11,6 +11,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ProtoDesigner.Core\ProtoDesigner.Core.csproj" />
+    <!-- CodeGen is a sibling leaf that depends only on Core, so this adds no cycle. It is what lets the
+         "validate, then build IR, then generate" sequence live in one use case that both the CLI and the
+         editor call, instead of each growing its own copy that can drift. -->
+    <ProjectReference Include="..\ProtoDesigner.CodeGen\ProtoDesigner.CodeGen.csproj" />
   </ItemGroup>
 
 </Project>

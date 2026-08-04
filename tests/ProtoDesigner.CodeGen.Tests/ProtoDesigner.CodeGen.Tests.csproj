@@ -12,6 +12,9 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <!-- Compiles the generated C# in-process. This is to the C# target what tests/cpp-conformance is to
+         the C++ one: proof the emitted source is real code, not just the string we expected. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" />
   </ItemGroup>
 
   <ItemGroup>

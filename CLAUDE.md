@@ -104,49 +104,56 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 
 ---
 
-## 3. Current state — Phase 0 (done)
+## 3. Current state — phases 0 through 4
 
-Phase 0 delivered the model and the layout engine, with tests. **Nothing else exists yet** —
-no persistence, no CLI, no IR, no generators, no UI.
+| Phase | Scope | State |
+|---|---|---|
+| 0 | Domain model + layout engine | **Done** |
+| 1 | Validation — rules with stable `PDxxxx` codes | **Done** |
+| 2 | JSON persistence + repository port + CLI | **Done** |
+| 3 | Resolved IR + C++14 generator | **Done** |
+| 4 | WPF editor | **Usable** — tree, field grid, live byte map, diagnostics, generate dialog |
+| 5 | C# generator + advanced protocol features | **Started** — C# emits declarations only |
+| 6 | Shared storage & collaboration | Not started — see `docs/shared-storage-design.md` |
+
+**1526 automated tests, all passing.** Plus `tests/cpp-conformance/` (run it separately; needs MSVC),
+which compiles the generated C++ and checks it produces byte-identical output to the C# reference codec.
 
 ```
-ProtoDesigner.sln
-├─ src/ProtoDesigner.Core/
-│   ├─ Model/
-│   │   ├─ Ids.cs          TypeId, FieldId, MessageId, BusId (readonly record structs)
-│   │   ├─ Primitives.cs   PrimitiveKind, NumericRange, ScalarTransform, Endianness,
-│   │   │                  BitOrder, BitPackingMode, Transport, PrimitiveKindExtensions
-│   │   ├─ Types.cs        TypeDefinition, ITypeVisitor, ParameterType, EnumType,
-│   │   │                  StructType, ArrayType, ArrayLength (closed union)
-│   │   ├─ Fields.cs       FieldBinding, FieldEncoding, CrcSpec, CrcCoverage, CrcAlgorithm
-│   │   └─ Structure.cs    Project, Bus, Message, TypeLibrary, LayoutOptions,
-│   │                      EffectiveLayoutOptions
-│   └─ Layout/
-│       ├─ BitMath.cs      AlignUp, BitsForUnsignedMax, BitsForSignedRange, RequiredBits
-│       ├─ MessageLayout.cs LayoutNode, LayoutRegion, MessageLayout, LayoutException
-│       └─ LayoutEngine.cs  Compute(...) — the pure function
-└─ tests/ProtoDesigner.Core.Tests/
-    ├─ ModelBuilder.cs      test builders + layout assertions (extend THIS, not the tests)
-    ├─ BitMathTests.cs      bit arithmetic + range→width
-    ├─ FixedLayoutTests.cs  ordering, alignment, inheritance, edit-then-recompute
-    ├─ BitPackingTests.cs   contiguous vs storage-unit packing, sub-byte fields, 4-bit enum
-    ├─ CompositeTests.cs    structs, nesting, static arrays, recursion rejection
-    └─ DynamicArrayTests.cs dynamic arrays + the region model
+src/
+  ProtoDesigner.Core/            model, layout, validation, IR — no UI, no language bias
+    Model/  Layout/  Validation/  Ir/
+  ProtoDesigner.Application/     IProjectRepository, IEditCommand + CommandJournal,
+                                 GenerationScopes, CodeGenerationService
+  ProtoDesigner.Persistence.Json canonical ID-keyed JSON + migration chain
+  ProtoDesigner.CodeGen/         IProtocolGenerator, GeneratorCatalog, BitBuffer + ReferenceCodec,
+                                 Cpp/ (full codec)   CSharp/ (declarations only)
+  ProtoDesigner.Cli/             validate / generate / targets
+  ProtoDesigner.Wpf/             the editor
+tests/                           one suite per src project, plus cpp-conformance/
+samples/telemetry.pdproj         a worked example exercising most features
+docs/shared-storage-design.md    Phase 6 design note — read before building any of it
 ```
 
-**~1400 lines of Core, ~1100 lines of tests, 81 test methods** (more once `[Theory]` cases
-expand). Coverage: field ordering; resize/reorder/rename/remove by recompute; byte-vs-natural
-alignment; whole-message byte padding (toggleable); contiguous and storage-unit bit packing;
-sub-bit widths with `ScalarTransform`; structs (inline, nested, reused); arrays (static;
-dynamic via count-field / length-prefix / sentinel / fill-remaining; strings; enum lists;
-nesting); and rejection of recursive types, a count field after its array, a too-narrow length
-prefix, a dynamic array nested in a dynamic array, and a sub-byte stride under byte padding.
+**Model additions since the original Phase 0 sketch** (§4 below predates them):
 
-> ⚠️ **The Phase 0 code was authored in a sandbox with no .NET SDK and was never compiled or
-> run.** Before adding anything: `dotnet restore && dotnet build && dotnet test`. Fix any
-> compile error or failing assertion first — the logic was hand-traced and is internally
-> consistent, but a compiler will catch what hand-tracing can't (a typo, a missing using for
-> an extension method). Treat green tests as the real baseline.
+- `ParameterType.WireBits` / `EnumType.WireBits` — a type's default wire size, propagated onto new
+  bindings by `WireEncodingPropagator`. It does **not** violate rule 1: a `FieldBinding`'s encoding
+  still wins, this is only the default a new binding starts from.
+- `Module` (`ModuleId`, name) on a bus, and `MessageRoute(From, To)` on a message. Direction is
+  modelled now — it is what `GenerationScopes.ForModule*` selects on.
+- `IrMember` alongside `IrField`: **flat for the wire, nested for the host**. Fields stay flattened
+  because offsets are defined over leaves in wire order; members describe the struct the user actually
+  declared, so a `Header` used by ten messages is emitted once and referenced by name.
+
+**Known gaps, honestly:**
+
+- `CrcSpec` is still placement-only. It never reaches the IR, so no generator computes a CRC — the
+  field is written as an ordinary value the caller fills in.
+- `FillRemaining` and `Terminated` arrays *decode* by asking the caller for the count rather than
+  scanning for the sentinel or consuming the remainder. Encode is correct for both.
+- The C# target emits declarations and the wire layout as comments; no encode/decode yet.
+- The WPF layer has no automated tests. Everything below it does.
 
 ---
 

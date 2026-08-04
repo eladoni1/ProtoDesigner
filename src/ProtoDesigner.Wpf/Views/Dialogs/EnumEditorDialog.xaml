@@ -5,6 +5,12 @@
         Width="520" Height="640"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
+  <Window.Resources>
+    <!-- Shared column widths so the header and the rows line up exactly. -->
+    <GridLength x:Key="ColValue">100</GridLength>
+    <GridLength x:Key="ColRemove">30</GridLength>
+  </Window.Resources>
+
   <Border Background="{StaticResource Surface1}" Padding="20">
     <Grid>
       <Grid.RowDefinitions>
@@ -56,6 +62,19 @@
           <Button Content="+ Add member" Style="{StaticResource GhostButton}" Padding="10,4" FontSize="11"
                   HorizontalAlignment="Right" Click="OnAddMember"/>
         </Grid>
+
+        <!-- Column headers — the row template below repeats these widths. -->
+        <Grid Margin="7,0,7,5">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="{StaticResource ColValue}"/>
+            <ColumnDefinition Width="{StaticResource ColRemove}"/>
+          </Grid.ColumnDefinitions>
+          <TextBlock Grid.Column="0" Style="{StaticResource SectionLabel}" Text="Member name"
+                     ToolTip="The name this value gets in generated code."/>
+          <TextBlock Grid.Column="1" Style="{StaticResource SectionLabel}" Text="Value"
+                     ToolTip="The number this name stands for. It is what goes on the wire, and it is what the wire size above has to be wide enough to carry."/>
+        </Grid>
       </StackPanel>
 
       <Border Grid.Row="3" Background="{StaticResource Surface0}" CornerRadius="6"
@@ -67,8 +86,8 @@
                 <Grid Margin="0,2">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="100"/>
-                    <ColumnDefinition Width="30"/>
+                    <ColumnDefinition Width="{StaticResource ColValue}"/>
+                    <ColumnDefinition Width="{StaticResource ColRemove}"/>
                   </Grid.ColumnDefinitions>
                   <TextBox Grid.Column="0" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
                            FontFamily="{StaticResource MonoFont}" Margin="0,0,6,0"/>

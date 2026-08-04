@@ -6,9 +6,18 @@
         Width="560" Height="620"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
+  <Window.Resources>
+    <!-- Shared column widths so the header and the rows line up exactly. -->
+    <GridLength x:Key="ColDrag">22</GridLength>
+    <GridLength x:Key="ColType">130</GridLength>
+    <GridLength x:Key="ColSize">80</GridLength>
+    <GridLength x:Key="ColRemove">30</GridLength>
+  </Window.Resources>
+
   <Border Background="{StaticResource Surface1}" Padding="20">
     <Grid>
       <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
         <RowDefinition Height="Auto"/>
         <RowDefinition Height="Auto"/>
         <RowDefinition Height="*"/>
@@ -40,7 +49,26 @@
         </StackPanel>
       </Grid>
 
-      <Border Grid.Row="2" Background="{StaticResource Surface0}" CornerRadius="6"
+      <!-- Column headers — the row template below repeats these widths. -->
+      <Border Grid.Row="2" Padding="15,0,15,5">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="{StaticResource ColDrag}"/>
+            <ColumnDefinition Width="{StaticResource ColType}"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="{StaticResource ColSize}"/>
+            <ColumnDefinition Width="{StaticResource ColRemove}"/>
+          </Grid.ColumnDefinitions>
+          <TextBlock Grid.Column="1" Style="{StaticResource SectionLabel}" Text="Type"
+                     ToolTip="The type this field is an instance of. Set when the field is added."/>
+          <TextBlock Grid.Column="2" Style="{StaticResource SectionLabel}" Text="Field name"
+                     ToolTip="What this occurrence is called, in generated code and on this dialog only."/>
+          <TextBlock Grid.Column="3" Style="{StaticResource SectionLabel}" Text="On wire"
+                     ToolTip="Serialised size of one field, from its type. Change it by editing that type."/>
+        </Grid>
+      </Border>
+
+      <Border Grid.Row="3" Background="{StaticResource Surface0}" CornerRadius="6"
               BorderBrush="{StaticResource SurfaceStroke}" BorderThickness="1">
         <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="6">
           <ItemsControl x:Name="FieldsList"
@@ -51,11 +79,11 @@
                 <Border Padding="8,6" Margin="0,2" CornerRadius="6" Background="{StaticResource Surface2}">
                   <Grid>
                     <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="22"/>
-                      <ColumnDefinition Width="130"/>
+                      <ColumnDefinition Width="{StaticResource ColDrag}"/>
+                      <ColumnDefinition Width="{StaticResource ColType}"/>
                       <ColumnDefinition Width="*"/>
-                      <ColumnDefinition Width="80"/>
-                      <ColumnDefinition Width="30"/>
+                      <ColumnDefinition Width="{StaticResource ColSize}"/>
+                      <ColumnDefinition Width="{StaticResource ColRemove}"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Column="0" Text="⠿" Foreground="{StaticResource InkFaded}"
                                VerticalAlignment="Center" TextAlignment="Center" Cursor="SizeNS"
@@ -78,12 +106,12 @@
         </ScrollViewer>
       </Border>
 
-      <Border Grid.Row="3" x:Name="ErrorBanner" Background="{StaticResource Surface3}" CornerRadius="6"
+      <Border Grid.Row="4" x:Name="ErrorBanner" Background="{StaticResource Surface3}" CornerRadius="6"
               Padding="10,7" Margin="0,12,0,0" Visibility="Collapsed">
         <TextBlock x:Name="ErrorText" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap"/>
       </Border>
 
-      <Grid Grid.Row="4" Margin="0,16,0,0">
+      <Grid Grid.Row="5" Margin="0,16,0,0">
         <TextBlock x:Name="TotalText" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
           <Button Content="Cancel" Style="{StaticResource GhostButton}" Click="OnCancel" MinWidth="88"/>

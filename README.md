@@ -22,12 +22,21 @@ so resizing or reordering a field is just an edit followed by a recompute.
 | 1 | Validation (16 rules, stable `PDxxxx` codes) | **Done** — 38 tests |
 | 2 | JSON persistence + repository port + CLI | **Done** — 22 tests |
 | 3 | Resolved IR + C++14 generator | **Done** — 34 tests + C++ conformance |
-| 4 | WPF editor | **Usable** — tree, field grid, live byte map, diagnostics, code preview |
-| 5 | C# generator + advanced protocol features | Not started |
-| 6 | Shared storage & collaboration | Not started |
+| 4 | WPF editor | **Usable** — tree, field grid, live byte map, diagnostics, generate dialog |
+| 5 | C# generator + advanced protocol features | **Started** — C# emits declarations only |
+| 6 | Shared storage & collaboration | Not started — [design note](docs/shared-storage-design.md) |
 
-**204 automated tests, all passing.** Plus a cross-language conformance harness that compiles the
+**1526 automated tests, all passing.** Plus a cross-language conformance harness that compiles the
 generated C++ under MSVC and checks it produces byte-identical output to the C# reference codec.
+
+### Not done yet
+
+- **CRC is placement only.** `CrcSpec` never reaches the IR, so no generator computes one; the field is
+  written as an ordinary value you fill in yourself.
+- **`FillRemaining` and sentinel-terminated arrays decode by asking the caller for the count** rather
+  than scanning for the sentinel or consuming the remainder. Encoding both is correct.
+- **The C# target emits declarations only** — classes, enums and each message's wire layout as a
+  comment. Encode/decode is C++-only today.
 
 ---
 
@@ -40,9 +49,11 @@ src/
     Layout/                      BitMath, LayoutEngine, MessageLayout (the region model)
     Validation/                  Diagnostic, Validator, Rules/ (one file per rule family)
     Ir/                          ProtocolIr + IrBuilder — the one-way contract generators read
-  ProtoDesigner.Application/     IProjectRepository port, IEditCommand + CommandJournal (undo/redo)
+  ProtoDesigner.Application/     IProjectRepository port, IEditCommand + CommandJournal (undo/redo),
+                                 GenerationScopes, CodeGenerationService (the generate use case)
   ProtoDesigner.Persistence.Json canonical ID-keyed JSON with a migration chain
-  ProtoDesigner.CodeGen/         IProtocolGenerator, BitBuffer + ReferenceCodec, Cpp/ generator
+  ProtoDesigner.CodeGen/         IProtocolGenerator, GeneratorCatalog, BitBuffer + ReferenceCodec,
+                                 Cpp/ (full codec), CSharp/ (declarations only)
   ProtoDesigner.Cli/             validate / generate / targets
   ProtoDesigner.Wpf/             the editor
 
@@ -90,6 +101,9 @@ dotnet run --project src/ProtoDesigner.Cli -- validate samples/telemetry.pdproj
 ```bash
 dotnet run --project src/ProtoDesigner.Cli -- generate samples/telemetry.pdproj --out ./generated --target cpp --namespace telemetry
 ```
+
+Targets: `cpp` (full encode/decode) and `csharp` (declarations only). The editor exposes the same thing
+under **Build ▸ Generate code…** (Ctrl+G), with a preview of every file before anything is written.
 
 Exit codes: `0` success, `1` validation errors (generation refused), `2` usage error, `3` I/O error.
 

@@ -51,6 +51,10 @@
             <MenuItem Header="_Undo" Command="{Binding UndoCommand}" InputGestureText="Ctrl+Z"/>
             <MenuItem Header="_Redo" Command="{Binding RedoCommand}" InputGestureText="Ctrl+Y"/>
           </MenuItem>
+          <MenuItem Header="_Build">
+            <MenuItem Header="_Generate code…" Command="{x:Static v:MainWindow.GenerateCodeCommand}"
+                      InputGestureText="Ctrl+G"/>
+          </MenuItem>
         </Menu>
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
@@ -58,7 +62,10 @@
                   Visibility="{Binding Project.IsDirty, Converter={StaticResource BoolToVis}}">
             <TextBlock Text="Unsaved" FontSize="11" Foreground="{StaticResource Accent}" FontWeight="SemiBold"/>
           </Border>
-          <Button Content="Save" Style="{StaticResource PrimaryButton}" Margin="10,0,0,0"
+          <Button Content="Generate code" Style="{StaticResource GhostButton}" Margin="10,0,0,0"
+                  Command="{x:Static v:MainWindow.GenerateCodeCommand}"
+                  ToolTip="Preview and write C++ or C# for this project (Ctrl+G)"/>
+          <Button Content="Save" Style="{StaticResource PrimaryButton}" Margin="8,0,0,0"
                   Command="{Binding SaveCommand}"/>
         </StackPanel>
       </Grid>
@@ -136,12 +143,17 @@
         <TextBlock Grid.Column="1" HorizontalAlignment="Center" Style="{StaticResource CaptionText}"
                    Text="{Binding Project.Diagnostics.Summary}"/>
         <TextBlock Grid.Column="2" Style="{StaticResource CaptionText}"
-                   Text="v0.4 — Phase 0 · 1 · 2 complete"/>
+                   Text="v0.5 — model · validation · storage · C++ codegen"/>
       </Grid>
     </Border>
   </Grid>
 
+  <Window.CommandBindings>
+    <CommandBinding Command="{x:Static v:MainWindow.GenerateCodeCommand}" Executed="OnGenerateCode"/>
+  </Window.CommandBindings>
+
   <Window.InputBindings>
+    <KeyBinding Key="G" Modifiers="Ctrl" Command="{x:Static v:MainWindow.GenerateCodeCommand}"/>
     <KeyBinding Key="Z" Modifiers="Ctrl" Command="{Binding UndoCommand}"/>
     <KeyBinding Key="Y" Modifiers="Ctrl" Command="{Binding RedoCommand}"/>
     <KeyBinding Key="S" Modifiers="Ctrl" Command="{Binding SaveCommand}"/>
