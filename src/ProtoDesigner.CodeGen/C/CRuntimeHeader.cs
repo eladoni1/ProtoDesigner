@@ -1,3 +1,20 @@
+namespace ProtoDesigner.CodeGen.C;
+
+/// <summary>
+/// The fixed, hand-written C runtime that generated headers include. It is the exact mirror of
+/// <see cref="Runtime.BitBuffer"/>: same MSB-first sub-byte packing, same endianness handling on
+/// whole-byte fields, same two's-complement sign extension. If one changes, both change.
+/// </summary>
+/// <remarks>
+/// C rather than C++ so the same header serves both languages — a protocol definition should not decide
+/// what language the module that speaks it is written in. Everything is <c>static inline</c> in the
+/// header: no library to link, no allocation, no exceptions, and nothing that needs a C++ compiler.
+/// </remarks>
+internal static class CRuntimeHeader
+{
+    public const string FileName = "protodesigner_runtime.h";
+
+    public static string Emit() => """
 // -----------------------------------------------------------------------------
 // ProtoDesigner runtime - generated. Do not edit.
 //
@@ -245,3 +262,5 @@ PD_INLINE bool pd_br_read_bytes(pd_bit_reader_t* r, uint8_t* dst, size_t len) {
 #endif
 
 #endif /* PROTODESIGNER_RUNTIME_H */
+""";
+}

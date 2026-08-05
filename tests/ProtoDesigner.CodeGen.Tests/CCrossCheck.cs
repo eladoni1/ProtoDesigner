@@ -1,35 +1,42 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
-using ProtoDesigner.CodeGen.Cpp;
+using ProtoDesigner.CodeGen.C;
 using ProtoDesigner.CodeGen.Runtime;
 
 namespace ProtoDesigner.CodeGen.Tests;
 
 /// <summary>
-/// Compiles the generated C++ and checks it against the C# reference codec, value by value, over the
+/// Compiles the generated C and checks it against the C# reference codec, value by value, over the
 /// whole wire matrix.
 /// </summary>
 /// <remarks>
 /// The two implementations are independent, so anywhere they disagree one of them is wrong — that is the
-/// entire point. Round-tripping C++ against itself would happily agree with a bug in both directions;
-/// only the cross-check pins the actual wire format down.
+/// entire point. Round-tripping the generated code against itself would happily agree with a bug in both
+/// directions; only the cross-check pins the actual wire format down.
+///
+/// The driver is compiled twice from the same source — once as C, once as C++ — because "one header
+/// serves both languages" is a claim the output makes and therefore a claim worth testing. Compiling
+/// only as C++ would let a C-invalid header through unnoticed, which is the whole reason this target
+/// stopped being a C++ generator.
 ///
 /// The compiler is located automatically. On a machine without MSVC the generation and driver-emission
 /// are still exercised and the compile step is reported as skipped rather than failing the build.
 /// </remarks>
-public class CppCrossCheck
+public class CCrossCheck
 {
     private static readonly ReferenceCodec Codec = new();
 
+    internal const string Prefix = "proto";
+
     [Fact]
-    public void The_generated_cpp_agrees_with_the_reference_codec_across_the_whole_matrix()
+    public void The_generated_c_agrees_with_the_reference_codec_across_the_whole_matrix()
     {
         var cases = WireMatrix.Cases();
         var (project, bus) = WireMatrix.Build(cases);
         var ir = new IrBuilder().Build(project, bus);
 
-        var set = new CppGenerator().Generate(ir, new GeneratorOptions(Namespace: "proto"));
+        var set = new CGenerator().Generate(ir, new GeneratorOptions(Namespace: Prefix));
 
         var dir = Path.Combine(Path.GetTempPath(), $"pd-crosscheck-{Guid.NewGuid():N}");
         Directory.CreateDirectory(dir);
@@ -44,25 +51,29 @@ public class CppCrossCheck
             // The bus header: not the runtime, not the shared type declarations (which it includes).
             var headerName = set.Files.Single(f =>
                 f.RelativePath.EndsWith(".h", StringComparison.Ordinal) &&
-                f.RelativePath != CppRuntimeHeaderName &&
+                f.RelativePath != RuntimeHeaderName &&
                 !f.RelativePath.EndsWith("_types.h", StringComparison.Ordinal)).RelativePath;
 
             var (driver, checkCount) = EmitDriver(ir, cases, headerName);
-            File.WriteAllText(Path.Combine(dir, "crosscheck.cpp"), driver);
+            File.WriteAllText(Path.Combine(dir, "crosscheck.c"), driver);
 
             Assert.True(checkCount > 1000, $"Only {checkCount} checks emitted — the matrix has shrunk.");
 
             var compiler = MsvcLocator.Find();
             Assert.True(compiler is not null || MsvcLocator.SkipRequested,
-                "No MSVC toolchain found, so the generated C++ was never compiled — the half of this test "
+                "No MSVC toolchain found, so the generated C was never compiled — the half of this test "
                 + "that actually proves anything did not run. Install the VC++ build tools, or set "
                 + $"{MsvcLocator.SkipVariable}=1 to accept generation-only coverage.");
 
             if (compiler is null) return;   // explicitly opted out above
 
-            var (exitCode, output) = MsvcLocator.CompileAndRun(compiler, dir, "crosscheck.cpp");
-            Assert.True(exitCode == 0,
-                $"The generated C++ disagreed with the reference codec ({checkCount} checks):\n{output}");
+            foreach (var language in new[] { MsvcLanguage.C, MsvcLanguage.Cpp })
+            {
+                var (exitCode, output) = MsvcLocator.CompileAndRun(compiler, dir, "crosscheck.c", language);
+                Assert.True(exitCode == 0,
+                    $"Compiled as {language}, the generated code disagreed with the reference codec "
+                    + $"({checkCount} checks):\n{output}");
+            }
         }
         finally
         {
@@ -70,42 +81,48 @@ public class CppCrossCheck
         }
     }
 
-    private const string CppRuntimeHeaderName = "protodesigner_runtime.h";
+    private const string RuntimeHeaderName = "protodesigner_runtime.h";
 
     /// <summary>
-    /// Emits a self-checking C++ program: for every case and value it encodes, compares the bytes against
+    /// Emits a self-checking program: for every case and value it encodes, compares the bytes against
     /// what the C# codec produced, decodes again, and compares the value back.
     /// </summary>
+    /// <remarks>
+    /// The source is deliberately written in the subset that is valid C <em>and</em> valid C++ — plain
+    /// <c>printf</c>, C-style casts, <c>= {0}</c> initialisers — because the same file is compiled both
+    /// ways. Anything C++-only here would quietly turn the C compile into a test of nothing.
+    /// </remarks>
     private static (string Source, int Checks) EmitDriver(
         ProtocolIr ir, IReadOnlyList<WireMatrix.Case> cases, string headerName)
     {
         var sb = new StringBuilder();
         var checks = 0;
 
-        sb.AppendLine("// Generated by CppCrossCheck. Compares the generated C++ against the C# reference codec.");
+        sb.AppendLine("/* Generated by CCrossCheck. Compares the generated C against the C# reference codec. */");
         sb.AppendLine($"#include \"{headerName}\"");
-        sb.AppendLine("#include <cstdio>");
-        sb.AppendLine("#include <cstring>");
+        sb.AppendLine("#include <stdio.h>");
+        sb.AppendLine("#include <string.h>");
         sb.AppendLine();
         sb.AppendLine("static int failures = 0;");
         sb.AppendLine();
         sb.AppendLine("static void expect_bytes(const char* where, const uint8_t* got, size_t got_len,");
         sb.AppendLine("                         const uint8_t* want, size_t want_len) {");
+        sb.AppendLine("    size_t i;");
         sb.AppendLine("    if (got_len != want_len || memcmp(got, want, want_len) != 0) {");
         sb.AppendLine("        ++failures;");
-        sb.AppendLine("        std::printf(\"BYTES %s: got [\", where);");
-        sb.AppendLine("        for (size_t i = 0; i < got_len; ++i) std::printf(\"%02X \", got[i]);");
-        sb.AppendLine("        std::printf(\"] want [\");");
-        sb.AppendLine("        for (size_t i = 0; i < want_len; ++i) std::printf(\"%02X \", want[i]);");
-        sb.AppendLine("        std::printf(\"]\\n\");");
+        sb.AppendLine("        printf(\"BYTES %s: got [\", where);");
+        sb.AppendLine("        for (i = 0; i < got_len; ++i) printf(\"%02X \", got[i]);");
+        sb.AppendLine("        printf(\"] want [\");");
+        sb.AppendLine("        for (i = 0; i < want_len; ++i) printf(\"%02X \", want[i]);");
+        sb.AppendLine("        printf(\"]\\n\");");
         sb.AppendLine("    }");
         sb.AppendLine("}");
         sb.AppendLine();
         sb.AppendLine("static void expect_i64(const char* where, int64_t got, int64_t want) {");
         sb.AppendLine("    if (got != want) {");
         sb.AppendLine("        ++failures;");
-        sb.AppendLine("        std::printf(\"VALUE %s: got %lld want %lld\\n\",");
-        sb.AppendLine("                    where, (long long)got, (long long)want);");
+        sb.AppendLine("        printf(\"VALUE %s: got %lld want %lld\\n\",");
+        sb.AppendLine("               where, (long long)got, (long long)want);");
         sb.AppendLine("    }");
         sb.AppendLine("}");
         sb.AppendLine();
@@ -113,10 +130,12 @@ public class CppCrossCheck
         foreach (var c in cases)
         {
             var msg = ir.Messages.Single(m => m.Name == c.Name);
-            var structName = CppNaming.TypeName(c.Name);
-            var fn = $"check_{structName}";
+            var structName = CNaming.TypeName(Prefix, c.Name);
+            var maxBytes = CNaming.MacroName(Prefix, c.Name, "MAX_BYTES");
+            var toWire = CNaming.FunctionName(Prefix, c.Name, "ConvertToWire");
+            var toHost = CNaming.FunctionName(Prefix, c.Name, "ConvertToHost");
 
-            sb.AppendLine($"static void {fn}() {{");
+            sb.AppendLine($"static void check_{structName}(void) {{");
 
             foreach (var value in c.Values)
             {
@@ -126,18 +145,20 @@ public class CppCrossCheck
                 var where = $"{c.Name}@{WireMatrix.Format(value)}";
 
                 sb.AppendLine("    {");
-                sb.AppendLine($"        proto::{structName} m{{}};");
+                sb.AppendLine($"        {structName} m;");
+                sb.AppendLine($"        {structName} back;");
+                sb.AppendLine($"        uint8_t wire[{maxBytes}];");
+                sb.AppendLine($"        static const uint8_t want[] = {{ {literal} }};");
+                sb.AppendLine("        size_t n;");
+                sb.AppendLine("        memset(&m, 0, sizeof(m));");
+                sb.AppendLine("        memset(&back, 0, sizeof(back));");
                 for (var i = 0; i < c.LeadInBits; i++)
                     sb.AppendLine($"        m.lead{i} = {(i % 2 == 0 ? 1 : 0)};");
                 sb.AppendLine($"        m.value = {ValueLiteral(c, value)};");
-                sb.AppendLine($"        uint8_t wire[proto::{structName}::kMaxBytes];");
-                sb.AppendLine($"        size_t n = proto::{structName}_ConvertToWire(m, wire);");
-                sb.AppendLine($"        static const uint8_t want[] = {{ {literal} }};");
+                sb.AppendLine($"        n = {toWire}(&m, wire, sizeof(wire));");
                 sb.AppendLine($"        expect_bytes(\"{where}\", wire, n, want, sizeof(want));");
-                sb.AppendLine();
-                sb.AppendLine($"        proto::{structName} back{{}};");
-                sb.AppendLine($"        proto::{structName}_ConvertToHost(wire, n, back);");
-                sb.AppendLine($"        expect_i64(\"{where}\", static_cast<int64_t>(back.value), {ValueLiteral(c, value)});");
+                sb.AppendLine($"        {toHost}(wire, n, &back);");
+                sb.AppendLine($"        expect_i64(\"{where}\", (int64_t)(back.value), {ValueLiteral(c, value)});");
                 sb.AppendLine("    }");
 
                 checks += 2;
@@ -147,10 +168,10 @@ public class CppCrossCheck
             sb.AppendLine();
         }
 
-        sb.AppendLine("int main() {");
+        sb.AppendLine("int main(void) {");
         foreach (var c in cases)
-            sb.AppendLine($"    check_{CppNaming.TypeName(c.Name)}();");
-        sb.AppendLine($"    std::printf(\"%d failure(s) over {checks} checks\\n\", failures);");
+            sb.AppendLine($"    check_{CNaming.TypeName(Prefix, c.Name)}();");
+        sb.AppendLine($"    printf(\"%d failure(s) over {checks} checks\\n\", failures);");
         sb.AppendLine("    return failures == 0 ? 0 : 1;");
         sb.AppendLine("}");
 
@@ -158,9 +179,9 @@ public class CppCrossCheck
     }
 
     /// <summary>
-    /// A C++ literal for the value. The suffixes matter: an unsuffixed 0x8000000000000000 has no signed
-    /// type to live in, and long.MinValue cannot be written as a negative literal without the compiler
-    /// first forming its positive counterpart.
+    /// A literal for the value, valid in C and C++ alike. The suffixes matter: an unsuffixed
+    /// 0x8000000000000000 has no signed type to live in, and long.MinValue cannot be written as a
+    /// negative literal without the compiler first forming its positive counterpart.
     /// </summary>
     private static string ValueLiteral(WireMatrix.Case c, long value)
     {
@@ -175,6 +196,16 @@ public class CppCrossCheck
         if (value == long.MinValue) return "(-9223372036854775807ll - 1)";
         return value.ToString(CultureInfo.InvariantCulture) + "ll";
     }
+}
+
+/// <summary>Which language MSVC should treat the source as.</summary>
+internal enum MsvcLanguage
+{
+    /// <summary>Force C (/TC), whatever the file extension says.</summary>
+    C,
+
+    /// <summary>Force C++ (/TP). The generated header claims to work here too; this is the proof.</summary>
+    Cpp,
 }
 
 /// <summary>Finds an MSVC toolchain and builds a single-file program with it.</summary>
@@ -229,14 +260,26 @@ internal static class MsvcLocator
         return File.Exists(vcvars) ? vcvars : null;
     }
 
-    /// <summary>Compiles at /W4 under C++14 and runs the result, returning its exit code and output.</summary>
+    /// <summary>Compiles at /W4 and runs the result, returning its exit code and output.</summary>
     /// <remarks>
+    /// <para>
+    /// The language is forced with /TC or /TP rather than left to the file extension, so the same source
+    /// can be built both ways without copying it to a second name.
+    /// </para>
+    /// <para>
     /// The steps go into a .bat rather than onto cmd's command line. Passing a compound command through
     /// <see cref="ProcessStartInfo.ArgumentList"/> re-quotes it, and cmd then rejects the result silently
     /// with an empty stdout — which looks exactly like a compiler that found nothing wrong.
+    /// </para>
     /// </remarks>
-    public static (int ExitCode, string Output) CompileAndRun(string vcvars, string workingDir, string sourceFile)
+    public static (int ExitCode, string Output) CompileAndRun(
+        string vcvars, string workingDir, string sourceFile, MsvcLanguage language = MsvcLanguage.C)
     {
+        // /TC and /TP force the language; /std applies only to the C++ build, since MSVC rejects a C++
+        // standard switch on a C translation unit.
+        var languageFlags = language == MsvcLanguage.Cpp ? "/TP /std:c++14 /EHsc" : "/TC";
+        var exe = language == MsvcLanguage.Cpp ? "crosscheck_cpp.exe" : "crosscheck_c.exe";
+
         // /bigobj: the matrix driver is one very large translation unit and overflows the default
         // section limit without it.
         var batch = Path.Combine(workingDir, "build.bat");
@@ -244,11 +287,11 @@ internal static class MsvcLocator
             "@echo off",
             $"call \"{vcvars}\" >nul 2>&1",
             $"cd /d \"{workingDir}\"",
-            $"cl /nologo /W4 /std:c++14 /EHsc /bigobj {sourceFile} /Fe:crosscheck.exe",
+            $"cl /nologo /W4 {languageFlags} /bigobj {sourceFile} /Fe:{exe}",
             "if errorlevel 1 exit /b 2",
             // Explicitly relative: NoDefaultCurrentDirectoryInExePath is set in some environments, and a
             // bare name then fails to resolve even though the file is right there.
-            ".\\crosscheck.exe",
+            $".\\{exe}",
             "exit /b %errorlevel%") + "\r\n");
 
         var psi = new ProcessStartInfo("cmd.exe")

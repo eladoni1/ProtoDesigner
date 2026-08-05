@@ -111,13 +111,15 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 0 | Domain model + layout engine | **Done** |
 | 1 | Validation — rules with stable `PDxxxx` codes | **Done** |
 | 2 | JSON persistence + repository port + CLI | **Done** |
-| 3 | Resolved IR + C++14 generator | **Done** |
+| 3 | Resolved IR + C generator | **Done** |
 | 4 | WPF editor | **Usable** — tree, field grid, live byte map, diagnostics, generate dialog |
 | 5 | C# generator + advanced protocol features | **Started** — C# emits declarations only |
 | 6 | Shared storage & collaboration | Not started — see `docs/shared-storage-design.md` |
 
-**1526 automated tests, all passing.** Plus `tests/cpp-conformance/` (run it separately; needs MSVC),
-which compiles the generated C++ and checks it produces byte-identical output to the C# reference codec.
+**1589 automated tests, all passing.** `CCrossCheck` / `CCompositeCrossCheck` compile the generated code
+with MSVC — once as C, once as C++ — and assert byte-identical output against the C# reference codec.
+They are part of `dotnet test` and **fail** rather than skip when no toolchain is present; set
+`PROTODESIGNER_SKIP_CPP_CROSSCHECK=1` to accept generation-only coverage.
 
 ```
 src/
@@ -127,10 +129,10 @@ src/
                                  GenerationScopes, CodeGenerationService
   ProtoDesigner.Persistence.Json canonical ID-keyed JSON + migration chain
   ProtoDesigner.CodeGen/         IProtocolGenerator, GeneratorCatalog, BitBuffer + ReferenceCodec,
-                                 Cpp/ (full codec)   CSharp/ (declarations only)
+                                 C/ (full codec)     CSharp/ (declarations only)
   ProtoDesigner.Cli/             validate / generate / targets
   ProtoDesigner.Wpf/             the editor
-tests/                           one suite per src project, plus cpp-conformance/
+tests/                           one suite per src project
 samples/telemetry.pdproj         a worked example exercising most features
 docs/shared-storage-design.md    Phase 6 design note — read before building any of it
 ```
@@ -158,8 +160,12 @@ is then `OnWireLength(msg) - <Type>_OnWireBytes`, with no offset stored anywhere
 `Core/Ir/WireLength.cs` is the single definition both generators mirror; `WireLengthTests` pins it
 against what the reference codec actually writes, so the emitted formula cannot drift from the encoder.
 
-**The generated C++ must stay freestanding** — no heap, no exceptions, no std containers. It targets
-microcontrollers where an allocation is a fault, not a slowdown. `CppFreestandingTests` enforces it.
+**The generated code is C, not C++, and must stay freestanding** — no heap, no exceptions, no std
+containers. It targets microcontrollers where an allocation is a fault, not a slowdown, and where C is
+often the only option. `CFreestandingTests` enforces the freestanding part; the cross-checks enforce
+that one header compiles as C *and* as C++, which is why there is no separate C++ target to maintain.
+C has no namespaces, so `GeneratorOptions.Namespace` becomes a symbol prefix, and no overloading, so
+every emitted function name must be unique.
 
 **Known gaps, honestly:**
 - `FillRemaining` and `Terminated` arrays *decode* by asking the caller for the count rather than

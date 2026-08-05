@@ -101,7 +101,9 @@ public static class CommandLine
         }
 
         var path = args[0];
-        var target = GetOption(args, "--target") ?? "cpp";
+        // C is the default: it is the only target that emits conversion code today, and its output
+        // compiles as C or C++.
+        var target = GetOption(args, "--target") ?? "c";
         var outDir = GetOption(args, "--out");
         var busName = GetOption(args, "--bus");
         var moduleName = GetOption(args, "--module");
@@ -282,7 +284,7 @@ public static class CommandLine
         stdout.WriteLine();
         stdout.WriteLine("Usage:");
         stdout.WriteLine("  protodesigner validate <file.pdproj> [--quiet]");
-        stdout.WriteLine("  protodesigner generate <file.pdproj> --out <dir> [--target cpp] [--namespace <ns>]");
+        stdout.WriteLine("  protodesigner generate <file.pdproj> --out <dir> [--target c] [--namespace <ns>]");
         stdout.WriteLine("  protodesigner targets");
         stdout.WriteLine();
         stdout.WriteLine("Choosing what to generate (default: every bus):");

@@ -88,11 +88,12 @@ public sealed class CommandLineTests : IDisposable
     }
 
     [Fact]
-    public void Targets_lists_the_cpp_generator()
+    public void Targets_lists_the_c_generator()
     {
         var (code, output, _) = Run("targets");
         Assert.Equal(CommandLine.ExitOk, code);
-        Assert.Contains("cpp", output, StringComparison.Ordinal);
+        Assert.Contains("c ", output, StringComparison.Ordinal);
+        Assert.Contains("csharp", output, StringComparison.Ordinal);
     }
 
     // ---- validate -----------------------------------------------------------------------------
@@ -150,7 +151,7 @@ public sealed class CommandLineTests : IDisposable
         var path = WriteProject(CleanProject());
         var outDir = Path.Combine(_dir, "out");
 
-        var (code, output, _) = Run("generate", path, "--target", "cpp", "--out", outDir);
+        var (code, output, _) = Run("generate", path, "--target", "c", "--out", outDir);
 
         Assert.Equal(CommandLine.ExitOk, code);
         Assert.True(File.Exists(Path.Combine(outDir, "protodesigner_runtime.h")));
@@ -164,7 +165,7 @@ public sealed class CommandLineTests : IDisposable
         var path = WriteProject(BrokenProject());
         var outDir = Path.Combine(_dir, "refused");
 
-        var (code, _, err) = Run("generate", path, "--target", "cpp", "--out", outDir);
+        var (code, _, err) = Run("generate", path, "--target", "c", "--out", outDir);
 
         Assert.Equal(CommandLine.ExitValidationErrors, code);
         Assert.Contains("Refusing to generate", err, StringComparison.Ordinal);
@@ -177,7 +178,7 @@ public sealed class CommandLineTests : IDisposable
     public void Generate_requires_an_output_directory()
     {
         var path = WriteProject(CleanProject());
-        var (code, _, err) = Run("generate", path, "--target", "cpp");
+        var (code, _, err) = Run("generate", path, "--target", "c");
         Assert.Equal(CommandLine.ExitUsage, code);
         Assert.Contains("--out", err, StringComparison.Ordinal);
     }
@@ -197,10 +198,11 @@ public sealed class CommandLineTests : IDisposable
         var path = WriteProject(CleanProject());
         var outDir = Path.Combine(_dir, "ns");
 
-        Run("generate", path, "--target", "cpp", "--out", outDir, "--namespace", "acme");
+        Run("generate", path, "--target", "c", "--out", outDir, "--namespace", "acme");
 
         var header = File.ReadAllText(Path.Combine(outDir, "main.h"));
-        Assert.Contains("namespace acme {", header, StringComparison.Ordinal);
+        // C has no namespaces, so the option becomes a symbol prefix instead.
+        Assert.Contains("acme_", header, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -282,8 +284,8 @@ public sealed class CommandLineTests : IDisposable
 
         Assert.Equal(CommandLine.ExitOk, code);
         var header = File.ReadAllText(Path.Combine(outDir, "main.h"));
-        Assert.Contains("struct Alpha {", header, StringComparison.Ordinal);
-        Assert.DoesNotContain("struct Beta {", header, StringComparison.Ordinal);
+        Assert.Contains("typedef struct proto_Alpha {", header, StringComparison.Ordinal);
+        Assert.DoesNotContain("typedef struct proto_Beta {", header, StringComparison.Ordinal);
         Assert.Contains("1 message(s)", output, StringComparison.Ordinal);
     }
 
@@ -299,9 +301,9 @@ public sealed class CommandLineTests : IDisposable
         Assert.Contains("2 bus(es)", output, StringComparison.Ordinal);
 
         // Alpha (Main) and Gamma (Aux) involve Sensor; Beta does not.
-        Assert.Contains("struct Alpha {", File.ReadAllText(Path.Combine(outDir, "main.h")), StringComparison.Ordinal);
-        Assert.DoesNotContain("struct Beta {", File.ReadAllText(Path.Combine(outDir, "main.h")), StringComparison.Ordinal);
-        Assert.Contains("struct Gamma {", File.ReadAllText(Path.Combine(outDir, "aux.h")), StringComparison.Ordinal);
+        Assert.Contains("typedef struct proto_Alpha {", File.ReadAllText(Path.Combine(outDir, "main.h")), StringComparison.Ordinal);
+        Assert.DoesNotContain("typedef struct proto_Beta {", File.ReadAllText(Path.Combine(outDir, "main.h")), StringComparison.Ordinal);
+        Assert.Contains("typedef struct proto_Gamma {", File.ReadAllText(Path.Combine(outDir, "aux.h")), StringComparison.Ordinal);
     }
 
     [Fact]

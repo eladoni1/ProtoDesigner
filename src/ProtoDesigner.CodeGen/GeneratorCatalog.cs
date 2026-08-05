@@ -1,5 +1,5 @@
+using ProtoDesigner.CodeGen.C;
 using ProtoDesigner.CodeGen.CSharp;
-using ProtoDesigner.CodeGen.Cpp;
 
 namespace ProtoDesigner.CodeGen;
 
@@ -10,9 +10,14 @@ namespace ProtoDesigner.CodeGen;
 public static class GeneratorCatalog
 {
     /// <summary>Every available target, in the order they should be offered.</summary>
+    /// <remarks>
+    /// C replaced the C++14 target rather than joining it. The C output compiles under a C++ compiler
+    /// too, so a separate C++ generator would be a second near-identical thing to keep correct for no
+    /// capability the first one lacks.
+    /// </remarks>
     public static IReadOnlyList<IProtocolGenerator> All { get; } = new IProtocolGenerator[]
     {
-        new CppGenerator(),
+        new CGenerator(),
         new CSharpGenerator(),
     };
 

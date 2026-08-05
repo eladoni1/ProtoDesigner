@@ -1,4 +1,4 @@
-using ProtoDesigner.CodeGen.Cpp;
+using ProtoDesigner.CodeGen.C;
 
 namespace ProtoDesigner.CodeGen.Tests;
 
@@ -14,7 +14,7 @@ namespace ProtoDesigner.CodeGen.Tests;
 /// </remarks>
 public class GoldenFileTests
 {
-    private static readonly CppGenerator Generator = new();
+    private static readonly CGenerator Generator = new();
 
     public static TheoryData<string> CorpusNames()
     {
@@ -82,10 +82,51 @@ public class GoldenFileTests
         var header = Generator.Generate(ir, new GeneratorOptions()).Files
             .Single(f => f.RelativePath == "bulk.h").Contents;
 
-        Assert.Contains("struct Batch {", header, StringComparison.Ordinal);
-        Assert.Contains("inline size_t Batch_ConvertToWire(const Batch& msg, uint8_t* wire, size_t cap)", header, StringComparison.Ordinal);
-        Assert.Contains("Batch_ConvertToHost(const uint8_t* wire, size_t len, Batch& msg)", header, StringComparison.Ordinal);
-        Assert.Contains("static constexpr uint32_t kWireId = 21u;", header, StringComparison.Ordinal);
+        Assert.Contains("typedef struct proto_Batch {", header, StringComparison.Ordinal);
+        Assert.Contains("PD_INLINE size_t proto_Batch_ConvertToWire(const proto_Batch* msg, uint8_t* wire, size_t cap)", header, StringComparison.Ordinal);
+        Assert.Contains("proto_Batch_ConvertToHost(const uint8_t* wire, size_t len, proto_Batch* msg)", header, StringComparison.Ordinal);
+
+        // A C struct cannot carry constants, so they become macros ahead of it.
+        Assert.Contains("#define PROTO_BATCH_WIRE_ID 21u", header, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The header has to compile as C and as C++, which is the whole reason this target is not a C++
+    /// generator. The guards are what make that true, so their absence is worth failing on.
+    /// </summary>
+    [Fact]
+    public void Every_header_guards_itself_for_cplusplus()
+    {
+        var ir = Corpus.BuildIr(Corpus.SharedStruct());
+        var set = Generator.Generate(ir, new GeneratorOptions());
+
+        foreach (var file in set.Files.Where(f => f.RelativePath.EndsWith(".h", StringComparison.Ordinal)))
+        {
+            Assert.Contains("#ifdef __cplusplus", file.Contents, StringComparison.Ordinal);
+            Assert.Contains("extern \"C\" {", file.Contents, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// C has no overloading, so every emitted function name must be unique. The C++ target used to lean
+    /// on overloads for the fixed-capacity convenience variants; carrying that habit across would produce
+    /// a header that does not compile at all.
+    /// </summary>
+    [Fact]
+    public void No_function_name_is_emitted_twice()
+    {
+        var ir = Corpus.BuildIr(Corpus.PackedBits());
+        var header = Generator.Generate(ir, new GeneratorOptions()).Files
+            .Single(f => f.RelativePath == "control.h").Contents;
+
+        var definitions = header
+            .Split('\n')
+            .Where(l => l.Contains("PD_INLINE ", StringComparison.Ordinal))
+            .Select(l => l[..l.IndexOf('(', StringComparison.Ordinal)].Split(' ').Last())
+            .ToList();
+
+        Assert.NotEmpty(definitions);
+        Assert.Equal(definitions.Count, definitions.Distinct(StringComparer.Ordinal).Count());
     }
 
     /// <summary>
@@ -97,26 +138,26 @@ public class GoldenFileTests
     public void A_shared_struct_is_declared_once_and_referenced_by_name()
     {
         var ir = Corpus.BuildIr(Corpus.SharedStruct());
-        var set = new CppGenerator().Generate(ir, new GeneratorOptions(Namespace: "proto"));
+        var set = new CGenerator().Generate(ir, new GeneratorOptions(Namespace: "proto"));
         var types = set.Files.Single(f => f.RelativePath == "proto_types.h").Contents;
         var header = set.Files.Single(f => f.RelativePath == "shared.h").Contents;
 
         // Declared once, in the shared header rather than in the bus's.
-        Assert.Equal(1, types.Split("struct Header {").Length - 1);
-        Assert.DoesNotContain("struct Header {", header, StringComparison.Ordinal);
+        Assert.Equal(1, types.Split("typedef struct proto_Header {").Length - 1);
+        Assert.DoesNotContain("typedef struct proto_Header {", header, StringComparison.Ordinal);
 
         // An inner struct is declared before the outer one that contains it.
-        Assert.True(types.IndexOf("struct Header {", StringComparison.Ordinal)
-                    < types.IndexOf("struct Envelope {", StringComparison.Ordinal),
+        Assert.True(types.IndexOf("typedef struct proto_Header {", StringComparison.Ordinal)
+                    < types.IndexOf("typedef struct proto_Envelope {", StringComparison.Ordinal),
             "Header must be declared before Envelope, which contains it.");
 
         // Used by name in both messages, rather than inlined into either.
-        Assert.Contains("    Header header;", header, StringComparison.Ordinal);
+        Assert.Contains("    proto_Header header;", header, StringComparison.Ordinal);
         Assert.DoesNotContain("header_messageId", header, StringComparison.Ordinal);
 
         // And the conversion addresses the nested member, however deep.
-        Assert.Contains("msg.header.messageId", header, StringComparison.Ordinal);
-        Assert.Contains("msg.envelope.head.timestamp", header, StringComparison.Ordinal);
+        Assert.Contains("msg->header.messageId", header, StringComparison.Ordinal);
+        Assert.Contains("msg->envelope.head.timestamp", header, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -129,17 +170,17 @@ public class GoldenFileTests
         var (project, _) = Corpus.TwoBusesSharingAStruct();
         var irs = project.Buses.Select(b => new IrBuilder().Build(project, b)).ToList();
 
-        var set = new CppGenerator().Generate(irs, new GeneratorOptions(Namespace: "proto"));
+        var set = new CGenerator().Generate(irs, new GeneratorOptions(Namespace: "proto"));
 
         var types = set.Files.Single(f => f.RelativePath == "proto_types.h").Contents;
-        Assert.Equal(1, types.Split("struct Header {").Length - 1);
+        Assert.Equal(1, types.Split("typedef struct proto_Header {").Length - 1);
 
         // One header per bus, each including the shared declarations rather than repeating them.
         foreach (var ir in irs)
         {
             var busHeader = set.Files.Single(f => f.RelativePath == $"{ir.BusName.ToLowerInvariant()}.h").Contents;
             Assert.Contains("#include \"proto_types.h\"", busHeader, StringComparison.Ordinal);
-            Assert.DoesNotContain("struct Header {", busHeader, StringComparison.Ordinal);
+            Assert.DoesNotContain("typedef struct proto_Header {", busHeader, StringComparison.Ordinal);
         }
     }
 
@@ -151,40 +192,29 @@ public class GoldenFileTests
     public void A_bus_gets_a_message_id_enum_and_a_lookup()
     {
         var ir = Corpus.BuildIr(Corpus.SharedStruct());
-        var header = new CppGenerator().Generate(ir, new GeneratorOptions(Namespace: "proto")).Files
+        var header = new CGenerator().Generate(ir, new GeneratorOptions(Namespace: "proto")).Files
             .Single(f => f.RelativePath == "shared.h").Contents;
 
-        Assert.Contains("enum class SharedMessageId : uint32_t {", header, StringComparison.Ordinal);
-        Assert.Contains("    NotAssigned = 0,", header, StringComparison.Ordinal);
-        Assert.Contains("inline SharedMessageId Shared_MessageIdFromWire(uint32_t id)", header, StringComparison.Ordinal);
-        Assert.Contains("return SharedMessageId::NotAssigned;", header, StringComparison.Ordinal);
+        Assert.Contains("typedef enum proto_SharedMessageId {", header, StringComparison.Ordinal);
+        Assert.Contains("    proto_SharedMessageId_NotAssigned = 0,", header, StringComparison.Ordinal);
+        Assert.Contains("PD_INLINE proto_SharedMessageId proto_Shared_MessageIdFromWire(uint32_t id)", header, StringComparison.Ordinal);
+        Assert.Contains("return proto_SharedMessageId_NotAssigned;", header, StringComparison.Ordinal);
     }
 
     /// <summary>
-    /// The array overload takes its capacity from the type, so the caller cannot pass a wrong one. It is
-    /// only safe in the wire-to-host direction for a fixed-size message: for a variable-size one the array
-    /// length is the maximum rather than what actually arrived.
+    /// A buffer sized from the message's own macro is the safe way to call the encoder. C cannot check
+    /// that for you the way a C++ array reference could, so the macro and the capacity argument are what
+    /// the caller is given instead.
     /// </summary>
     [Fact]
-    public void A_fixed_size_message_gets_array_overloads_in_both_directions()
+    public void Every_message_publishes_the_buffer_size_its_encoder_needs()
     {
         var ir = Corpus.BuildIr(Corpus.PackedBits());
         var header = Generator.Generate(ir, new GeneratorOptions()).Files
             .Single(f => f.RelativePath == "control.h").Contents;
 
-        Assert.Contains("Status_ConvertToWire(const Status& msg, uint8_t (&wire)[Status::kMaxBytes])", header, StringComparison.Ordinal);
-        Assert.Contains("Status_ConvertToHost(const uint8_t (&wire)[Status::kMaxBytes], Status& msg)", header, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void A_variable_size_message_gets_no_wire_to_host_array_overload()
-    {
-        var ir = Corpus.BuildIr(Corpus.DynamicArray());
-        var header = Generator.Generate(ir, new GeneratorOptions()).Files
-            .Single(f => f.RelativePath == "bulk.h").Contents;
-
-        Assert.Contains("Batch_ConvertToWire(const Batch& msg, uint8_t (&wire)[Batch::kMaxBytes])", header, StringComparison.Ordinal);
-        Assert.DoesNotContain("ConvertToHost(const uint8_t (&wire)", header, StringComparison.Ordinal);
+        Assert.Contains("#define PROTO_STATUS_MAX_BYTES", header, StringComparison.Ordinal);
+        Assert.Contains("uint8_t* wire, size_t cap", header, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -214,11 +244,15 @@ public class GoldenFileTests
         var types = Generator.Generate(ir, new GeneratorOptions()).Files
             .Single(f => f.RelativePath == "proto_types.h").Contents;
 
-        Assert.Contains("enum class Mode : uint32_t {", types, StringComparison.Ordinal);
-        Assert.Contains("Idle = 0,", types, StringComparison.Ordinal);
-        Assert.Contains("Fault = 10,", types, StringComparison.Ordinal);
+        Assert.Contains("typedef enum proto_Mode {", types, StringComparison.Ordinal);
+
+        // C enum members share the enclosing scope, so the type name is part of the member's name or two
+        // enums with an 'Idle' member could not coexist in one translation unit.
+        Assert.Contains("proto_Mode_Idle = 0,", types, StringComparison.Ordinal);
+        Assert.Contains("proto_Mode_Fault = 10,", types, StringComparison.Ordinal);
+
         // Emitted exactly once even though several fields could reference it.
-        var occurrences = types.Split("enum class Mode").Length - 1;
+        var occurrences = types.Split("typedef enum proto_Mode").Length - 1;
         Assert.Equal(1, occurrences);
     }
 

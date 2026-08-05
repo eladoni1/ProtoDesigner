@@ -1,5 +1,5 @@
 using System.Text.RegularExpressions;
-using ProtoDesigner.CodeGen.Cpp;
+using ProtoDesigner.CodeGen.C;
 
 namespace ProtoDesigner.CodeGen.Tests;
 
@@ -13,9 +13,9 @@ namespace ProtoDesigner.CodeGen.Tests;
 /// hard fault rather than a slow function. Encoding it as a test is what stops a future generator change
 /// reaching for <c>std::vector</c> because it was convenient.
 /// </remarks>
-public class CppFreestandingTests
+public class CFreestandingTests
 {
-    private static readonly CppGenerator Generator = new();
+    private static readonly CGenerator Generator = new();
 
     /// <summary>
     /// Constructs that pull in an allocator, unwinding, or the standard library. Word boundaries keep
@@ -73,11 +73,14 @@ public class CppFreestandingTests
 
     /// <summary>
     /// Checks the code, ignoring comments — a comment is free to use the word "new" in prose, and the
-    /// generated headers explain themselves at length.
+    /// generated headers explain themselves at length. Both comment forms are stripped: the C output
+    /// uses block comments, so a line-only stripper would scan the prose and flag it.
     /// </summary>
     private static void AssertFreestanding(string path, string contents)
     {
-        var code = string.Join("\n", contents
+        var withoutBlocks = Regex.Replace(contents, @"/\*.*?\*/", " ", RegexOptions.Singleline);
+
+        var code = string.Join("\n", withoutBlocks
             .Split('\n')
             .Select(line =>
             {

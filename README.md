@@ -21,13 +21,15 @@ so resizing or reordering a field is just an edit followed by a recompute.
 | 0 | Domain model + layout engine | **Done** — 110 tests |
 | 1 | Validation (16 rules, stable `PDxxxx` codes) | **Done** — 38 tests |
 | 2 | JSON persistence + repository port + CLI | **Done** — 22 tests |
-| 3 | Resolved IR + C++14 generator | **Done** — 34 tests + C++ conformance |
+| 3 | Resolved IR + C generator | **Done** — compiled and cross-checked as C and C++ |
 | 4 | WPF editor | **Usable** — tree, field grid, live byte map, diagnostics, generate dialog |
 | 5 | C# generator + advanced protocol features | **Started** — C# emits declarations only |
 | 6 | Shared storage & collaboration | Not started — [design note](docs/shared-storage-design.md) |
 
-**1526 automated tests, all passing.** Plus a cross-language conformance harness that compiles the
-generated C++ under MSVC and checks it produces byte-identical output to the C# reference codec.
+**1589 automated tests, all passing.** That includes a cross-language check that compiles the generated
+code under MSVC — once as C, once as C++ — and asserts it produces byte-identical output to the C#
+reference codec over the whole wire matrix. Two independent implementations: wherever they disagree, one
+of them is wrong.
 
 ### Wire sizes, and finding a field without storing an offset
 
@@ -36,10 +38,10 @@ fill in — the width, polynomial and technique differ from message to message, 
 vetted code or a hardware unit. What the generator gives you is the size information, regenerated on
 every edit so it can never go stale:
 
-```cpp
-static constexpr size_t Header_OnWireBytes = 5;    // per type
-size_t len = Batch_OnWireLength(msg);              // per message, exact for variable-length ones
-size_t trailer_at = len - u16_OnWireBytes;         // a trailing field, without a hardcoded offset
+```c
+#define PROTO_HEADER_ON_WIRE_BYTES 5               /* per type */
+size_t len = proto_Batch_OnWireLength(&msg);       /* per message, exact for variable-length ones */
+size_t trailer_at = len - PROTO_U16_ON_WIRE_BYTES; /* a trailing field, without a hardcoded offset */
 ```
 
 `Msg_OnWireLength` is a constant fold for a fixed-size message and computed from the array count for a
@@ -49,7 +51,7 @@ variable one.
 - **`FillRemaining` and sentinel-terminated arrays decode by asking the caller for the count** rather
   than scanning for the sentinel or consuming the remainder. Encoding both is correct.
 - **The C# target emits declarations only** — classes, enums and each message's wire layout as a
-  comment. Encode/decode is C++-only today.
+  comment. Encode/decode is C-only today.
 
 ---
 
@@ -66,16 +68,17 @@ src/
                                  GenerationScopes, CodeGenerationService (the generate use case)
   ProtoDesigner.Persistence.Json canonical ID-keyed JSON with a migration chain
   ProtoDesigner.CodeGen/         IProtocolGenerator, GeneratorCatalog, BitBuffer + ReferenceCodec,
-                                 Cpp/ (full codec), CSharp/ (declarations only)
+                                 C/ (full codec), CSharp/ (declarations only)
   ProtoDesigner.Cli/             validate / generate / targets
   ProtoDesigner.Wpf/             the editor
 
 tests/
   ProtoDesigner.Core.Tests/            layout, validation, IR
-  ProtoDesigner.Persistence.Json.Tests round-trip + canonical form
-  ProtoDesigner.CodeGen.Tests/         round-trip through the codec + golden files
+  ProtoDesigner.Persistence.Json.Tests round-trip, canonical form, schema migrations
+  ProtoDesigner.CodeGen.Tests/         golden files, plus the C cross-checks that compile the
+                                       generated code (as C and as C++) and diff the bytes
   ProtoDesigner.Cli.Tests/             exit codes and diagnostic output
-  cpp-conformance/                     compiles the generated C++ and cross-checks the bytes
+  ProtoDesigner.Application.Tests/     edit commands, generation scopes, the generate use case
 
 samples/telemetry.pdproj         a worked example exercising most features
 ```
@@ -97,11 +100,10 @@ dotnet test
 
 Requires the .NET 8 SDK (or newer — .NET 10 builds it fine).
 
-To also verify the generated C++ compiles and round-trips (requires MSVC with the C++ workload):
-
-```bash
-powershell -File tests/cpp-conformance/run.ps1
-```
+The cross-language checks compile the generated C with MSVC and run it. They are part of `dotnet test`,
+not a separate step. On a machine with no C++ toolchain they **fail** rather than pass quietly — a green
+suite that never compiled anything is the worst outcome available. To accept generation-only coverage
+there, set `PROTODESIGNER_SKIP_CPP_CROSSCHECK=1`.
 
 ---
 
@@ -112,16 +114,17 @@ dotnet run --project src/ProtoDesigner.Cli -- validate samples/telemetry.pdproj
 ```
 
 ```bash
-dotnet run --project src/ProtoDesigner.Cli -- generate samples/telemetry.pdproj --out ./generated --target cpp --namespace telemetry
+dotnet run --project src/ProtoDesigner.Cli -- generate samples/telemetry.pdproj --out ./generated --target c --namespace telemetry
 ```
 
-Targets: `cpp` (full encode/decode) and `csharp` (declarations only). The editor exposes the same thing
-under **Build ▸ Generate code…** (Ctrl+G), with a preview of every file before anything is written.
+Targets: `c` (full encode/decode; the header compiles as C or C++) and `csharp` (declarations only).
+The editor exposes the same thing via the **Generate code** button (Ctrl+G), with a preview of every
+file before anything is written.
 
 Exit codes: `0` success, `1` validation errors (generation refused), `2` usage error, `3` I/O error.
 
 Generation is **refused** when the model has any `Error` diagnostic — a broken protocol fails at the
-CLI with a code you can grep for, not at the C++ compiler with a mystery.
+CLI with a code you can grep for, not at the C compiler with a mystery.
 
 ---
 
@@ -132,21 +135,24 @@ message: a `Fixed` prefix, a `Variable` region holding the array, then another `
 whatever follows — and that trailing region's offsets are relative to where the variable part ends.
 
 This is what lets code generation emit **compile-time-constant offsets on both sides** of a
-variable-length field and only run a cursor through the middle. The generated C++ shows it plainly:
+variable-length field and only run a cursor through the middle. The generated C shows it plainly:
 
-```cpp
-// --- region 0 (Fixed) ---
-const size_t r0 = w.bit_length();
-w.write_unsigned(static_cast<uint64_t>(msg.count), 8, protodesigner::Endian::Little);
-w.pad_to(8);
+```c
+/* --- region 0 (Fixed) --- */
+{ const size_t r0 = pd_bw_bit_length(&w);
+pd_bw_write_unsigned(&w, (uint64_t)(msg->count), 8, PD_ENDIAN_LITTLE);
+pd_bw_pad_to(&w, 8);
+}
 
-// --- region 1 (Variable) ---
-const size_t r1 = w.bit_length();
-for (size_t i = 0; i < static_cast<size_t>(msg.count) && i < 32; ++i) { ... }
+/* --- region 1 (Variable) --- */
+{ const size_t r1 = pd_bw_bit_length(&w);
+for (size_t i = 0; i < (size_t)(msg->count) && i < 32; ++i) { ... }
+}
 
-// --- region 2 (Fixed) ---
-const size_t r2 = w.bit_length();
-w.write_unsigned(static_cast<uint64_t>(msg.crc), 16, protodesigner::Endian::Little);
+/* --- region 2 (Fixed) --- */
+{ const size_t r2 = pd_bw_bit_length(&w);
+pd_bw_write_unsigned(&w, (uint64_t)(msg->crc), 16, PD_ENDIAN_LITTLE);
+}
 ```
 
 ---

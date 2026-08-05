@@ -9,7 +9,7 @@ namespace ProtoDesigner.Application.Tests;
 /// </summary>
 public class CodeGenerationServiceTests
 {
-    private static readonly IProtocolGenerator Cpp = GeneratorCatalog.Find("cpp")!;
+    private static readonly IProtocolGenerator CTarget = GeneratorCatalog.Find("c")!;
 
     /// <summary>A minimal valid project: one bus, one message, one field.</summary>
     private static (Project Project, Bus Bus) Valid()
@@ -32,7 +32,7 @@ public class CodeGenerationServiceTests
         var (project, bus) = Valid();
 
         var result = CodeGenerationService.Generate(
-            project, Cpp, GenerationScopes.ForBus(bus), new GeneratorOptions(Namespace: "proto"));
+            project, CTarget, GenerationScopes.ForBus(bus), new GeneratorOptions(Namespace: "proto"));
 
         Assert.False(result.Refused);
         Assert.Empty(result.BlockingErrors);
@@ -52,7 +52,7 @@ public class CodeGenerationServiceTests
         bus.Messages.Add(clash);
 
         var result = CodeGenerationService.Generate(
-            project, Cpp, GenerationScopes.ForBus(bus), new GeneratorOptions(Namespace: "proto"));
+            project, CTarget, GenerationScopes.ForBus(bus), new GeneratorOptions(Namespace: "proto"));
 
         Assert.True(result.Refused);
         Assert.NotEmpty(result.BlockingErrors);
@@ -68,7 +68,7 @@ public class CodeGenerationServiceTests
         var (project, _) = Valid();
 
         var result = CodeGenerationService.Generate(
-            project, Cpp, Array.Empty<GenerationScope>(), new GeneratorOptions());
+            project, CTarget, Array.Empty<GenerationScope>(), new GeneratorOptions());
 
         Assert.False(result.Refused);
         Assert.Empty(result.BlockingErrors);
@@ -85,7 +85,7 @@ public class CodeGenerationServiceTests
         var snapshot = Directory.GetFiles(before).Length;
 
         var result = CodeGenerationService.Generate(
-            project, Cpp, GenerationScopes.ForBus(bus), new GeneratorOptions());
+            project, CTarget, GenerationScopes.ForBus(bus), new GeneratorOptions());
 
         Assert.NotEmpty(result.Files.Files);
         Assert.Equal(snapshot, Directory.GetFiles(before).Length);
@@ -96,7 +96,7 @@ public class CodeGenerationServiceTests
     {
         var (project, bus) = Valid();
         var result = CodeGenerationService.Generate(
-            project, Cpp, GenerationScopes.ForBus(bus), new GeneratorOptions(Namespace: "proto"));
+            project, CTarget, GenerationScopes.ForBus(bus), new GeneratorOptions(Namespace: "proto"));
 
         var outDir = Path.Combine(Path.GetTempPath(), "protodesigner-tests", Guid.NewGuid().ToString("N"));
         try
@@ -121,7 +121,7 @@ public class CodeGenerationServiceTests
     {
         var (project, bus) = Valid();
         var result = CodeGenerationService.Generate(
-            project, Cpp, GenerationScopes.ForBus(bus), new GeneratorOptions());
+            project, CTarget, GenerationScopes.ForBus(bus), new GeneratorOptions());
 
         var outDir = Path.Combine(Path.GetTempPath(), "protodesigner-tests",
             Guid.NewGuid().ToString("N"), "nested", "deeper");
