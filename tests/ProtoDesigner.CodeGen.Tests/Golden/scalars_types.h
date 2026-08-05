@@ -12,6 +12,15 @@
 
 namespace proto {
 
+// Wire sizes of the named primitives. There is no type to declare — the host
+// kind is a built-in — but the width each one occupies is worth stating.
+static constexpr size_t U8_OnWireBits = 8;
+static constexpr size_t U8_OnWireBytes = 1;
+static constexpr size_t U16_OnWireBits = 16;
+static constexpr size_t U16_OnWireBytes = 2;
+static constexpr size_t I32_OnWireBits = 32;
+static constexpr size_t I32_OnWireBytes = 4;
+
 } // namespace proto
 
 #endif // PROTODESIGNER_PROTO_TYPES_H

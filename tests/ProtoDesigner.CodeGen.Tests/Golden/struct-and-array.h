@@ -28,14 +28,19 @@ inline TelemetryMessageId Telemetry_MessageIdFromWire(uint32_t id) {
 // Message 'Frame' (wire id 12) — fixed 104 bits / 13 bytes.
 struct Frame {
     static constexpr uint32_t kWireId = 12u;
-    static constexpr size_t kMinBits  = 104;
-    static constexpr size_t kMaxBits  = 104;
     static constexpr size_t kMaxBytes = 13;
 
     Header header;
     // 'samples': exactly 4 elements
     uint16_t samples[4];
 };
+
+// The number of bytes this message occupies on the wire.
+// Fixed-size message, so the answer does not depend on the contents.
+inline size_t Frame_OnWireLength(const Frame& msg) {
+    (void)msg;
+    return Frame::kMaxBytes;
+}
 
 // Converts the host struct `msg` into its on-wire form in `wire` (capacity `cap` bytes).
 // Returns the number of bytes written, or 0 if the buffer was too small.

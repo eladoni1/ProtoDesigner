@@ -44,10 +44,13 @@ public static class DiagnosticCodes
     public const string DynamicArrayInsideDynamic = "PD0035";
     public const string ArrayOfCompositeElement   = "PD0036";
 
-    // ---- CRC (PD0040..PD0049) ---------------------------------------------------------------------
-
-    public const string CrcCoversItself           = "PD0040";
-    public const string CrcCoverageOutOfOrder     = "PD0041";
+    // ---- retired: CRC (PD0040..PD0049) ------------------------------------------------------------
+    //
+    // The tool no longer models CRCs or checksums. A CRC is an ordinary field the caller fills in; the
+    // generated per-type wire sizes are what locate it. PD0040 (CrcCoversItself), PD0041
+    // (CrcCoverageOutOfOrder) and PD0042 (CrcFieldNotLast) are retired and MUST NOT be reused — a code
+    // that once meant one thing and later means another breaks every suppression and grep that referenced
+    // it. The whole PD0040..PD0049 block is left free rather than reclaimed.
 
     // ---- transport budget (PD0050..PD0059) --------------------------------------------------------
 

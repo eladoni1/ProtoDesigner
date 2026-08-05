@@ -66,9 +66,12 @@ public class CSharpGeneratorTests
         var source = BusFile(Generator.Generate(ir, new GeneratorOptions(Namespace: "Proto")), ir);
 
         Assert.Contains($"public sealed class {message.Name}", source, StringComparison.Ordinal);
-        Assert.Contains($"public const int MinBits = {message.MinBits};", source, StringComparison.Ordinal);
-        Assert.Contains($"public const int MaxBits = {message.MaxBits};", source, StringComparison.Ordinal);
         Assert.Contains($"public const int MaxBytes = {(message.MaxBits + 7) / 8};", source, StringComparison.Ordinal);
+
+        // The bit counts were dropped: nothing could be done with them that MaxBytes and OnWireLength
+        // do not already answer, and two more constants is two more things to keep correct.
+        Assert.DoesNotContain("MinBits", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("MaxBits", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -115,6 +118,31 @@ public class CSharpGeneratorTests
         Assert.Contains("no encode/decode", Generator.DisplayName, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(9)]
+    [InlineData(32)]
+    public void The_generated_OnWireLength_runs_and_agrees_with_the_codec(int count)
+    {
+        // Compiling proves the text is valid C#; running it proves the emitted arithmetic is right. This
+        // is the only generated behaviour in the C# target, and "CRC sits at length minus CRC size"
+        // depends on it entirely, so it is worth executing rather than eyeballing in a golden file.
+        var ir = Corpus.BuildIr(Corpus.DynamicArray());
+        var set = Generator.Generate(ir, new GeneratorOptions(Namespace: "Proto"));
+
+        var assembly = Compile(set);
+        var type = assembly.GetType("Proto.Batch")
+            ?? throw new InvalidOperationException("generated assembly has no Proto.Batch");
+
+        var message = Activator.CreateInstance(type)!;
+        type.GetField("Count")!.SetValue(message, (byte)count);
+
+        var actual = (int)type.GetMethod("OnWireLength")!.Invoke(message, null)!;
+
+        Assert.Equal(WireLength.Bytes(ir.Messages.Single(), _ => count), actual);
+    }
+
     [Fact]
     public void The_catalog_offers_both_targets()
     {
@@ -134,7 +162,12 @@ public class CSharpGeneratorTests
     /// <summary>
     /// Compiles every .cs file in the set as one assembly and fails with the compiler's own diagnostics.
     /// </summary>
-    private static void AssertCompiles(GeneratedFileSet set)
+    private static void AssertCompiles(GeneratedFileSet set) => Compile(set);
+
+    /// <summary>
+    /// Compiles the set and loads the result, so a test can call into the generated code.
+    /// </summary>
+    private static System.Reflection.Assembly Compile(GeneratedFileSet set)
     {
         var sources = set.Files
             .Where(f => f.RelativePath.EndsWith(".cs", StringComparison.Ordinal))
@@ -149,12 +182,14 @@ public class CSharpGeneratorTests
             ReferenceAssemblies(),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
-        var errors = compilation.GetDiagnostics()
-            .Where(d => d.Severity == DiagnosticSeverity.Error)
-            .ToList();
+        using var stream = new MemoryStream();
+        var result = compilation.Emit(stream);
 
-        Assert.True(errors.Count == 0,
-            "generated C# did not compile:\n" + string.Join("\n", errors.Select(e => $"  {e}")));
+        Assert.True(result.Success,
+            "generated C# did not compile:\n" + string.Join("\n",
+                result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Select(e => $"  {e}")));
+
+        return System.Reflection.Assembly.Load(stream.ToArray());
     }
 
     /// <summary>

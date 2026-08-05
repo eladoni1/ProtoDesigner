@@ -82,6 +82,19 @@ public sealed class CppGenerator : IProtocolGenerator
         sb.AppendLine($"namespace {ns} {{");
         sb.AppendLine();
 
+        // Named primitives declare no type — the host kind is already a built-in — but their wire size is
+        // the thing a caller cannot derive, so it is emitted first and on its own.
+        var seenPrimitives = new HashSet<string>(StringComparer.Ordinal);
+        var primitives = buses.SelectMany(b => b.Primitives).Where(p => seenPrimitives.Add(p.Name)).ToList();
+        if (primitives.Count > 0)
+        {
+            sb.AppendLine("// Wire sizes of the named primitives. There is no type to declare — the host");
+            sb.AppendLine("// kind is a built-in — but the width each one occupies is worth stating.");
+            foreach (var p in primitives)
+                EmitTypeSize(sb, CppNaming.TypeName(p.Name), p.WireBits, withNote: false);
+            sb.AppendLine();
+        }
+
         // Deduplicate by name across buses: the same project type reaches several of them and would
         // otherwise be declared once per bus. Two genuinely different types sharing a name is already a
         // validation warning (PD0005), so first-wins is safe here.
@@ -140,7 +153,30 @@ public sealed class CppGenerator : IProtocolGenerator
         foreach (var m in e.Members)
             sb.AppendLine($"    {CppNaming.EnumMemberName(m.Name)} = {m.Value.ToString(CultureInfo.InvariantCulture)},");
         sb.AppendLine("};");
+        EmitTypeSize(sb, name, e.WireBits);
         sb.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits a type's wire size next to its declaration.
+    /// </summary>
+    /// <remarks>
+    /// The byte constant is emitted only for a whole number of bytes. A 4-bit enum has no byte size, and
+    /// a rounded one would be wrong in exactly the place it would be trusted — sizing a buffer or
+    /// stepping over a field.
+    /// </remarks>
+    private static void EmitTypeSize(StringBuilder sb, string typeName, int wireBits, bool withNote = true)
+    {
+        if (wireBits <= 0) return;
+
+        if (withNote)
+        {
+            sb.AppendLine($"// Wire size of {typeName} itself. An individual field may narrow it — check the");
+            sb.AppendLine("// field's own width in the message below before assuming this one applies to it.");
+        }
+        sb.AppendLine($"static constexpr size_t {typeName}_OnWireBits = {wireBits};");
+        if (wireBits % 8 == 0)
+            sb.AppendLine($"static constexpr size_t {typeName}_OnWireBytes = {wireBits / 8};");
     }
 
     /// <summary>
@@ -149,10 +185,12 @@ public sealed class CppGenerator : IProtocolGenerator
     /// </summary>
     private static void EmitStruct(StringBuilder sb, ProtocolIr ir, IrStruct s)
     {
+        var name = CppNaming.TypeName(s.Name);
         sb.AppendLine($"// Struct '{s.Name}'.");
-        sb.AppendLine($"struct {CppNaming.TypeName(s.Name)} {{");
+        sb.AppendLine($"struct {name} {{");
         foreach (var member in s.Members) EmitMember(sb, ir, member);
         sb.AppendLine("};");
+        EmitTypeSize(sb, name, s.WireBits);
         sb.AppendLine();
     }
 
@@ -210,8 +248,10 @@ public sealed class CppGenerator : IProtocolGenerator
         sb.AppendLine($"struct {name} {{");
         if (m.WireId is { } wireId)
             sb.AppendLine($"    static constexpr uint32_t kWireId = {wireId}u;");
-        sb.AppendLine($"    static constexpr size_t kMinBits  = {m.MinBits};");
-        sb.AppendLine($"    static constexpr size_t kMaxBits  = {m.MaxBits};");
+
+        // Only the byte capacity: it is what sizes a buffer, and it is what the array overloads below
+        // are declared against. The bit counts were exposed too, and nothing could be done with them
+        // that kMaxBytes and OnWireLength do not already answer.
         sb.AppendLine($"    static constexpr size_t kMaxBytes = {(m.MaxBits + 7) / 8};");
         sb.AppendLine();
 
@@ -221,8 +261,89 @@ public sealed class CppGenerator : IProtocolGenerator
         sb.AppendLine("};");
         sb.AppendLine();
 
+        EmitOnWireLength(sb, m, name);
         EmitEncode(sb, ir, m, name);
         EmitDecode(sb, ir, m, name);
+    }
+
+    /// <summary>
+    /// Emits the message's on-wire length in bytes.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// It answers the question before encoding, which is what makes it worth generating: size a buffer,
+    /// or locate a trailing field as <c>OnWireLength(msg) - &lt;Type&gt;_OnWireBytes</c>. That stays right
+    /// when fields are reordered, because both halves are regenerated.
+    /// </para>
+    /// <para>
+    /// The walk mirrors <c>WireLength</c> in the Core and the encoder in this file, region by region,
+    /// including the pad-to-byte at the end of each fixed region. All integer arithmetic on the stack:
+    /// no allocation, no exceptions.
+    /// </para>
+    /// </remarks>
+    private static void EmitOnWireLength(StringBuilder sb, IrMessage m, string structName)
+    {
+        var isFixed = m.Regions.All(r => r.Kind == IrRegionKind.Fixed);
+
+        sb.AppendLine("// The number of bytes this message occupies on the wire.");
+
+        if (isFixed)
+        {
+            sb.AppendLine($"// Fixed-size message, so the answer does not depend on the contents.");
+            sb.AppendLine($"inline size_t {structName}_OnWireLength(const {structName}& msg) {{");
+            sb.AppendLine("    (void)msg;");
+            sb.AppendLine($"    return {structName}::kMaxBytes;");
+            sb.AppendLine("}");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine("// Variable-length: the count carried by each dynamic array decides the total.");
+        sb.AppendLine($"inline size_t {structName}_OnWireLength(const {structName}& msg) {{");
+        sb.AppendLine("    size_t bits = 0;");
+
+        foreach (var region in m.Regions)
+        {
+            if (region.Kind == IrRegionKind.Fixed)
+            {
+                if (region.MaxBits > 0)
+                {
+                    sb.AppendLine($"    bits += {region.MaxBits};                 // region {region.Index} (Fixed)");
+                    sb.AppendLine("    bits = ((bits + 7) / 8) * 8;   // the encoder pads each fixed region to a byte");
+                }
+                continue;
+            }
+
+            sb.AppendLine($"    {{   // region {region.Index} (Variable), up to {region.MaxElements} x {region.ElementBits} bits");
+            sb.AppendLine($"        size_t n = static_cast<size_t>({CountExpression(m, region)});");
+            sb.AppendLine($"        if (n > {region.MaxElements}) n = {region.MaxElements};   // the encoder truncates at capacity");
+            if (region.PrefixBits > 0)
+                sb.AppendLine($"        bits += {region.PrefixBits};                // inline length prefix");
+            sb.AppendLine($"        bits += n * {region.ElementBits};");
+            sb.AppendLine("    }");
+        }
+
+        sb.AppendLine("    return (bits + 7) / 8;");
+        sb.AppendLine("}");
+        sb.AppendLine();
+    }
+
+    /// <summary>
+    /// How many elements a variable region carries, as a C++ expression over the host struct.
+    /// </summary>
+    /// <remarks>
+    /// A count-from-field array reads the field the user declared rather than a shadow copy: two numbers
+    /// that can disagree is exactly the bug the single count field exists to prevent.
+    /// </remarks>
+    private static string CountExpression(IrMessage m, IrRegion region)
+    {
+        if (region.CountFieldIndex is { } ci)
+            return $"msg.{CppNaming.MemberPath(m.Fields[ci].Path)}";
+
+        var arrayField = m.Fields.FirstOrDefault(f => f.RegionIndex == region.Index && f.Array is not null);
+        return arrayField is null
+            ? "0"
+            : $"msg.{CppNaming.MemberPath(arrayField.Path)}_count";
     }
 
     private static void EmitMember(StringBuilder sb, ProtocolIr ir, IrMember member)

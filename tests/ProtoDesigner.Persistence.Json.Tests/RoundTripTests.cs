@@ -209,8 +209,7 @@ public class RoundTripTests
         telemetry.Fields.Add(new FieldBinding("temperature", temperature.Id,
             new FieldEncoding { BitWidth = 4, AllowBitPacking = true, Transform = new ScalarTransform(1000, 1) }));
         telemetry.Fields.Add(new FieldBinding("samples", samples.Id));
-        var crc = new FieldBinding("crc", u16.Id) { Crc = new global::ProtoDesigner.Core.Model.CrcSpec(CrcAlgorithm.Crc16Ccitt) };
-        telemetry.Fields.Add(crc);
+        telemetry.Fields.Add(new FieldBinding("checksum", u16.Id));
 
         bus.Messages.Add(telemetry);
         project.Buses.Add(bus);

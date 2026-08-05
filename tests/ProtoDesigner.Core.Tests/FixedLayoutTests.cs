@@ -218,18 +218,6 @@ public class FixedLayoutTests
     }
 
     [Fact]
-    public void A_crc_field_is_placed_like_any_other_integer()
-    {
-        var crcField = F("crc", _b.U16());
-        crcField.Crc = new CrcSpec(CrcAlgorithm.Crc16Ccitt);
-
-        var layout = _b.Layout(F("payload", _b.U32()), crcField);
-
-        layout.At("crc", 32, 16);
-        layout.Sized(48);
-    }
-
-    [Fact]
     public void Bool_and_char_occupy_a_byte_unless_narrowed()
     {
         var layout = _b.Layout(

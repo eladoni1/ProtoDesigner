@@ -250,7 +250,11 @@ public sealed class Bus
 /// <summary>Root aggregate. Owns the shared type library and every bus.</summary>
 public sealed class Project
 {
-    public const int CurrentSchemaVersion = 1;
+    /// <summary>
+    /// The schema version this build writes. v2 dropped the per-field <c>crc</c> object: CRCs are no
+    /// longer modelled, and a CRC field is an ordinary field the caller fills in.
+    /// </summary>
+    public const int CurrentSchemaVersion = 2;
 
     public Project(string name)
     {

@@ -16,6 +16,8 @@ public sealed class IrBuilder
     /// <summary>
     /// Builds the IR for a bus, optionally narrowed to a subset of its messages.
     /// </summary>
+    /// <param name="project">The project owning the types the bus's messages reference.</param>
+    /// <param name="bus">The bus to build. Its layout options set the defaults every message inherits.</param>
     /// <param name="only">
     /// The messages to include, or null for all of them. Filtering happens before anything else is
     /// collected, so the enum and struct tables end up holding only what the chosen messages actually
@@ -42,9 +44,13 @@ public sealed class IrBuilder
         var structTable = new Dictionary<TypeId, int>();
         var structs = new List<IrStruct>();
 
+        // Struct sizes are measured under the bus's options rather than any one message's, because a
+        // struct belongs to the project and is reported once for the whole bus.
+        var typeOptions = EffectiveLayoutOptions.Resolve(bus.Options, project.Options);
+
         foreach (var message in selected)
             foreach (var field in message.Fields)
-                CollectStructs(project, field.TypeId, enumTable, structTable, structs);
+                CollectStructs(project, field.TypeId, enumTable, structTable, structs, typeOptions, _engine);
 
         var messages = new List<IrMessage>();
         foreach (var message in selected)
@@ -53,7 +59,51 @@ public sealed class IrBuilder
             messages.Add(BuildMessage(project, message, layout, enumTable, structTable));
         }
 
-        return new ProtocolIr(project.Name, bus.Name, bus.Transport, enums, structs, messages);
+        return new ProtocolIr(project.Name, bus.Name, bus.Transport,
+            CollectPrimitives(project, selected), enums, structs, messages);
+    }
+
+    // ---- primitive collection ---------------------------------------------------------------
+
+    /// <summary>
+    /// Every named primitive the chosen messages reach, in declaration order, deduplicated by id.
+    /// </summary>
+    /// <remarks>
+    /// Reached through struct members and array elements as well as directly, so a <c>u16</c> used only
+    /// inside a <c>Header</c> still gets its size emitted — that is exactly the case where the caller
+    /// cannot see the width from the message alone.
+    /// </remarks>
+    private static IReadOnlyList<IrPrimitive> CollectPrimitives(Project project, IEnumerable<Message> messages)
+    {
+        var seen = new HashSet<TypeId>();
+        var sink = new List<IrPrimitive>();
+
+        foreach (var message in messages)
+            foreach (var field in message.Fields)
+                Walk(field.TypeId);
+
+        return sink;
+
+        void Walk(TypeId typeId)
+        {
+            if (!project.Types.TryGet(typeId, out var type) || type is null) return;
+            if (!seen.Add(typeId)) return;
+
+            switch (type)
+            {
+                case ParameterType p:
+                    sink.Add(new IrPrimitive(p.Name, p.Kind, p.WireBits ?? p.Kind.NaturalBits()));
+                    break;
+
+                case StructType s:
+                    foreach (var member in s.Fields) Walk(member.TypeId);
+                    break;
+
+                case ArrayType a:
+                    Walk(a.ElementTypeId);
+                    break;
+            }
+        }
     }
 
     // ---- struct collection ------------------------------------------------------------------
@@ -67,7 +117,8 @@ public sealed class IrBuilder
     /// malformed one from recursing forever before those checks run.
     /// </remarks>
     private static void CollectStructs(Project project, TypeId typeId,
-        Dictionary<TypeId, int> enumTable, Dictionary<TypeId, int> structTable, List<IrStruct> sink)
+        Dictionary<TypeId, int> enumTable, Dictionary<TypeId, int> structTable, List<IrStruct> sink,
+        EffectiveLayoutOptions options, LayoutEngine engine)
     {
         if (!project.Types.TryGet(typeId, out var type) || type is null) return;
 
@@ -77,15 +128,43 @@ public sealed class IrBuilder
                 if (structTable.ContainsKey(s.Id)) return;
 
                 foreach (var member in s.Fields)
-                    CollectStructs(project, member.TypeId, enumTable, structTable, sink);
+                    CollectStructs(project, member.TypeId, enumTable, structTable, sink, options, engine);
 
                 structTable[s.Id] = sink.Count;
-                sink.Add(new IrStruct(s.Name, BuildMembers(project, s.Fields, enumTable, structTable)));
+                sink.Add(new IrStruct(s.Name, BuildMembers(project, s.Fields, enumTable, structTable),
+                    WireBits: MeasureStruct(s, project, options, engine)));
                 break;
 
             case ArrayType a:
-                CollectStructs(project, a.ElementTypeId, enumTable, structTable, sink);
+                CollectStructs(project, a.ElementTypeId, enumTable, structTable, sink, options, engine);
                 break;
+        }
+    }
+
+    /// <summary>
+    /// Measures a struct by laying it out on its own, as the only field of a throwaway message.
+    /// </summary>
+    /// <remarks>
+    /// Reusing the engine rather than summing the members' widths is the point: padding, alignment and
+    /// bit packing all affect the total, and re-deriving those rules here would be a second implementation
+    /// to keep in step with the first. The probe message is discarded; nothing is added to the project.
+    /// </remarks>
+    private static int MeasureStruct(StructType type, Project project,
+        EffectiveLayoutOptions options, LayoutEngine engine)
+    {
+        var probe = new Message(MessageId.New(), $"__measure_{type.Name}");
+        probe.Fields.Add(new FieldBinding(FieldId.New(), "value", type.Id));
+
+        try
+        {
+            return engine.Compute(probe, project.Types, options).MaxBits;
+        }
+        catch (LayoutException)
+        {
+            // A struct that cannot stand alone — one ending in a fill-remaining array, say — has no size
+            // of its own. Reporting 0 says "not a fixed size" without failing the whole build, and the
+            // generators omit the constant rather than emitting a wrong one.
+            return 0;
         }
     }
 
@@ -205,7 +284,8 @@ public sealed class IrBuilder
                 if (table.ContainsKey(e.Id)) return;
                 table[e.Id] = sink.Count;
                 sink.Add(new IrEnum(e.Name, e.UnderlyingKind, e.IsFlags,
-                    e.Members.Select(m => new IrEnumMember(m.Name, m.Value)).ToArray()));
+                    e.Members.Select(m => new IrEnumMember(m.Name, m.Value)).ToArray(),
+                    WireBits: e.WireBits ?? e.UnderlyingKind.NaturalBits()));
                 break;
 
             case StructType s:

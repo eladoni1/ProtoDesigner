@@ -38,6 +38,10 @@
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="*"/>
+      <!-- The selected-type banner gets a row of its own. It used to sit bottom-aligned inside the tab
+           row, which meant it floated over the list and hid the last entry once the list was long
+           enough to reach it. -->
+      <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
 
     <Border Grid.Row="0" Style="{StaticResource SectionHeaderBar}">
@@ -182,7 +186,7 @@
     </TabControl>
 
     <!-- Selected-type banner so it is obvious what "Add field" will insert -->
-    <Border Grid.Row="1" VerticalAlignment="Bottom" Background="{StaticResource AccentSoft}"
+    <Border Grid.Row="2" Background="{StaticResource AccentSoft}"
             BorderBrush="{StaticResource SurfaceStroke}" BorderThickness="0,1,0,0" Padding="12,7"
             Visibility="{Binding HasSelectedType, Converter={StaticResource BoolToVis}}">
       <StackPanel>

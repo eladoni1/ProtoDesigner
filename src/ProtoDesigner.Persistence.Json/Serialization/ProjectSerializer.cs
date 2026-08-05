@@ -184,22 +184,9 @@ internal static class ProjectSerializer
                 obj["defaultValue"] = f.DefaultValue.ToString();
             if (f.Description is not null)
                 obj["description"] = f.Description;
-            if (f.Crc is not null)
-                obj["crc"] = CrcToJson(f.Crc);
             arr.Add(obj);
         }
         return arr;
-    }
-
-    private static JsonObject CrcToJson(CrcSpec crc)
-    {
-        var obj = new JsonObject
-        {
-            ["algorithm"] = crc.Algorithm.ToString(),
-        };
-        if (crc.Coverage.FromFieldId is { } from) obj["fromFieldId"] = from.ToString();
-        if (crc.Coverage.ToFieldId is { } to) obj["toFieldId"] = to.ToString();
-        return obj;
     }
 
     private static JsonObject ToJson(FieldEncoding encoding)
@@ -433,14 +420,6 @@ internal static class ProjectSerializer
                 field.DefaultValue = d;
             else
                 field.DefaultValue = text;
-        }
-
-        if (obj["crc"] is JsonObject crcObj)
-        {
-            var algorithm = Enum.Parse<CrcAlgorithm>(RequireString(crcObj, "algorithm"));
-            FieldId? from = crcObj["fromFieldId"] is JsonValue fv ? new FieldId(Guid.Parse(fv.GetValue<string>())) : null;
-            FieldId? to = crcObj["toFieldId"] is JsonValue tv ? new FieldId(Guid.Parse(tv.GetValue<string>())) : null;
-            field.Crc = new CrcSpec(algorithm, new CrcCoverage(from, to));
         }
 
         return field;

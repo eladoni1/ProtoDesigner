@@ -28,14 +28,19 @@ inline ControlMessageId Control_MessageIdFromWire(uint32_t id) {
 // Message 'Status' (wire id 9) — fixed 24 bits / 3 bytes.
 struct Status {
     static constexpr uint32_t kWireId = 9u;
-    static constexpr size_t kMinBits  = 24;
-    static constexpr size_t kMaxBits  = 24;
     static constexpr size_t kMaxBytes = 3;
 
     Mode mode;
     uint16_t temperature;   // 4 bits
     uint16_t checksum;
 };
+
+// The number of bytes this message occupies on the wire.
+// Fixed-size message, so the answer does not depend on the contents.
+inline size_t Status_OnWireLength(const Status& msg) {
+    (void)msg;
+    return Status::kMaxBytes;
+}
 
 // Converts the host struct `msg` into its on-wire form in `wire` (capacity `cap` bytes).
 // Returns the number of bytes written, or 0 if the buffer was too small.

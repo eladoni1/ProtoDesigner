@@ -28,14 +28,19 @@ inline MainMessageId Main_MessageIdFromWire(uint32_t id) {
 // Message 'Reading' (wire id 3) — fixed 56 bits / 7 bytes.
 struct Reading {
     static constexpr uint32_t kWireId = 3u;
-    static constexpr size_t kMinBits  = 56;
-    static constexpr size_t kMaxBits  = 56;
     static constexpr size_t kMaxBytes = 7;
 
     uint8_t id;
     uint16_t sequence;
     int32_t delta;
 };
+
+// The number of bytes this message occupies on the wire.
+// Fixed-size message, so the answer does not depend on the contents.
+inline size_t Reading_OnWireLength(const Reading& msg) {
+    (void)msg;
+    return Reading::kMaxBytes;
+}
 
 // Converts the host struct `msg` into its on-wire form in `wire` (capacity `cap` bytes).
 // Returns the number of bytes written, or 0 if the buffer was too small.

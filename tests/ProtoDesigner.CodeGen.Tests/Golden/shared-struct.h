@@ -30,13 +30,18 @@ inline SharedMessageId Shared_MessageIdFromWire(uint32_t id) {
 // Message 'Alpha' (wire id 1) — fixed 56 bits / 7 bytes.
 struct Alpha {
     static constexpr uint32_t kWireId = 1u;
-    static constexpr size_t kMinBits  = 56;
-    static constexpr size_t kMaxBits  = 56;
     static constexpr size_t kMaxBytes = 7;
 
     Header header;
     uint16_t value;
 };
+
+// The number of bytes this message occupies on the wire.
+// Fixed-size message, so the answer does not depend on the contents.
+inline size_t Alpha_OnWireLength(const Alpha& msg) {
+    (void)msg;
+    return Alpha::kMaxBytes;
+}
 
 // Converts the host struct `msg` into its on-wire form in `wire` (capacity `cap` bytes).
 // Returns the number of bytes written, or 0 if the buffer was too small.
@@ -95,13 +100,18 @@ inline protodesigner::DecodeResult Alpha_ConvertToHost(const uint8_t (&wire)[Alp
 // Message 'Beta' (wire id 2) — fixed 96 bits / 12 bytes.
 struct Beta {
     static constexpr uint32_t kWireId = 2u;
-    static constexpr size_t kMinBits  = 96;
-    static constexpr size_t kMaxBits  = 96;
     static constexpr size_t kMaxBytes = 12;
 
     Header header;
     Envelope envelope;
 };
+
+// The number of bytes this message occupies on the wire.
+// Fixed-size message, so the answer does not depend on the contents.
+inline size_t Beta_OnWireLength(const Beta& msg) {
+    (void)msg;
+    return Beta::kMaxBytes;
+}
 
 // Converts the host struct `msg` into its on-wire form in `wire` (capacity `cap` bytes).
 // Returns the number of bytes written, or 0 if the buffer was too small.

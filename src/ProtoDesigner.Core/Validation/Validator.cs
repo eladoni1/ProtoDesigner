@@ -37,7 +37,6 @@ public sealed class Validator
         new EncodingFeasibilityRule(),
         new DynamicArrayRule(),
         new ArrayOfCompositeElementRule(),
-        new CrcCoversItselfRule(),
         new TransportBudgetRule(),
         new UnreferencedTypeRule(),
         new BusHasNoMessagesRule(),

@@ -38,36 +38,6 @@ public sealed class FieldEncoding
     public FieldEncoding Clone() => (FieldEncoding)MemberwiseClone();
 }
 
-public enum CrcAlgorithm
-{
-    Crc8,
-    Crc16Ccitt,
-    Crc32,
-}
-
-/// <summary>Inclusive span of fields a CRC covers. Null bounds mean "from the start" / "to the end, excluding the CRC itself".</summary>
-public sealed record CrcCoverage(FieldId? FromFieldId, FieldId? ToFieldId)
-{
-    public static CrcCoverage WholeMessage { get; } = new(null, null);
-}
-
-/// <summary>
-/// Marks a field as a CRC. Phase 0 places it like any other integer; polynomial evaluation and coverage
-/// validation belong to later phases.
-/// </summary>
-public sealed class CrcSpec
-{
-    public CrcSpec(CrcAlgorithm algorithm, CrcCoverage? coverage = null)
-    {
-        Algorithm = algorithm;
-        Coverage = coverage ?? CrcCoverage.WholeMessage;
-    }
-
-    public CrcAlgorithm Algorithm { get; set; }
-
-    public CrcCoverage Coverage { get; set; }
-}
-
 /// <summary>
 /// A named occurrence of a type inside a message or struct. Order within the containing list *is* the
 /// wire order. The binding owns the encoding, so one type may appear at different widths in different places.
@@ -97,12 +67,6 @@ public sealed class FieldBinding
     public FieldEncoding Encoding { get; set; }
 
     public object? DefaultValue { get; set; }
-
-    /// <summary>
-    /// Set when this field carries a CRC. Reserved for a future field library: a binding may point at a
-    /// shared definition and override only name, default, and encoding.
-    /// </summary>
-    public CrcSpec? Crc { get; set; }
 
     public string? Description { get; set; }
 

@@ -29,10 +29,23 @@ so resizing or reordering a field is just an edit followed by a recompute.
 **1526 automated tests, all passing.** Plus a cross-language conformance harness that compiles the
 generated C++ under MSVC and checks it produces byte-identical output to the C# reference codec.
 
-### Not done yet
+### Wire sizes, and finding a field without storing an offset
 
-- **CRC is placement only.** `CrcSpec` never reaches the IR, so no generator computes one; the field is
-  written as an ordinary value you fill in yourself.
+Checksums, CRCs, framing and sequence handling are **not modelled**. A checksum is an ordinary field you
+fill in — the width, polynomial and technique differ from message to message, and most teams already have
+vetted code or a hardware unit. What the generator gives you is the size information, regenerated on
+every edit so it can never go stale:
+
+```cpp
+static constexpr size_t Header_OnWireBytes = 5;    // per type
+size_t len = Batch_OnWireLength(msg);              // per message, exact for variable-length ones
+size_t trailer_at = len - u16_OnWireBytes;         // a trailing field, without a hardcoded offset
+```
+
+`Msg_OnWireLength` is a constant fold for a fixed-size message and computed from the array count for a
+variable one.
+
+### Not done yet
 - **`FillRemaining` and sentinel-terminated arrays decode by asking the caller for the count** rather
   than scanning for the sentinel or consuming the remainder. Encoding both is correct.
 - **The C# target emits declarations only** — classes, enums and each message's wire layout as a
@@ -157,5 +170,5 @@ w.write_unsigned(static_cast<uint64_t>(msg.crc), 16, protodesigner::Endian::Litt
 
 Everything that is *wrong but computable* — the engine only throws when a layout is *impossible*.
 Duplicate names and wire IDs, width-too-small-for-range, enum members that don't fit, out-of-range
-defaults, count fields that are signed or too narrow, CRC coverage that includes the CRC field, and
-frame-budget overruns against the transport's MTU. Codes are stable and never renumbered.
+defaults, count fields that are signed or too narrow, and frame-budget overruns against the transport's
+MTU. Codes are stable and never renumbered; a retired code is never reused.

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using ProtoDesigner.Application;
 using ProtoDesigner.Core.Layout;
 using ProtoDesigner.Core.Model;
 using ProtoDesigner.Wpf.ViewModels;
@@ -32,7 +33,7 @@ public partial class PrimitiveEditorDialog : Window
             HeadingText.Text = "Create primitive";
             NameBox.Text = "NewPrimitive";
             KindBox.SelectedItem = KindOptionFor(PrimitiveKind.U8);
-            WireFormBox.SelectedItem = WireForm.Unsigned;
+            WireFormBox.SelectedItem = WireSizePolicy.NaturalFormFor(PrimitiveKind.U8);
         }
         else
         {
@@ -123,7 +124,26 @@ public partial class PrimitiveEditorDialog : Window
             MinBox.Text = natural is { } n ? Format(n.Min) : string.Empty;
             MaxBox.Text = natural is { } x ? Format(x.Max) : string.Empty;
         }
+
+        // The wire representation follows the host until the user says otherwise. Without this, choosing
+        // 'double' left the size box on whatever the previous kind had selected — a double reported as
+        // one byte, which is not a narrower encoding of a double but a wrong one.
+        _loaded = false;
+        WireFormBox.SelectedItem = WireSizePolicy.NaturalFormFor(SelectedKind);
+        _loaded = true;
+        RebuildWireSizes(preferBits: null);
     }
+
+    /// <summary>
+    /// Called as the range is typed: entering limits is what unlocks the narrower widths, so the size
+    /// list has to be rebuilt rather than waiting for Save to reject the choice.
+    /// </summary>
+    private void OnRangeChanged(object sender, TextChangedEventArgs e)
+    {
+        if (!_loaded) return;
+        RebuildWireSizes(SelectedWireBits);
+    }
+
 
     private sealed record WireSizeOption(string Label, int Bits)
     {
@@ -146,51 +166,49 @@ public partial class PrimitiveEditorDialog : Window
     /// Offers the widths that make sense for the chosen representation.
     /// </summary>
     /// <remarks>
-    /// Deliberately not capped at the host type's natural width: a value may legitimately be sent wider
-    /// than it is stored (reserving room), and narrower is the whole point of compression. Capping it was
-    /// why a u8 offered only "1 byte".
-    ///
+    /// <para>
+    /// The default is always the host's own width — a type goes on the wire as itself unless the user
+    /// asks for something narrower.
+    /// </para>
+    /// <para>
+    /// Narrower widths are offered only once a range has been entered, because compression needs limits:
+    /// without them there is nothing to map the smaller field onto, and Save would reject the choice
+    /// anyway. Offering an option that cannot be saved is worse than not offering it. Wider than the host
+    /// stays available — sending a value with room to grow is legitimate.
+    /// </para>
+    /// <para>
     /// Signed widths are restricted to whole conventional sizes because a two's-complement field of, say,
     /// 5 bits has no portable representation in a generated struct.
+    /// </para>
     /// </remarks>
     private void RebuildWireSizes(int? preferBits)
     {
         var form = WireFormBox.SelectedItem is WireForm f ? f : WireForm.Unsigned;
-        var options = new List<WireSizeOption>();
+        var kind = SelectedKind;
 
-        switch (form)
-        {
-            case WireForm.Float:
-                options.Add(new WireSizeOption("4 bytes (float)", 32));
-                options.Add(new WireSizeOption("8 bytes (double)", 64));
-                break;
-
-            case WireForm.Signed:
-                foreach (var bytes in new[] { 1, 2, 4, 8 })
-                    options.Add(new WireSizeOption($"{bytes} byte{(bytes == 1 ? "" : "s")} (int{bytes * 8})", bytes * 8));
-                break;
-
-            default:
-                for (var bits = 1; bits <= 7; bits++)
-                    options.Add(new WireSizeOption($"{bits} bit{(bits == 1 ? "" : "s")}", bits));
-                for (var bytes = 1; bytes <= 8; bytes++)
-                    options.Add(new WireSizeOption($"{bytes} byte{(bytes == 1 ? "" : "s")}", bytes * 8));
-                break;
-        }
+        var options = WireSizePolicy.AvailableWidths(kind, form, hasRange: TryCurrentRange(out _))
+            .Select(bits => new WireSizeOption(DescribeWidth(bits, form), bits))
+            .ToList();
 
         WireSizeBox.ItemsSource = options;
 
-        var natural = SelectedKind.NaturalBits();
-        var target = preferBits ?? (form == WireForm.Float
-            ? (SelectedKind == PrimitiveKind.F32 ? 32 : 64)
-            : natural);
-
+        var target = preferBits ?? WireSizePolicy.DefaultWidthFor(kind, form);
         WireSizeBox.SelectedItem =
             options.FirstOrDefault(o => o.Bits == target)
             ?? options.FirstOrDefault(o => o.Bits >= target)
             ?? options.LastOrDefault();
 
         UpdateWireHint();
+    }
+
+    private static string DescribeWidth(int bits, WireForm form)
+    {
+        if (form == WireForm.Float) return bits == 32 ? "4 bytes (float)" : "8 bytes (double)";
+        if (bits % 8 != 0) return $"{bits} bit{(bits == 1 ? "" : "s")}";
+
+        var bytes = bits / 8;
+        var label = $"{bytes} byte{(bytes == 1 ? "" : "s")}";
+        return form == WireForm.Signed ? $"{label} (int{bits})" : label;
     }
 
     private bool HostIsFloat => SelectedKind is PrimitiveKind.F32 or PrimitiveKind.F64;

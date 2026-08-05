@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "name": "SampleProject",
   "options": {},
   "types": {
@@ -183,9 +183,6 @@
               "encoding": {
                 "bitWidth": 16,
                 "allowBitPacking": true
-              },
-              "crc": {
-                "algorithm": "Crc16Ccitt"
               }
             }
           ]

@@ -12,6 +12,13 @@
 
 namespace proto {
 
+// Wire sizes of the named primitives. There is no type to declare — the host
+// kind is a built-in — but the width each one occupies is worth stating.
+static constexpr size_t Temperature_OnWireBits = 16;
+static constexpr size_t Temperature_OnWireBytes = 2;
+static constexpr size_t U16_OnWireBits = 16;
+static constexpr size_t U16_OnWireBytes = 2;
+
 // Enumeration 'Mode'.
 enum class Mode : uint32_t {
     Idle = 0,
@@ -19,6 +26,10 @@ enum class Mode : uint32_t {
     Running = 5,
     Fault = 10,
 };
+// Wire size of Mode itself. An individual field may narrow it — check the
+// field's own width in the message below before assuming this one applies to it.
+static constexpr size_t Mode_OnWireBits = 32;
+static constexpr size_t Mode_OnWireBytes = 4;
 
 } // namespace proto
 

@@ -50,7 +50,7 @@ creates rework later. If a change seems to require breaking one, stop and recons
 
 3. **Identity is an ID, never a name.** Every entity has an immutable `Guid`-backed ID
    (`TypeId`, `FieldId`, `MessageId`, `BusId`). Every reference — a field's type, an array's
-   count field, a CRC's coverage — is by ID. `Name` is display/codegen only and is freely
+   count field — is by ID. `Name` is display/codegen only and is freely
    mutable. Renaming must never break a reference.
 
 4. **The Core is language-agnostic.** `ProtoDesigner.Core` knows nothing about C++, C#, JSON,
@@ -146,10 +146,22 @@ docs/shared-storage-design.md    Phase 6 design note — read before building an
   because offsets are defined over leaves in wire order; members describe the struct the user actually
   declared, so a `Header` used by ten messages is emitted once and referenced by name.
 
-**Known gaps, honestly:**
+**Checksums and CRCs are not modelled — do not add them back.** They were removed deliberately in
+schema v2. Width, polynomial and technique vary per message, teams already have vetted routines or a
+hardware unit, and every CRC-aware abstraction attempted (compute-it-for-you, coverage spans, a callback
+hook, a placement warning) added surface without adding certainty. A checksum is an ordinary field the
+caller fills in.
 
-- `CrcSpec` is still placement-only. It never reaches the IR, so no generator computes a CRC — the
-  field is written as an ordinary value the caller fills in.
+What the generators *do* emit is size information, and nothing beyond it:
+`<Type>_OnWireBits`/`_OnWireBytes` per type, and `<Msg>_OnWireLength(msg)` per message. A trailing field
+is then `OnWireLength(msg) - <Type>_OnWireBytes`, with no offset stored anywhere.
+`Core/Ir/WireLength.cs` is the single definition both generators mirror; `WireLengthTests` pins it
+against what the reference codec actually writes, so the emitted formula cannot drift from the encoder.
+
+**The generated C++ must stay freestanding** — no heap, no exceptions, no std containers. It targets
+microcontrollers where an allocation is a fault, not a slowdown. `CppFreestandingTests` enforces it.
+
+**Known gaps, honestly:**
 - `FillRemaining` and `Terminated` arrays *decode* by asking the caller for the count rather than
   scanning for the sentinel or consuming the remainder. Encode is correct for both.
 - The C# target emits declarations and the wire layout as comments; no encode/decode yet.
@@ -188,8 +200,8 @@ class FieldEncoding { int? BitWidth; Endianness? Endianness; BitOrder? BitOrder;
                       bool AllowBitPacking; int? AlignmentBits; ScalarTransform? Transform;
                       static Natural()/Packed(int)/Sized(int)/AlignedTo(int); FieldEncoding Clone(); }
 class FieldBinding  { FieldId Id; string Name; TypeId TypeId; FieldEncoding Encoding;
-                      object? DefaultValue; CrcSpec? Crc; string? Description; }
-class CrcSpec       { CrcAlgorithm Algorithm; CrcCoverage Coverage; }   // placement only in P0
+                      object? DefaultValue; string? Description; }
+
 ```
 
 **Structure** (`Model/Structure.cs`)
@@ -293,7 +305,7 @@ Rule catalogue (assign codes as you go):
   member representable in the declared bits; `DefaultValue` inside the range.
 - Dynamic arrays: count field exists, **precedes** the array, is an unsigned integer, and its max
   value ≥ declared capacity; length-prefix wide enough for capacity.
-- Alignment vs packing conflicts; CRC coverage that includes the CRC field itself.
+- Alignment vs packing conflicts.
 - Frame budget: `MessageLayout.MaxBits` vs the bus transport's frame size (Ethernet MTU, UART
   frame). Report as `Warning` unless hard-over.
 - Unreferenced types → `Info`.
@@ -385,7 +397,7 @@ touching the editor" true.
 expected output; changes to output are visible in review. **Round-trip tests**: encode a value
 with the generated C++, decode with a hand-written reference (and later with the C# generator),
 assert equality — especially for the nasty cases (bit-packed enum crossing a byte boundary,
-dynamic array followed by a fixed field, CRC over a subrange, bit-reversed field).
+dynamic array followed by a fixed field, bit-reversed field).
 
 **Don't.** Don't generate from an unvalidated model. Don't leak editor types into templates.
 
@@ -426,9 +438,9 @@ options.
 
 **Build.** A C# `IProtocolGenerator` behind the same interface (this is where the IR earns its
 keep — if it needs changes to support C#, the abstraction was leaky, so fix the IR, not the
-editor). Advanced features: automatic `WireId`/Message-ID assignment, MTU/frame-budget checks
-promoted from warnings to codegen options, configurable alignment policies, full CRC evaluation
-(polynomials + coverage) in generated code.
+editor). The declarations and the on-wire length API already exist; what remains is encode/decode.
+Advanced features: automatic `WireId`/Message-ID assignment, MTU/frame-budget checks promoted from
+warnings to codegen options, configurable alignment policies.
 
 **Acceptance.** Extend the round-trip corpus to C++↔C# (encode in one, decode in the other).
 Golden files for the C# target.
@@ -454,13 +466,15 @@ Concurrency tests on the revision check. Merge tests on divergent edit streams.
 
 **Deferred (belongs to a later phase, not the engine):** everything in §6. Notably, the engine
 throws on *impossible* layouts but leaves *wrong-but-computable* to the Phase 1 validator —
-duplicate names/IDs, width-too-small-for-range, out-of-range defaults, CRC-covers-itself, MTU
+duplicate names/IDs, width-too-small-for-range, out-of-range defaults, MTU
 overflow.
 
 **Rejected (intentionally not in the design — don't add):**
 - Offsets stored on the model or in files (breaks rule 2).
 - Encoding baked into types (breaks rule 1).
 - Name-based references (breaks rule 3).
+- Any modelling of checksums or CRCs — computing them, coverage spans, callback hooks, or placement
+  rules. Removed in schema v2; see §3. Per-type wire sizes are the whole of what the tool contributes.
 - Generators reading the editing model instead of the IR (breaks the codegen boundary).
 - CRDTs for collaboration (over-engineered for a schema editor; operations + per-entity revision
   suffice).

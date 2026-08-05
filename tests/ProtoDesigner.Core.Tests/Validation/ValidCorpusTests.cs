@@ -50,8 +50,7 @@ public class ValidCorpusTests
             ValidationBuilder.F("temperature", temperature,
                 new FieldEncoding { BitWidth = 4, AllowBitPacking = true, Transform = new ScalarTransform(1000, 1) }),
             ValidationBuilder.F("samples", samples),
-            ValidationBuilder.F("crc", u16));
-        telemetry.Fields.Last().Crc = new CrcSpec(CrcAlgorithm.Crc16Ccitt);
+            ValidationBuilder.F("checksum", u16));
         telemetry.WireId = 42;
 
         b.Run().NoErrors();

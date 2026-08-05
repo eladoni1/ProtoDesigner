@@ -12,17 +12,34 @@
 
 namespace proto {
 
+// Wire sizes of the named primitives. There is no type to declare — the host
+// kind is a built-in — but the width each one occupies is worth stating.
+static constexpr size_t U8_OnWireBits = 8;
+static constexpr size_t U8_OnWireBytes = 1;
+static constexpr size_t U32_OnWireBits = 32;
+static constexpr size_t U32_OnWireBytes = 4;
+static constexpr size_t U16_OnWireBits = 16;
+static constexpr size_t U16_OnWireBytes = 2;
+
 // Struct 'Header'.
 struct Header {
     uint8_t messageId;
     uint32_t timestamp;
 };
+// Wire size of Header itself. An individual field may narrow it — check the
+// field's own width in the message below before assuming this one applies to it.
+static constexpr size_t Header_OnWireBits = 40;
+static constexpr size_t Header_OnWireBytes = 5;
 
 // Struct 'Envelope'.
 struct Envelope {
     Header head;
     uint16_t sequence;
 };
+// Wire size of Envelope itself. An individual field may narrow it — check the
+// field's own width in the message below before assuming this one applies to it.
+static constexpr size_t Envelope_OnWireBits = 56;
+static constexpr size_t Envelope_OnWireBytes = 7;
 
 } // namespace proto
 

@@ -28,13 +28,18 @@ inline SensorsMessageId Sensors_MessageIdFromWire(uint32_t id) {
 // Message 'Ambient' (wire id 5) — fixed 16 bits / 2 bytes.
 struct Ambient {
     static constexpr uint32_t kWireId = 5u;
-    static constexpr size_t kMinBits  = 16;
-    static constexpr size_t kMaxBits  = 16;
     static constexpr size_t kMaxBytes = 2;
 
     double temperature;   // 8 bits
     float battery;   // 8 bits
 };
+
+// The number of bytes this message occupies on the wire.
+// Fixed-size message, so the answer does not depend on the contents.
+inline size_t Ambient_OnWireLength(const Ambient& msg) {
+    (void)msg;
+    return Ambient::kMaxBytes;
+}
 
 // Converts the host struct `msg` into its on-wire form in `wire` (capacity `cap` bytes).
 // Returns the number of bytes written, or 0 if the buffer was too small.

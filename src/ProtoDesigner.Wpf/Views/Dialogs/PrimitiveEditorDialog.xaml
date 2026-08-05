@@ -29,11 +29,13 @@
         </Grid.ColumnDefinitions>
         <StackPanel Grid.Column="0">
           <TextBlock Text="Minimum" Style="{StaticResource CaptionText}"/>
-          <TextBox x:Name="MinBox" Padding="10,7" Margin="0,3,0,0" FontFamily="{StaticResource MonoFont}"/>
+          <TextBox x:Name="MinBox" Padding="10,7" Margin="0,3,0,0" FontFamily="{StaticResource MonoFont}"
+                   TextChanged="OnRangeChanged"/>
         </StackPanel>
         <StackPanel Grid.Column="2">
           <TextBlock Text="Maximum" Style="{StaticResource CaptionText}"/>
-          <TextBox x:Name="MaxBox" Padding="10,7" Margin="0,3,0,0" FontFamily="{StaticResource MonoFont}"/>
+          <TextBox x:Name="MaxBox" Padding="10,7" Margin="0,3,0,0" FontFamily="{StaticResource MonoFont}"
+                   TextChanged="OnRangeChanged"/>
         </StackPanel>
       </Grid>
       <TextBlock x:Name="RangeHint" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,8,0,14"/>

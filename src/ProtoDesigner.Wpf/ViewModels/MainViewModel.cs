@@ -191,8 +191,10 @@ public sealed class MainViewModel : ObservableObject
         telemetry.Fields.Add(new FieldBinding("temperature", temperature.Id,
             new FieldEncoding { BitWidth = 4, AllowBitPacking = true, Transform = new ScalarTransform(1000, 1) }));
         telemetry.Fields.Add(new FieldBinding("samples", samples.Id));
-        var crcField = new FieldBinding("crc", u16.Id) { Crc = new CrcSpec(CrcAlgorithm.Crc16Ccitt) };
-        telemetry.Fields.Add(crcField);
+
+        // An ordinary u16 the sender fills in. The tool does not compute checksums — the generated
+        // per-type wire sizes are what locate one in a frame.
+        telemetry.Fields.Add(new FieldBinding("checksum", u16.Id));
 
         var ping = new Message("Ping") { WireId = 1 };
         ping.Routes.Add(new MessageRoute(controller.Id, sensor.Id));

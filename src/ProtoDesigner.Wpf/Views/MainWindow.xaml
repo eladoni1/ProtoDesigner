@@ -51,10 +51,6 @@
             <MenuItem Header="_Undo" Command="{Binding UndoCommand}" InputGestureText="Ctrl+Z"/>
             <MenuItem Header="_Redo" Command="{Binding RedoCommand}" InputGestureText="Ctrl+Y"/>
           </MenuItem>
-          <MenuItem Header="_Build">
-            <MenuItem Header="_Generate code…" Command="{x:Static v:MainWindow.GenerateCodeCommand}"
-                      InputGestureText="Ctrl+G"/>
-          </MenuItem>
         </Menu>
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">

@@ -28,8 +28,6 @@ inline BulkMessageId Bulk_MessageIdFromWire(uint32_t id) {
 // Message 'Batch' (wire id 21) — 24..280 bits / 3..35 bytes.
 struct Batch {
     static constexpr uint32_t kWireId = 21u;
-    static constexpr size_t kMinBits  = 24;
-    static constexpr size_t kMaxBits  = 280;
     static constexpr size_t kMaxBytes = 35;
 
     uint8_t count;
@@ -37,6 +35,22 @@ struct Batch {
     uint8_t payload[32];
     uint16_t crc;
 };
+
+// The number of bytes this message occupies on the wire.
+// Variable-length: the count carried by each dynamic array decides the total.
+inline size_t Batch_OnWireLength(const Batch& msg) {
+    size_t bits = 0;
+    bits += 8;                 // region 0 (Fixed)
+    bits = ((bits + 7) / 8) * 8;   // the encoder pads each fixed region to a byte
+    {   // region 1 (Variable), up to 32 x 8 bits
+        size_t n = static_cast<size_t>(msg.count);
+        if (n > 32) n = 32;   // the encoder truncates at capacity
+        bits += n * 8;
+    }
+    bits += 16;                 // region 2 (Fixed)
+    bits = ((bits + 7) / 8) * 8;   // the encoder pads each fixed region to a byte
+    return (bits + 7) / 8;
+}
 
 // Converts the host struct `msg` into its on-wire form in `wire` (capacity `cap` bytes).
 // Returns the number of bytes written, or 0 if the buffer was too small.

@@ -2,49 +2,6 @@ using ProtoDesigner.Core.Model;
 
 namespace ProtoDesigner.Core.Validation.Rules;
 
-/// <summary>The CRC field must not be inside its own coverage span.</summary>
-public sealed class CrcCoversItselfRule : IValidationRule
-{
-    public string Code => DiagnosticCodes.CrcCoversItself;
-
-    public IEnumerable<Diagnostic> Validate(ValidationContext ctx)
-    {
-        foreach (var bus in ctx.Project.Buses)
-            foreach (var message in bus.Messages)
-                for (var i = 0; i < message.Fields.Count; i++)
-                {
-                    var field = message.Fields[i];
-                    if (field.Crc is null) continue;
-
-                    var (fromIdx, toIdx) = ResolveSpan(field.Crc.Coverage, message, i);
-                    if (fromIdx <= i && i <= toIdx)
-                        yield return new Diagnostic(Code, Severity.Error,
-                            $"CRC field '{field.Name}' is inside its own coverage span. Adjust the coverage to end before it.",
-                            EntityPath.ForField(bus, message, field.Name));
-                }
-    }
-
-    private static (int From, int To) ResolveSpan(CrcCoverage coverage, Message message, int crcIndex)
-    {
-        var from = 0;
-        if (coverage.FromFieldId is { } fromId)
-            from = Math.Max(0, message.Fields.FindIndex(f => f.Id == fromId));
-
-        var to = message.Fields.Count - 1;
-        if (coverage.ToFieldId is { } toId)
-        {
-            var idx = message.Fields.FindIndex(f => f.Id == toId);
-            if (idx >= 0) to = idx;
-        }
-        else
-        {
-            // "to end" excludes the CRC field itself.
-            to = crcIndex - 1;
-        }
-        return (from, to);
-    }
-}
-
 /// <summary>Warns when a message might not fit in the transport's frame budget.</summary>
 public sealed class TransportBudgetRule : IValidationRule
 {

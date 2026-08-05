@@ -28,12 +28,17 @@ inline AttitudeMessageId Attitude_MessageIdFromWire(uint32_t id) {
 // Message 'Angles' (wire id 4) — fixed 8 bits / 1 bytes.
 struct Angles {
     static constexpr uint32_t kWireId = 4u;
-    static constexpr size_t kMinBits  = 8;
-    static constexpr size_t kMaxBits  = 8;
     static constexpr size_t kMaxBytes = 1;
 
     int16_t tilt;   // 8 bits
 };
+
+// The number of bytes this message occupies on the wire.
+// Fixed-size message, so the answer does not depend on the contents.
+inline size_t Angles_OnWireLength(const Angles& msg) {
+    (void)msg;
+    return Angles::kMaxBytes;
+}
 
 // Converts the host struct `msg` into its on-wire form in `wire` (capacity `cap` bytes).
 // Returns the number of bytes written, or 0 if the buffer was too small.

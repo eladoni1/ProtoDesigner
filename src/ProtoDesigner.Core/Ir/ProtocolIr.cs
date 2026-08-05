@@ -11,16 +11,40 @@ public sealed record ProtocolIr(
     string ProjectName,
     string BusName,
     Transport Transport,
+    IReadOnlyList<IrPrimitive> Primitives,
     IReadOnlyList<IrEnum> Enums,
     IReadOnlyList<IrStruct> Structs,
     IReadOnlyList<IrMessage> Messages);
 
+/// <summary>
+/// A named primitive type the protocol declares — a <c>Temperature</c> that is a <c>double</c> on the
+/// host and 8 bits on the wire.
+/// </summary>
+/// <remarks>
+/// It carries no members and generates no declaration: the host type is already a built-in, so emitting
+/// a typedef would add a name without adding meaning. What it exists for is the wire size, which is the
+/// one thing about it a caller cannot work out from the host type alone.
+/// </remarks>
+/// <param name="Name">The type's name, as the user declared it.</param>
+/// <param name="Host">The primitive kind it is stored as.</param>
+/// <param name="WireBits">Its declared wire size, or the host kind's natural width.</param>
+public sealed record IrPrimitive(string Name, PrimitiveKind Host, int WireBits);
+
 /// <summary>An enum type referenced by one or more fields. Emitted as a first-class type by generators.</summary>
+/// <param name="Name">The type's name, as the user declared it.</param>
+/// <param name="Underlying">The primitive kind that holds a member's value on the host.</param>
+/// <param name="IsFlags">Whether members combine as a bit set.</param>
+/// <param name="Members">The declared members, in declaration order.</param>
+/// <param name="WireBits">
+/// The type's own wire size — its declared <c>WireBits</c>, or its underlying kind's natural width.
+/// A binding may still override it, so this is the type's default, not a promise about every field.
+/// </param>
 public sealed record IrEnum(
     string Name,
     PrimitiveKind Underlying,
     bool IsFlags,
-    IReadOnlyList<IrEnumMember> Members);
+    IReadOnlyList<IrEnumMember> Members,
+    int WireBits);
 
 public sealed record IrEnumMember(string Name, long Value);
 
@@ -28,7 +52,16 @@ public sealed record IrEnumMember(string Name, long Value);
 /// A struct type referenced by one or more messages, in declaration order — a struct always appears
 /// after everything it depends on, so a generator can emit the list top to bottom.
 /// </summary>
-public sealed record IrStruct(string Name, IReadOnlyList<IrMember> Members);
+/// <param name="Name">The type's name, as the user declared it.</param>
+/// <param name="Members">The struct's members, in declaration order — which is wire order.</param>
+/// <param name="WireBits">
+/// What the struct occupies on the wire on its own, under the project's layout options. A struct's
+/// members carry their own encodings, so this is a property of the struct rather than of where it is
+/// used — but see the note in <see cref="IrBuilder"/>: bit packing means a struct that starts
+/// mid-byte can still straddle differently, so this is the size to reserve, not a universal offset.
+/// Zero when the struct has no size of its own.
+/// </param>
+public sealed record IrStruct(string Name, IReadOnlyList<IrMember> Members, int WireBits);
 
 public enum IrMemberKind
 {

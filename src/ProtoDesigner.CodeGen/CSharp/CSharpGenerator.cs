@@ -73,6 +73,12 @@ public sealed class CSharpGenerator : IProtocolGenerator
         sb.AppendLine($"namespace {Namespace(options)};");
         sb.AppendLine();
 
+        // Named primitives declare no type — the host kind is already a built-in — but their wire size is
+        // the thing a caller cannot derive, so it gets a holder class of its own.
+        var seenPrimitives = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var p in buses.SelectMany(b => b.Primitives).Where(p => seenPrimitives.Add(p.Name)))
+            EmitTypeSizeClass(sb, CSharpNaming.TypeName(p.Name), p.WireBits);
+
         // Deduplicate by name across buses: the same project type reaches several of them and would
         // otherwise be declared once per bus. Two genuinely different types sharing a name is already a
         // validation warning (PD0005), so first-wins is safe here.
@@ -102,6 +108,10 @@ public sealed class CSharpGenerator : IProtocolGenerator
             sb.AppendLine($"    {CSharpNaming.EnumMemberName(m.Name)} = {m.Value.ToString(CultureInfo.InvariantCulture)},");
         sb.AppendLine("}");
         sb.AppendLine();
+
+        // An enum cannot hold constants, so its wire size goes on a companion class. Same names as the
+        // C++ target, so the two are readable side by side.
+        EmitTypeSizeClass(sb, name, e.WireBits);
     }
 
     private static void EmitStruct(StringBuilder sb, ProtocolIr ir, IrStruct s)
@@ -113,7 +123,36 @@ public sealed class CSharpGenerator : IProtocolGenerator
         sb.AppendLine("/// </summary>");
         sb.AppendLine($"public sealed class {name}");
         sb.AppendLine("{");
+        EmitTypeSizeMembers(sb, s.WireBits, "    ");
         foreach (var member in s.Members) EmitMember(sb, ir, name, member);
+        sb.AppendLine("}");
+        sb.AppendLine();
+    }
+
+    /// <summary>
+    /// The wire size of a type, as constants. Bytes only for a whole number of them — a 4-bit enum has no
+    /// byte size, and a rounded one would be wrong exactly where it would be trusted.
+    /// </summary>
+    private static void EmitTypeSizeMembers(StringBuilder sb, int wireBits, string indent)
+    {
+        if (wireBits <= 0) return;
+
+        sb.AppendLine($"{indent}/// <summary>Wire size of the type itself. An individual field may narrow it —");
+        sb.AppendLine($"{indent}/// check that field's own width before assuming this applies to it.</summary>");
+        sb.AppendLine($"{indent}public const int OnWireBits = {wireBits};");
+        if (wireBits % 8 == 0)
+            sb.AppendLine($"{indent}public const int OnWireBytes = {wireBits / 8};");
+        sb.AppendLine();
+    }
+
+    private static void EmitTypeSizeClass(StringBuilder sb, string typeName, int wireBits)
+    {
+        if (wireBits <= 0) return;
+
+        sb.AppendLine($"/// <summary>Wire size of <see cref=\"{typeName}\"/>.</summary>");
+        sb.AppendLine($"public static class {typeName}Wire");
+        sb.AppendLine("{");
+        EmitTypeSizeMembers(sb, wireBits, "    ");
         sb.AppendLine("}");
         sb.AppendLine();
     }
@@ -171,16 +210,85 @@ public sealed class CSharpGenerator : IProtocolGenerator
         sb.AppendLine("{");
         if (m.WireId is { } wireId)
             sb.AppendLine($"    public const uint WireId = {wireId};");
-        sb.AppendLine($"    public const int MinBits = {m.MinBits};");
-        sb.AppendLine($"    public const int MaxBits = {m.MaxBits};");
+
+        // Only the byte capacity: it sizes a buffer, and OnWireLength answers the rest.
         sb.AppendLine($"    public const int MaxBytes = {Bytes(m.MaxBits)};");
         sb.AppendLine();
 
         // Members, not Fields: the host shape the user declared, with structs kept whole.
         foreach (var member in m.Members) EmitMember(sb, ir, name, member);
 
+        sb.AppendLine();
+        EmitOnWireLength(sb, m, name);
+
         sb.AppendLine("}");
         sb.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits the message's on-wire length in bytes, mirroring <c>WireLength</c> in the Core and the C++
+    /// target region by region — including the pad-to-byte the encoder applies at the end of each fixed
+    /// region.
+    /// </summary>
+    /// <remarks>
+    /// This one method is real behaviour rather than a declaration, and it is here deliberately: a
+    /// trailing field sits at <c>OnWireLength() - &lt;Type&gt;Wire.OnWireBytes</c>, so a C# tool can find
+    /// it without the encode/decode this target does not yet emit.
+    /// </remarks>
+    private static void EmitOnWireLength(StringBuilder sb, IrMessage m, string enclosingType)
+    {
+        sb.AppendLine("    /// <summary>The number of bytes this message occupies on the wire.</summary>");
+
+        if (WireLength.IsFixedSize(m))
+        {
+            sb.AppendLine("    public int OnWireLength() => MaxBytes;   // fixed size: contents do not matter");
+            return;
+        }
+
+        sb.AppendLine("    public int OnWireLength()");
+        sb.AppendLine("    {");
+        sb.AppendLine("        int bits = 0;");
+
+        foreach (var region in m.Regions)
+        {
+            if (region.Kind == IrRegionKind.Fixed)
+            {
+                if (region.MaxBits > 0)
+                {
+                    sb.AppendLine($"        bits += {region.MaxBits};                 // region {region.Index} (Fixed)");
+                    sb.AppendLine("        bits = ((bits + 7) / 8) * 8;   // each fixed region is padded to a byte");
+                }
+                continue;
+            }
+
+            sb.AppendLine($"        {{   // region {region.Index} (Variable), up to {region.MaxElements} x {region.ElementBits} bits");
+            sb.AppendLine($"            int n = (int){CountExpression(m, region, enclosingType)};");
+            sb.AppendLine($"            if (n > {region.MaxElements}) n = {region.MaxElements};   // truncated at capacity");
+            sb.AppendLine("            if (n < 0) n = 0;");
+            if (region.PrefixBits > 0)
+                sb.AppendLine($"            bits += {region.PrefixBits};                // inline length prefix");
+            sb.AppendLine($"            bits += n * {region.ElementBits};");
+            sb.AppendLine("        }");
+        }
+
+        sb.AppendLine("        return (bits + 7) / 8;");
+        sb.AppendLine("    }");
+    }
+
+    /// <summary>
+    /// How many elements a variable region carries, as a C# expression over this class. Names go through
+    /// the same collision handling the member declarations use, so a field whose name matches its message
+    /// is referred to by the name that was actually emitted.
+    /// </summary>
+    private static string CountExpression(IrMessage m, IrRegion region, string enclosingType)
+    {
+        if (region.CountFieldIndex is { } ci)
+            return CSharpNaming.MemberNameIn(enclosingType, m.Fields[ci].Path);
+
+        var arrayField = m.Fields.FirstOrDefault(f => f.RegionIndex == region.Index && f.Array is not null);
+        return arrayField is null
+            ? "0"
+            : $"{CSharpNaming.MemberNameIn(enclosingType, arrayField.Path)}Count";
     }
 
     /// <summary>
