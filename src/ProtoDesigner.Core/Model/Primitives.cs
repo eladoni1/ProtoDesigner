@@ -21,6 +21,19 @@ public enum Endianness
     Big,
 }
 
+/// <summary>An enum whose members the bus supplies, rather than the user.</summary>
+public enum SyntheticEnum
+{
+    /// <summary>An ordinary enum: the members are the ones declared on the type.</summary>
+    None,
+
+    /// <summary>Every message on the bus that carries a wire id, keyed by that id.</summary>
+    MessageId,
+
+    /// <summary>Every module on the bus, numbered from one in declaration order.</summary>
+    ModuleId,
+}
+
 /// <summary>Order in which bits of a value are written within its storage bits.</summary>
 public enum BitOrder
 {

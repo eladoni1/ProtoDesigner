@@ -63,6 +63,8 @@ internal static class ProjectSerializer
                 obj["kind"] = "enum";
                 obj["underlying"] = e.UnderlyingKind.ToString();
                 obj["isFlags"] = e.IsFlags;
+                // Written only when set, so every file predating synthetic enums round-trips unchanged.
+                if (e.Synthetic != SyntheticEnum.None) obj["synthetic"] = e.Synthetic.ToString();
                 if (e.WireBits.HasValue) obj["wireBits"] = e.WireBits.Value;
                 obj["wireForm"] = e.WireForm.ToString();
                 if (e.WireOffset.HasValue) obj["wireOffset"] = e.WireOffset.Value.ToString(Inv);
@@ -318,7 +320,10 @@ internal static class ProjectSerializer
         {
             var underlying = Enum.Parse<PrimitiveKind>(RequireString(obj, "underlying"));
             var isFlags = obj["isFlags"]?.GetValue<bool>() ?? false;
-            var enumType = new EnumType(id, name, underlying, isFlags);
+            var synthetic = obj["synthetic"] is { } sy
+                ? Enum.Parse<SyntheticEnum>(sy.GetValue<string>())
+                : SyntheticEnum.None;
+            var enumType = new EnumType(id, name, underlying, isFlags) { Synthetic = synthetic };
             if (obj["members"] is JsonArray members)
                 foreach (var m in members.OfType<JsonObject>())
                     enumType.With(RequireString(m, "name"), m["value"]!.GetValue<long>());

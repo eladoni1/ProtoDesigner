@@ -67,7 +67,11 @@ public sealed record IrEnum(
     PrimitiveKind Underlying,
     bool IsFlags,
     IReadOnlyList<IrEnumMember> Members,
-    int WireBits);
+    int WireBits,
+    // Whether the bus supplied these members rather than the user. Generators need no special case —
+    // by the time they see it the members are filled in — but it explains an enum with no declaration
+    // behind it, and a target that wants to skip one can.
+    SyntheticEnum Synthetic = SyntheticEnum.None);
 
 public sealed record IrEnumMember(string Name, long Value);
 

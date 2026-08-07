@@ -117,7 +117,7 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 5b | Protobuf schema target + protovalidate | **Done** — gated per message, protoc-verified |
 | 6 | Shared storage & collaboration | Not started — see `docs/shared-storage-design.md` |
 
-**1767 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
+**1772 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
 rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
 red one. None of the toolchains is vendored.
 
@@ -203,7 +203,16 @@ the rest. This exists because widening the shared record per language is exactly
 bias" boundary forbids. `IProtocolGenerator.CoversEveryMessage` is the other declaration: false means
 the target borrows a foreign wire format and the caller must narrow the scope.
 
-**Two identity enums are synthesized per bus, and neither is stored.** `<ns>_<Bus>MessageId` lists every
+**`EnumType.Synthetic` is a type you can put on a field whose members the bus fills in.**
+`SyntheticEnum.MessageId` becomes every message's `WireId`; `SyntheticEnum.ModuleId` becomes every module,
+numbered from 1. `Members` stays empty on the model and `IrBuilder` fills it per bus, so a shared `Header`
+carrying a message-id field means the right thing on every bus that uses it, and renaming a message can
+never leave a hand-written list stale. The marker persists (declarative intent — the user chose this field
+to be "the message id"); the member list never does (derived). Created from the Types tab's
+**+ Message ID** / **+ Module ID** buttons, and deliberately has no editor dialog: the members are not
+yours to edit, and offering that back would restore the staleness the type removes.
+
+**Two identity enums are also synthesized per bus whether or not any field uses them, and neither is stored.** `<ns>_<Bus>MessageId` lists every
 message carrying a `WireId`, with a `_NotAssigned = 0` sentinel and a `<Bus>_MessageIdFromWire()` lookup;
 `<ns>_<Bus>ModuleId` does the same for the bus's modules, plus a `<Bus>_ModuleName()` lookup. Both are
 derived at generation, so renaming the bus, a message or a module — or changing a wire id — updates them

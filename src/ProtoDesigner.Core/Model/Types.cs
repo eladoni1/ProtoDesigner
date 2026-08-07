@@ -138,6 +138,24 @@ public sealed class EnumType : TypeDefinition, IWireSized
 
     public PrimitiveKind UnderlyingKind { get; set; }
 
+    /// <summary>
+    /// Whether this enum's members are declared by the user or filled in from the bus at generation.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A synthetic enum is a <em>placeholder</em>: it is a real type the user can put on a field, but its
+    /// members come from the bus being generated rather than from <see cref="Members"/>, which stays
+    /// empty. That is what lets one <c>Header</c> struct carry a message-id field and mean the right
+    /// thing on every bus that uses it — the alternative was a hand-maintained enum per bus that goes
+    /// stale the moment a message is renamed.
+    /// </para>
+    /// <para>
+    /// It is declarative intent, not derived data, so it persists: the user chose this field to be "the
+    /// message id". What is derived — and therefore never stored — is the member list.
+    /// </para>
+    /// </remarks>
+    public SyntheticEnum Synthetic { get; set; } = SyntheticEnum.None;
+
     public bool IsFlags { get; set; }
 
     public int? WireBits { get; set; }

@@ -39,6 +39,14 @@ public sealed class IrBuilder
         foreach (var message in selected)
             CollectEnums(project, message.Fields, enumTable, enums);
 
+        // A synthetic enum declares no members of its own; the bus supplies them. Filling them here is
+        // what makes one shared Header mean the right thing on every bus that uses it — and why the
+        // member list is never stored: renaming a message or a module changes it, and there is nothing
+        // left behind to go stale.
+        for (var i = 0; i < enums.Count; i++)
+            if (SyntheticMembers(bus, enums[i]) is { } filled)
+                enums[i] = enums[i] with { Members = filled };
+
         // Then structs, post-order, so a struct always lands after everything it depends on and a
         // generator can emit the list top to bottom without sorting it again.
         var structTable = new Dictionary<TypeId, int>();
@@ -67,6 +75,34 @@ public sealed class IrBuilder
 
         return new ProtocolIr(project.Name, bus.Name, bus.Transport,
             CollectPrimitives(project, selected), enums, structs, messages, modules);
+    }
+
+    /// <summary>
+    /// The members a synthetic enum takes from the bus, or null when it is an ordinary enum.
+    /// </summary>
+    /// <remarks>
+    /// Message ids are the declared <see cref="Message.WireId"/>, so they are whatever the user chose and
+    /// survive a reorder. Module ids are declaration order, because nothing puts one on the wire. Both
+    /// reserve 0 for "not assigned", which no real entry can hold: a wire id of 0 is not emitted, and
+    /// modules start at 1.
+    /// </remarks>
+    private static IReadOnlyList<IrEnumMember>? SyntheticMembers(Bus bus, IrEnum candidate)
+    {
+        return candidate.Synthetic switch
+        {
+            SyntheticEnum.MessageId => Prefixed(bus.Messages
+                .Where(m => m.WireId is > 0)
+                .OrderBy(m => m.WireId!.Value)
+                .Select(m => new IrEnumMember(m.Name, m.WireId!.Value))),
+
+            SyntheticEnum.ModuleId => Prefixed(bus.Modules
+                .Select((m, i) => new IrEnumMember(m.Name, i + 1))),
+
+            _ => null,
+        };
+
+        static IReadOnlyList<IrEnumMember> Prefixed(IEnumerable<IrEnumMember> members) =>
+            new[] { new IrEnumMember("NotAssigned", 0) }.Concat(members).ToList();
     }
 
     // ---- primitive collection ---------------------------------------------------------------
@@ -304,7 +340,8 @@ public sealed class IrBuilder
                 table[e.Id] = sink.Count;
                 sink.Add(new IrEnum(e.Name, e.UnderlyingKind, e.IsFlags,
                     e.Members.Select(m => new IrEnumMember(m.Name, m.Value)).ToArray(),
-                    WireBits: e.WireBits ?? e.UnderlyingKind.NaturalBits()));
+                    WireBits: e.WireBits ?? e.UnderlyingKind.NaturalBits(),
+                    Synthetic: e.Synthetic));
                 break;
 
             case StructType s:

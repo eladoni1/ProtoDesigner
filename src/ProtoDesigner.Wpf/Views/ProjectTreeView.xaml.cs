@@ -149,6 +149,26 @@ public partial class ProjectTreeView : UserControl
         if (created is not null) SelectType(created);
     }
 
+    /// <summary>
+    /// Creates an enum whose members the bus fills in — the message-id or module-id list.
+    /// </summary>
+    /// <remarks>
+    /// There is no editor dialog for these, and there should not be: the whole point is that the members
+    /// are not yours to edit. Editing one would mean hand-maintaining a list that goes stale the moment a
+    /// message is renamed, which is the problem this type exists to remove.
+    /// </remarks>
+    private void OnCreateMessageIdEnum(object sender, RoutedEventArgs e) => CreateSynthetic(SyntheticEnum.MessageId);
+
+    private void OnCreateModuleIdEnum(object sender, RoutedEventArgs e) => CreateSynthetic(SyntheticEnum.ModuleId);
+
+    private void CreateSynthetic(SyntheticEnum kind)
+    {
+        if (Vm is null) return;
+
+        var created = Vm.Types.AddSyntheticEnum(kind);
+        SelectType(created);
+    }
+
     private void OnCreateStruct(object sender, RoutedEventArgs e)
     {
         if (Vm is null) return;

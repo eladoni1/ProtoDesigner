@@ -71,6 +71,28 @@ public sealed class TypeLibraryViewModel : ObservableObject
         return type;
     }
 
+    /// <summary>
+    /// Adds an enum whose members come from the bus at generation rather than from the user.
+    /// </summary>
+    /// <remarks>
+    /// 32 bits, because a message id is <c>Message.WireId</c> and the editor allows up to four bytes for
+    /// one. Narrower would silently cap what a user can assign, and this type exists precisely so the id
+    /// does not have to be tracked by hand.
+    /// </remarks>
+    public EnumType AddSyntheticEnum(SyntheticEnum kind)
+    {
+        var type = new EnumType(TypeId.New(), UniqueName(kind == SyntheticEnum.MessageId ? "MessageId" : "ModuleId"),
+            PrimitiveKind.U32)
+        {
+            Synthetic = kind,
+            WireBits = 32,
+        };
+
+        _project.Journal.Do(new AddTypeCommand(type));
+        Rebuild();
+        return type;
+    }
+
     public StructType AddStruct(string name)
     {
         var type = new StructType(TypeId.New(), UniqueName(name));
