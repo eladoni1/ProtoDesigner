@@ -110,6 +110,36 @@ public class MigrationTests
         Assert.Equal(once, twice, StringComparer.Ordinal);
     }
 
+    /// <summary>
+    /// Protobuf field numbers are the one piece of state whose whole value is that it never changes, so
+    /// surviving a save/load is the property that matters most about them.
+    /// </summary>
+    [Fact]
+    public void Proto_field_numbers_survive_a_round_trip()
+    {
+        var project = JsonProjectRepository.LoadFromString(V1Document);
+        var fields = project.Buses.Single().Messages.Single().Fields;
+        fields[0].ProtoFieldNumber = 4;
+        fields[1].ProtoFieldNumber = 9;
+
+        var reloaded = JsonProjectRepository.LoadFromString(JsonProjectRepository.SaveToString(project));
+        var back = reloaded.Buses.Single().Messages.Single().Fields;
+
+        Assert.Equal(4, back[0].ProtoFieldNumber);
+        Assert.Equal(9, back[1].ProtoFieldNumber);
+    }
+
+    [Fact]
+    public void A_project_never_exported_carries_no_proto_keys()
+    {
+        // An optional key needs no schema bump, but it also should not appear in a file that has no use
+        // for it — a project that never touched protobuf produces the same bytes it always did.
+        var project = JsonProjectRepository.LoadFromString(V1Document);
+        var text = JsonProjectRepository.SaveToString(project);
+
+        Assert.DoesNotContain("protoFieldNumber", text, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void A_document_from_a_newer_build_is_refused_rather_than_guessed_at()
     {

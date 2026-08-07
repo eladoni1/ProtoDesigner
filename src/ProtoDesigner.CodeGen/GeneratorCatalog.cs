@@ -1,5 +1,6 @@
 using ProtoDesigner.CodeGen.C;
 using ProtoDesigner.CodeGen.CSharp;
+using ProtoDesigner.CodeGen.Proto;
 
 namespace ProtoDesigner.CodeGen;
 
@@ -19,6 +20,7 @@ public static class GeneratorCatalog
     {
         new CGenerator(),
         new CSharpGenerator(),
+        new ProtoGenerator(),
     };
 
     /// <summary>The generator with this id, or null. Ids are matched case-insensitively.</summary>

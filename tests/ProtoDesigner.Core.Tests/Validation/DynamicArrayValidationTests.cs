@@ -77,4 +77,58 @@ public class DynamicArrayValidationTests
 
         b.Run().HasNo(DiagnosticCodes.CountFieldMissing);
     }
+
+    // ---- declared minimums -------------------------------------------------------------------------
+
+    [Fact]
+    public void A_minimum_above_the_capacity_is_reported()
+    {
+        // The layout engine also refuses this, but by throwing. A user who typed 10 into a box that holds
+        // 8 should get a diagnostic naming the array, not an exception from the byte map.
+        var b = new ValidationBuilder();
+        var u8 = b.Prim("u8", PrimitiveKind.U8);
+        var count = ValidationBuilder.F("count", u8);
+        var samples = b.Array("Samples", u8, new ArrayLength.CountFromField(count.Id, MaxCount: 8, MinCount: 10));
+        b.NewMessage("M", count, ValidationBuilder.F("samples", samples));
+
+        b.Run().Has(DiagnosticCodes.ArrayMinCountUnreachable);
+    }
+
+    [Fact]
+    public void A_negative_minimum_is_reported()
+    {
+        var b = new ValidationBuilder();
+        var u8 = b.Prim("u8", PrimitiveKind.U8);
+        var count = ValidationBuilder.F("count", u8);
+        var samples = b.Array("Samples", u8, new ArrayLength.CountFromField(count.Id, MaxCount: 8, MinCount: -1));
+        b.NewMessage("M", count, ValidationBuilder.F("samples", samples));
+
+        b.Run().Has(DiagnosticCodes.ArrayMinCountUnreachable);
+    }
+
+    [Fact]
+    public void A_minimum_within_the_capacity_is_accepted()
+    {
+        var b = new ValidationBuilder();
+        var u8 = b.Prim("u8", PrimitiveKind.U8);
+        var count = ValidationBuilder.F("count", u8);
+        var samples = b.Array("Samples", u8, new ArrayLength.CountFromField(count.Id, MaxCount: 8, MinCount: 1));
+        b.NewMessage("M", count, ValidationBuilder.F("samples", samples));
+
+        b.Run().HasNo(DiagnosticCodes.ArrayMinCountUnreachable);
+    }
+
+    [Fact]
+    public void A_minimum_equal_to_the_capacity_is_accepted()
+    {
+        // Pinning both ends is legal — it is a variable-length rule carrying a constant count, which is
+        // different from a Fixed array only in that the count still travels on the wire.
+        var b = new ValidationBuilder();
+        var u8 = b.Prim("u8", PrimitiveKind.U8);
+        var samples = b.Array("Samples", u8,
+            new ArrayLength.LengthPrefixed(PrefixBits: 8, MaxCount: 4, MinCount: 4));
+        b.NewMessage("M", ValidationBuilder.F("samples", samples));
+
+        b.Run().HasNo(DiagnosticCodes.ArrayMinCountUnreachable);
+    }
 }

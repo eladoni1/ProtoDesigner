@@ -83,6 +83,13 @@ public sealed class LayoutRegion
     /// <summary>Variable regions only: declared capacity.</summary>
     public int MaxElements { get; init; }
 
+    /// <summary>Variable regions only: fewest elements a valid message may carry. Zero unless declared.</summary>
+    /// <remarks>
+    /// This is what makes <see cref="MinBits"/> the real floor rather than the floor of an empty array,
+    /// so a frame-budget check measures the message a caller actually promised to send.
+    /// </remarks>
+    public int MinElements { get; init; }
+
     /// <summary>Variable regions only: the field carrying the element count, when the count comes from a field.</summary>
     public FieldId? CountFieldId { get; init; }
 

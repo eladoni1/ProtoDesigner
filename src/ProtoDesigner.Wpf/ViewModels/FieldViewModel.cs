@@ -61,7 +61,9 @@ public sealed class FieldViewModel : ObservableObject
         ParameterType p => $"{p.Kind} · {Bytes(p.Kind.NaturalBits())}",
         EnumType e => $"enum · {Bytes(e.UnderlyingKind.NaturalBits())}",
         StructType s => $"struct · {s.Fields.Count} field(s)",
-        ArrayType a => $"array · {a.Length.Capacity} max",
+        ArrayType a => a.Length.IsExactCount
+            ? $"array · {a.Length.Capacity}"
+            : $"array · {a.Length.MinimumCount}..{a.Length.Capacity}",
         _ => "—",
     };
 

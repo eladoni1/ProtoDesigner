@@ -216,6 +216,14 @@ public sealed class LayoutEngine
         if (length.Capacity <= 0)
             throw new LayoutException($"Array '{path}' declares a capacity of {length.Capacity}; it must be at least one.", path);
 
+        // A floor above the ceiling describes no message at all, so there is nothing to lay out. The
+        // validator reports it first with a friendlier message (PD0037); this is the backstop that keeps
+        // a region from claiming MinBits > MaxBits.
+        if (length.MinimumCount < 0 || length.MinimumCount > length.Capacity)
+            throw new LayoutException(
+                $"Array '{path}' requires at least {length.MinimumCount} elements but holds at most "
+                + $"{length.Capacity}.", path);
+
         var prefixBits = 0;
         FieldId? countFieldId = null;
         var sentinelBits = 0;
@@ -264,14 +272,20 @@ public sealed class LayoutEngine
         ctx.CloseFixedRegion(force: false);
 
         var maxBits = (elementBits * length.Capacity) + sentinelBits;
+
+        // A declared minimum raises the floor: the smallest legal message carries that many elements, not
+        // none. The sentinel is present either way, so it is added to both ends.
+        var minBits = (elementBits * length.MinimumCount) + sentinelBits;
+
         var regionIndex = ctx.AddVariableRegion(new LayoutRegion
         {
             Index = ctx.RegionIndex,
             Kind = LayoutRegionKind.Variable,
-            MinBits = sentinelBits,
+            MinBits = minBits,
             MaxBits = maxBits,
             ElementBits = elementBits,
             MaxElements = length.Capacity,
+            MinElements = length.MinimumCount,
             CountFieldId = countFieldId,
             PrefixBits = prefixBits,
         });

@@ -248,15 +248,22 @@ public sealed class TypeItemViewModel : ObservableObject
 
     private string ElementName(ArrayType a) => _project.TypeName(a.ElementTypeId);
 
-    private static string DescribeLength(ArrayLength length) => length switch
+    private static string DescribeLength(ArrayLength length)
     {
-        ArrayLength.Fixed f => $"{f.Count}",
-        ArrayLength.CountFromField c => $"0..{c.MaxCount} (count field)",
-        ArrayLength.LengthPrefixed l => $"0..{l.MaxCount} ({l.PrefixBits}-bit prefix)",
-        ArrayLength.Terminated t => $"0..{t.MaxCount} (sentinel)",
-        ArrayLength.FillRemaining r => $"0..{r.MaxCount} (fills frame)",
-        _ => "?",
-    };
+        // The bounds come from MinimumCount rather than a hardcoded 0: a declared floor is the difference
+        // between "might be empty" and "always carries something", and this row is where a user looks.
+        var span = $"{length.MinimumCount}..{length.Capacity}";
+
+        return length switch
+        {
+            ArrayLength.Fixed f => $"{f.Count}",
+            ArrayLength.CountFromField => $"{span} (count field)",
+            ArrayLength.LengthPrefixed l => $"{span} ({l.PrefixBits}-bit prefix)",
+            ArrayLength.Terminated => $"{span} (sentinel)",
+            ArrayLength.FillRemaining => $"{span} (fills frame)",
+            _ => "?",
+        };
+    }
 
     public bool IsInUse => _project.IsTypeInUse(Type.Id);
 

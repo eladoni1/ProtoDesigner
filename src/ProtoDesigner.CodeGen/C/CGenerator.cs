@@ -36,6 +36,20 @@ public sealed class CGenerator : IProtocolGenerator
 
     public string DisplayName => "C99 (compiles as C or C++)";
 
+    /// <summary>Option key: emit <c>extern "C"</c> guards so the header is usable from C++.</summary>
+    public const string ExternCOption = "externc";
+
+    public IReadOnlyList<GeneratorOption> Options { get; } = new[]
+    {
+        new GeneratorOption(
+            ExternCOption,
+            "extern \"C\" guards",
+            "Wrap declarations so the header can be included from a C++ translation unit. Leave on "
+            + "unless you know no C++ will ever see it.",
+            GeneratorOptionKind.Flag,
+            Default: "true"),
+    };
+
     public GeneratedFileSet Generate(ProtocolIr ir, GeneratorOptions options)
     {
         ArgumentNullException.ThrowIfNull(ir);
@@ -93,10 +107,7 @@ public sealed class CGenerator : IProtocolGenerator
         sb.AppendLine();
         sb.AppendLine($"#include \"{CRuntimeHeader.FileName}\"");
         sb.AppendLine();
-        sb.AppendLine("#ifdef __cplusplus");
-        sb.AppendLine("extern \"C\" {");
-        sb.AppendLine("#endif");
-        sb.AppendLine();
+        OpenExternC(sb, options);
 
         // Named primitives declare no type — the host kind is already a built-in — but their wire size is
         // the thing a caller cannot derive, so it is emitted first and on its own.
@@ -123,12 +134,38 @@ public sealed class CGenerator : IProtocolGenerator
             foreach (var s in ir.Structs)
                 if (seenStructs.Add(s.Name)) EmitStruct(sb, prefix, ir, s);
 
-        sb.AppendLine("#ifdef __cplusplus");
-        sb.AppendLine("}   /* extern \"C\" */");
-        sb.AppendLine("#endif");
-        sb.AppendLine();
+        CloseExternC(sb, options);
         sb.AppendLine($"#endif /* {guard} */");
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Opens the <c>extern "C"</c> block, unless the caller turned it off.
+    /// </summary>
+    /// <remarks>
+    /// On by default because the whole reason this target emits C rather than C++ is that one header
+    /// should serve both. A pure-C project loses nothing by leaving it on, so turning it off is for the
+    /// rare caller who has a reason.
+    /// </remarks>
+    private static void OpenExternC(StringBuilder sb, GeneratorOptions options)
+    {
+        if (!options.Flag(ExternCOption, fallback: true)) return;
+
+        sb.AppendLine("#ifdef __cplusplus");
+        sb.AppendLine("extern \"C\" {");
+        sb.AppendLine("#endif");
+        sb.AppendLine();
+    }
+
+    private static void CloseExternC(StringBuilder sb, GeneratorOptions options)
+    {
+        if (options.Flag(ExternCOption, fallback: true))
+        {
+            sb.AppendLine("#ifdef __cplusplus");
+            sb.AppendLine("}   /* extern \"C\" */");
+            sb.AppendLine("#endif");
+        }
+        sb.AppendLine();
     }
 
     // ---- protocol header ----------------------------------------------------------------------
@@ -148,19 +185,13 @@ public sealed class CGenerator : IProtocolGenerator
         sb.AppendLine();
         sb.AppendLine($"#include \"{TypesFileName(options)}\"");
         sb.AppendLine();
-        sb.AppendLine("#ifdef __cplusplus");
-        sb.AppendLine("extern \"C\" {");
-        sb.AppendLine("#endif");
-        sb.AppendLine();
+        OpenExternC(sb, options);
 
         EmitMessageIdEnum(sb, prefix, ir);
 
         foreach (var m in ir.Messages) EmitMessage(sb, prefix, ir, m);
 
-        sb.AppendLine("#ifdef __cplusplus");
-        sb.AppendLine("}   /* extern \"C\" */");
-        sb.AppendLine("#endif");
-        sb.AppendLine();
+        CloseExternC(sb, options);
         sb.AppendLine($"#endif /* {guard} */");
         return sb.ToString();
     }

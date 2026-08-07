@@ -144,9 +144,9 @@ public class CSharpGeneratorTests
     }
 
     [Fact]
-    public void The_catalog_offers_both_targets()
+    public void The_catalog_offers_every_shipped_target()
     {
-        Assert.Equal(new[] { "c", "csharp" }, GeneratorCatalog.All.Select(g => g.Id));
+        Assert.Equal(new[] { "c", "csharp", "proto" }, GeneratorCatalog.All.Select(g => g.Id));
         Assert.NotNull(GeneratorCatalog.Find("CSHARP"));   // ids match case-insensitively
         Assert.Null(GeneratorCatalog.Find("rust"));
         Assert.Null(GeneratorCatalog.Find("cpp"));   // replaced by the C target, which serves C++ too

@@ -91,9 +91,19 @@ internal static class ProjectSerializer
         return obj;
     }
 
+    /// <summary>
+    /// The array length rule. <c>minCount</c> is written only when it is non-zero.
+    /// </summary>
+    /// <remarks>
+    /// Omitting the default keeps every existing file byte-identical after a round-trip, which is the
+    /// whole point of the canonical writer — a schema addition that rewrote every array would put an
+    /// unrelated diff in front of every reviewer. An added optional key is backward compatible in both
+    /// directions, so no schema bump is needed: an older file simply loads with a minimum of zero, which
+    /// is what it always meant.
+    /// </remarks>
     private static JsonObject ArrayLengthToJson(ArrayLength length)
     {
-        return length switch
+        var obj = length switch
         {
             ArrayLength.Fixed f => new JsonObject { ["kind"] = "fixed", ["count"] = f.Count },
             ArrayLength.CountFromField c => new JsonObject
@@ -117,6 +127,12 @@ internal static class ProjectSerializer
             ArrayLength.FillRemaining r => new JsonObject { ["kind"] = "fillRemaining", ["maxCount"] = r.MaxCount },
             _ => throw new NotSupportedException($"Unknown array length '{length.GetType().Name}'."),
         };
+
+        // Fixed carries its minimum in `count` already; restating it would be two sources for one number.
+        if (length is not ArrayLength.Fixed && length.MinimumCount != 0)
+            obj["minCount"] = length.MinimumCount;
+
+        return obj;
     }
 
     private static JsonArray BusesToJson(IReadOnlyList<Bus> buses)
@@ -184,6 +200,10 @@ internal static class ProjectSerializer
                 obj["defaultValue"] = f.DefaultValue.ToString();
             if (f.Description is not null)
                 obj["description"] = f.Description;
+            // Written only once assigned, so a project that has never been exported to .proto keeps a
+            // file free of keys it does not use.
+            if (f.ProtoFieldNumber is { } protoNumber)
+                obj["protoFieldNumber"] = protoNumber;
             arr.Add(obj);
         }
         return arr;
@@ -336,19 +356,26 @@ internal static class ProjectSerializer
     private static ArrayLength ArrayLengthFromJson(JsonObject obj)
     {
         var kind = RequireString(obj, "kind");
+
+        // Absent means zero — which is what every file written before minCount existed already meant.
+        var min = obj["minCount"]?.GetValue<int>() ?? 0;
+
         return kind switch
         {
             "fixed" => new ArrayLength.Fixed(obj["count"]!.GetValue<int>()),
             "countFromField" => new ArrayLength.CountFromField(
                 new FieldId(Guid.Parse(RequireString(obj, "countFieldId"))),
-                obj["maxCount"]!.GetValue<int>()),
+                obj["maxCount"]!.GetValue<int>(),
+                min),
             "lengthPrefixed" => new ArrayLength.LengthPrefixed(
                 obj["prefixBits"]!.GetValue<int>(),
-                obj["maxCount"]!.GetValue<int>()),
+                obj["maxCount"]!.GetValue<int>(),
+                min),
             "terminated" => new ArrayLength.Terminated(
                 ((JsonArray)obj["sentinel"]!).Select(n => (byte)n!.GetValue<int>()).ToArray(),
-                obj["maxCount"]!.GetValue<int>()),
-            "fillRemaining" => new ArrayLength.FillRemaining(obj["maxCount"]!.GetValue<int>()),
+                obj["maxCount"]!.GetValue<int>(),
+                min),
+            "fillRemaining" => new ArrayLength.FillRemaining(obj["maxCount"]!.GetValue<int>(), min),
             _ => throw new NotSupportedException($"Unknown array length kind '{kind}'."),
         };
     }
@@ -411,6 +438,10 @@ internal static class ProjectSerializer
         var field = new FieldBinding(id, name, typeId, encoding)
         {
             Description = obj["description"]?.GetValue<string>(),
+
+            // Absent in any file written before protobuf export existed, and in any project that has
+            // never been exported. An optional key needs no schema bump: a v2 file simply reads as null.
+            ProtoFieldNumber = obj["protoFieldNumber"] is JsonValue n ? n.GetValue<int>() : null,
         };
 
         if (obj["defaultValue"] is JsonValue dv)

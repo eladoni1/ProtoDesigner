@@ -218,35 +218,68 @@ public abstract record ArrayLength
     /// <summary>Maximum number of elements. Equals the exact count for <see cref="Fixed"/>.</summary>
     public abstract int Capacity { get; }
 
+    /// <summary>
+    /// Fewest elements a valid message may carry. Zero unless declared; equals the exact count for
+    /// <see cref="Fixed"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A lower bound is <em>declarative intent</em>, not a wire mechanism: nothing about the encoding
+    /// changes because a caller promised at least one element. It exists so the promise can be stated
+    /// once and checked everywhere — the validator warns when a count field cannot honour it, the layout
+    /// engine folds it into <c>MinBits</c> so a frame budget is measured against the real floor rather
+    /// than an empty array, and the protobuf target emits it as <c>repeated.min_items</c>.
+    /// </para>
+    /// <para>
+    /// The generated C codec does not enforce it. It enforces no bound today — an over-long array is
+    /// capped by the emitted loop, not rejected — and a decoder that refuses a short array would be a
+    /// policy decision the caller never asked for.
+    /// </para>
+    /// </remarks>
+    public abstract int MinimumCount { get; }
+
     public bool IsDynamic => this is not Fixed;
+
+    /// <summary>Whether the count is pinned to a single value, so min and max coincide.</summary>
+    public bool IsExactCount => MinimumCount == Capacity;
 
     /// <summary>Exactly <paramref name="Count"/> elements, always.</summary>
     public sealed record Fixed(int Count) : ArrayLength
     {
         public override int Capacity => Count;
+
+        public override int MinimumCount => Count;
     }
 
     /// <summary>Element count is carried by an earlier field in the same message.</summary>
-    public sealed record CountFromField(FieldId CountFieldId, int MaxCount) : ArrayLength
+    public sealed record CountFromField(FieldId CountFieldId, int MaxCount, int MinCount = 0) : ArrayLength
     {
         public override int Capacity => MaxCount;
+
+        public override int MinimumCount => MinCount;
     }
 
     /// <summary>Element count is written immediately before the elements, in <paramref name="PrefixBits"/> bits.</summary>
-    public sealed record LengthPrefixed(int PrefixBits, int MaxCount) : ArrayLength
+    public sealed record LengthPrefixed(int PrefixBits, int MaxCount, int MinCount = 0) : ArrayLength
     {
         public override int Capacity => MaxCount;
+
+        public override int MinimumCount => MinCount;
     }
 
     /// <summary>Elements run until a sentinel value is seen — the NUL-terminated string case.</summary>
-    public sealed record Terminated(IReadOnlyList<byte> Sentinel, int MaxCount) : ArrayLength
+    public sealed record Terminated(IReadOnlyList<byte> Sentinel, int MaxCount, int MinCount = 0) : ArrayLength
     {
         public override int Capacity => MaxCount;
+
+        public override int MinimumCount => MinCount;
     }
 
     /// <summary>Elements consume the remainder of the frame.</summary>
-    public sealed record FillRemaining(int MaxCount) : ArrayLength
+    public sealed record FillRemaining(int MaxCount, int MinCount = 0) : ArrayLength
     {
         public override int Capacity => MaxCount;
+
+        public override int MinimumCount => MinCount;
     }
 }

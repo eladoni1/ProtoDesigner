@@ -48,6 +48,27 @@ public sealed class CommandLineTests : IDisposable
         return p;
     }
 
+    /// <summary>
+    /// A project with a declared range, so the protobuf target has an actual constraint to emit.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="CleanProject"/> declares no range anywhere, so its schema carries no <c>buf.validate</c>
+    /// options whether the flag is on or off — asserting on their absence there would pass for the wrong
+    /// reason and prove nothing about the flag.
+    /// </remarks>
+    private static Project ConstrainedProject()
+    {
+        var p = new Project("Constrained");
+        var ratio = p.Types.Add(new ParameterType(TypeId.New(), "Ratio", PrimitiveKind.U8,
+            new NumericRange(0, 100)));
+        var bus = new Bus(BusId.New(), "Main", Transport.Ethernet);
+        var m = new Message(MessageId.New(), "Reading") { WireId = 1 };
+        m.Fields.Add(new FieldBinding(FieldId.New(), "ratio", ratio.Id));
+        bus.Messages.Add(m);
+        p.Buses.Add(bus);
+        return p;
+    }
+
     /// <summary>A project whose field asks for fewer bits than its declared range needs (PD0020).</summary>
     private static Project BrokenProject()
     {
@@ -363,5 +384,193 @@ public sealed class CommandLineTests : IDisposable
 
         Assert.Equal(CommandLine.ExitUsage, code);
         Assert.Contains("--bus", err, StringComparison.Ordinal);
+    }
+
+    // ---- target options ----------------------------------------------------------------------------
+
+    [Fact]
+    public void A_target_option_reaches_the_generator()
+    {
+        // The whole point of the option bag: a per-target setting the CLI passes through without knowing
+        // what it means. Turning protovalidate off must actually remove the constraints.
+        var path = WriteProject(ConstrainedProject());
+        var withDir = Path.Combine(_dir, "with-validate");
+        var withoutDir = Path.Combine(_dir, "no-validate");
+
+        Assert.Equal(0, Run("generate", path, "--out", withDir, "--target", "proto").Code);
+        var (code, _, err) = Run("generate", path, "--out", withoutDir, "--target", "proto",
+            "--option", "protovalidate=false");
+
+        Assert.Equal(0, code);
+        Assert.Equal("", err);
+
+        // Both directions, so the assertion cannot pass because the constraint was never there.
+        Assert.Contains("buf.validate", File.ReadAllText(Path.Combine(withDir, "main.proto")),
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("buf.validate", File.ReadAllText(Path.Combine(withoutDir, "main.proto")),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Target_options_are_repeatable_and_the_last_one_wins()
+    {
+        // Repeatable because a target may declare several; last-wins because a single flag given twice
+        // has to resolve to something, and silently keeping the first would contradict every other CLI.
+        var path = WriteProject(ConstrainedProject());
+        var outDir = Path.Combine(_dir, "repeated");
+
+        var (code, _, _) = Run("generate", path, "--out", outDir, "--target", "proto",
+            "--option", "protovalidate=false", "--option", "unrelated=1", "--option", "protovalidate=true");
+
+        Assert.Equal(0, code);
+        Assert.Contains("buf.validate", File.ReadAllText(Path.Combine(outDir, "main.proto")),
+            StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("protovalidate")]      // no '='
+    [InlineData("=false")]             // no key
+    [InlineData("protovalidate=")]     // no value
+    public void A_malformed_target_option_is_a_usage_error(string pair)
+    {
+        // Rejected rather than ignored: a typo that silently does nothing would leave the user believing
+        // a setting applied when the output says otherwise.
+        var path = WriteProject(CleanProject());
+        var (code, _, err) = Run("generate", path, "--out", Path.Combine(_dir, "bad"),
+            "--target", "proto", "--option", pair);
+
+        Assert.Equal(CommandLine.ExitUsage, code);
+        Assert.Contains("key=value", err, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_trailing_option_flag_with_no_pair_is_a_usage_error()
+    {
+        var path = WriteProject(CleanProject());
+        var (code, _, err) = Run("generate", path, "--out", Path.Combine(_dir, "bad"),
+            "--target", "proto", "--option");
+
+        Assert.Equal(CommandLine.ExitUsage, code);
+        Assert.Contains("--option", err, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_option_a_target_does_not_declare_is_ignored()
+    {
+        // A generator reads its own keys and ignores the rest, which is what lets one flag list serve
+        // every target. Erroring here would make a shared script impossible to write.
+        var path = WriteProject(CleanProject());
+        var outDir = Path.Combine(_dir, "foreign");
+
+        var (code, _, _) = Run("generate", path, "--out", outDir, "--target", "c",
+            "--option", "protovalidate=false");
+
+        Assert.Equal(0, code);
+        Assert.True(File.Exists(Path.Combine(outDir, "main.h")));
+    }
+
+    [Fact]
+    public void Targets_lists_the_options_each_generator_accepts()
+    {
+        // How a user discovers what --option takes without reading the source.
+        var (code, output, _) = Run("targets");
+
+        Assert.Equal(0, code);
+        Assert.Contains("protovalidate", output, StringComparison.Ordinal);
+    }
+
+    // ---- the shipped samples -----------------------------------------------------------------------
+
+    /// <summary>A file under <c>samples/</c>, found by walking up from the test binary.</summary>
+    /// <remarks>
+    /// The samples are documentation that runs. A sample which stopped loading, stopped validating, or
+    /// quietly changed which messages it exports would otherwise be discovered by whoever opened it next.
+    /// </remarks>
+    private static string Sample(string name)
+    {
+        var dir = AppContext.BaseDirectory;
+        for (var i = 0; i < 8 && dir is not null; i++)
+        {
+            var candidate = Path.Combine(dir, "samples", name);
+            if (File.Exists(candidate)) return candidate;
+            dir = Path.GetDirectoryName(dir);
+        }
+
+        throw new FileNotFoundException($"Could not find samples/{name} above the test binary.");
+    }
+
+    [Fact]
+    public void The_protobuf_sample_validates_cleanly()
+    {
+        var (code, _, _) = Run("validate", Sample("protobuf-demo.pdproj"));
+
+        Assert.Equal(0, code);
+    }
+
+    [Fact]
+    public void The_protobuf_sample_exports_what_it_claims_and_withholds_the_rest()
+    {
+        // The sample exists to demonstrate the gate, so its two exportable and two refused messages are
+        // the thing under test. Hand-checking this once proved it worked that day.
+        var outDir = Path.Combine(_dir, "demo");
+        var (code, output, _) = Run("generate", Sample("protobuf-demo.pdproj"),
+            "--out", outDir, "--target", "proto", "--namespace", "demo");
+
+        Assert.Equal(0, code);
+
+        var schema = File.ReadAllText(Path.Combine(outDir, "main.proto"));
+        Assert.Contains("message Status", schema, StringComparison.Ordinal);
+        Assert.Contains("message Batch", schema, StringComparison.Ordinal);
+        Assert.DoesNotContain("message CompactStatus", schema, StringComparison.Ordinal);
+        Assert.DoesNotContain("message Power", schema, StringComparison.Ordinal);
+
+        // Refusals are reported by name and by cause; a message dropped in silence is the failure the
+        // whole gate exists to avoid.
+        Assert.Contains("skipped CompactStatus", output, StringComparison.Ordinal);
+        Assert.Contains("compactMode", output, StringComparison.Ordinal);
+        Assert.Contains("skipped Power", output, StringComparison.Ordinal);
+        Assert.Contains("level", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_protobuf_sample_keeps_an_offset_field_s_real_range()
+    {
+        // The design decision the target rests on: `pressure` is 1000..1015 with an offset of 1000, so it
+        // travels as 0..15 on our wire. Protobuf carries the value, so the constraint must be the real
+        // range — leaking the wire code here would ship a schema that rejects every valid reading.
+        var outDir = Path.Combine(_dir, "demo-offset");
+        Run("generate", Sample("protobuf-demo.pdproj"), "--out", outDir, "--target", "proto",
+            "--namespace", "demo");
+
+        var schema = File.ReadAllText(Path.Combine(outDir, "main.proto"));
+
+        Assert.Contains("uint32.gte = 1000", schema, StringComparison.Ordinal);
+        Assert.Contains("uint32.lte = 1015", schema, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_protobuf_sample_carries_both_ends_of_its_variable_array()
+    {
+        // `payload` is declared 1..64. Without a declared minimum a repeated field accepts an empty list,
+        // so the floor is the half that only exists because the model carries it.
+        var outDir = Path.Combine(_dir, "demo-bounds");
+        Run("generate", Sample("protobuf-demo.pdproj"), "--out", outDir, "--target", "proto",
+            "--namespace", "demo");
+
+        var schema = File.ReadAllText(Path.Combine(outDir, "main.proto"));
+
+        Assert.Contains("min_items: 1, max_items: 64", schema, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_telemetry_sample_still_generates_C()
+    {
+        // The other sample, and the one that must never be caught by the protobuf gate: bit-packed
+        // messages are what the C target is for.
+        var outDir = Path.Combine(_dir, "telemetry");
+        var (code, _, _) = Run("generate", Sample("telemetry.pdproj"), "--out", outDir, "--target", "c");
+
+        Assert.Equal(0, code);
+        Assert.True(File.Exists(Path.Combine(outDir, "protodesigner_runtime.h")));
     }
 }

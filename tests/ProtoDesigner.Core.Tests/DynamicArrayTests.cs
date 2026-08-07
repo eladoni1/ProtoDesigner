@@ -210,4 +210,80 @@ public class DynamicArrayTests
         layout.At("crc", region: 2, bitOffset: 0, bitWidth: 16);
         layout.Spans(24, 56);
     }
+
+    // ---- declared minimums -------------------------------------------------------------------------
+
+    [Fact]
+    public void A_declared_minimum_raises_the_message_floor()
+    {
+        // Without a minimum the smallest legal message carries an empty array. With one it carries that
+        // many elements, and MinBits has to say so — a frame budget measured against an empty array is
+        // measuring a message the sender promised never to send.
+        var count = F("count", _b.U8());
+        var samples = _b.Array("Samples", _b.U16(),
+            new ArrayLength.CountFromField(count.Id, MaxCount: 10, MinCount: 3));
+
+        var layout = _b.Layout(count, F("samples", samples));
+
+        // 8 bits of count + 3 x 16 bits of guaranteed elements.
+        Assert.Equal(56, layout.MinBits);
+        Assert.Equal(168, layout.MaxBits);
+        Assert.Equal(3, layout.Regions[1].MinElements);
+        Assert.Equal(10, layout.Regions[1].MaxElements);
+    }
+
+    [Fact]
+    public void No_declared_minimum_still_means_an_empty_array_is_possible()
+    {
+        // The default, and the behaviour every existing project relies on.
+        var count = F("count", _b.U8());
+        var samples = _b.Array("Samples", _b.U16(), new ArrayLength.CountFromField(count.Id, 10));
+
+        var layout = _b.Layout(count, F("samples", samples));
+
+        Assert.Equal(8, layout.MinBits);
+        Assert.Equal(0, layout.Regions[1].MinElements);
+    }
+
+    [Fact]
+    public void A_minimum_equal_to_the_capacity_makes_the_region_fixed_size()
+    {
+        // Pinning both ends of a variable array collapses it to a constant size. The region still exists
+        // — it is still a Variable region carrying its own count — but it can no longer vary.
+        var payload = _b.Array("Payload", _b.U8(),
+            new ArrayLength.LengthPrefixed(PrefixBits: 8, MaxCount: 4, MinCount: 4));
+
+        var layout = _b.Layout(F("payload", payload));
+
+        Assert.True(layout.Regions[1].IsFixedSize);
+        Assert.Equal(40, layout.MinBits);
+        Assert.Equal(40, layout.MaxBits);
+    }
+
+    [Fact]
+    public void A_sentinel_is_present_at_both_ends_of_the_span()
+    {
+        // The terminator is written whether the array is at its floor or its ceiling, so it belongs in
+        // MinBits and MaxBits alike — a minimum must add to it, not replace it.
+        var text = _b.Array("Text", _b.U8(),
+            new ArrayLength.Terminated(new byte[] { 0 }, MaxCount: 8, MinCount: 2));
+
+        var layout = _b.Layout(F("text", text));
+
+        Assert.Equal(8 + (2 * 8), layout.MinBits);
+        Assert.Equal(8 + (8 * 8), layout.MaxBits);
+    }
+
+    [Fact]
+    public void A_minimum_above_the_capacity_describes_no_message_at_all()
+    {
+        // The validator reports this first (PD0037); the engine is the backstop that refuses to build a
+        // region whose floor is above its ceiling.
+        var payload = _b.Array("Payload", _b.U8(),
+            new ArrayLength.LengthPrefixed(PrefixBits: 8, MaxCount: 4, MinCount: 5));
+
+        var ex = Assert.Throws<LayoutException>(() => _b.Layout(F("payload", payload)));
+
+        Assert.Contains("at least 5", ex.Message, StringComparison.Ordinal);
+    }
 }

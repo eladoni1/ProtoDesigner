@@ -31,3 +31,13 @@ out/
 
 # NOTE: samples/ was ignored here, which meant samples/telemetry.pdproj — a hand-maintained fixture the
 # README and the CLI tests both point at — was never tracked. It is source, and it is tracked now.
+
+# The protobuf toolchain used by ProtocConformanceTests: bin/protoc, include/ (the well-known types),
+# and Buf's validate.proto. Not vendored — protoc alone is a 12 MB platform-specific binary that git
+# would keep forever, and the C cross-check already treats MSVC the same way: find it, or fail with
+# instructions. Lay it out as protobuf/{bin,include,validate.proto}, or set PROTODESIGNER_PROTOC.
+#
+# The protovalidate runtime check needs nothing here. Its Go harness and go.mod/go.sum are tracked under
+# tests/ProtoDesigner.CodeGen.Tests/Protovalidate/, and its dependencies come from Go's global module
+# cache — so this whole directory can be deleted and rebuilt from downloads at any time.
+protobuf/

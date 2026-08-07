@@ -92,7 +92,7 @@ public sealed class IrBuilder
             switch (type)
             {
                 case ParameterType p:
-                    sink.Add(new IrPrimitive(p.Name, p.Kind, p.WireBits ?? p.Kind.NaturalBits()));
+                    sink.Add(new IrPrimitive(p.Name, p.Kind, p.WireBits ?? p.Kind.NaturalBits(), p.Range));
                     break;
 
                 case StructType s:
@@ -199,17 +199,20 @@ public sealed class IrBuilder
             case ParameterType p:
                 return new IrMember(binding.Name, IrMemberKind.Scalar, p.Kind,
                     EnumIndex: null, StructIndex: null, ArrayCapacity: null,
-                    NeedsCountMember: false, Note: DescribeScalar(binding, p));
+                    NeedsCountMember: false, Note: DescribeScalar(binding, p), Range: p.Range,
+                    ProtoFieldNumber: binding.ProtoFieldNumber);
 
             case EnumType e:
                 return new IrMember(binding.Name, IrMemberKind.EnumRef, e.UnderlyingKind,
                     EnumIndex: enumTable[e.Id], StructIndex: null, ArrayCapacity: null,
-                    NeedsCountMember: false, Note: null);
+                    NeedsCountMember: false, Note: null,
+                    ProtoFieldNumber: binding.ProtoFieldNumber);
 
             case StructType s:
                 return new IrMember(binding.Name, IrMemberKind.StructRef, PrimitiveKind.U8,
                     EnumIndex: null, StructIndex: structTable[s.Id], ArrayCapacity: null,
-                    NeedsCountMember: false, Note: null);
+                    NeedsCountMember: false, Note: null,
+                    ProtoFieldNumber: binding.ProtoFieldNumber);
 
             case ArrayType a:
                 return BuildArrayMember(project, binding, a, enumTable, structTable);
@@ -232,32 +235,42 @@ public sealed class IrBuilder
         // copy could disagree with it and silently desynchronise the encoder).
         var needsCount = array.Length is not (ArrayLength.Fixed or ArrayLength.CountFromField);
         var note = $"{DescribeLength(array.Length)}";
+        var min = array.Length.MinimumCount;
 
         return element switch
         {
+            // The range belongs to the element type, so it constrains each element rather than the array.
             ParameterType p => new IrMember(binding.Name, IrMemberKind.Scalar, p.Kind,
-                null, null, array.Length.Capacity, needsCount, note),
+                null, null, array.Length.Capacity, needsCount, note, p.Range, binding.ProtoFieldNumber, min),
 
             EnumType e => new IrMember(binding.Name, IrMemberKind.EnumRef, e.UnderlyingKind,
-                enumTable[e.Id], null, array.Length.Capacity, needsCount, note),
+                enumTable[e.Id], null, array.Length.Capacity, needsCount, note, null, binding.ProtoFieldNumber, min),
 
             StructType s => new IrMember(binding.Name, IrMemberKind.StructRef, PrimitiveKind.U8,
-                null, structTable[s.Id], array.Length.Capacity, needsCount, note),
+                null, structTable[s.Id], array.Length.Capacity, needsCount, note, null, binding.ProtoFieldNumber, min),
 
             _ => throw new InvalidOperationException(
                 $"Array '{array.Name}' has unsupported element kind {element.GetType().Name}."),
         };
     }
 
-    private static string DescribeLength(ArrayLength length) => length switch
+    /// <summary>
+    /// The human-readable length note. Comment text only — nothing parses it back.
+    /// </summary>
+    private static string DescribeLength(ArrayLength length)
     {
-        ArrayLength.Fixed f => $"exactly {f.Count} elements",
-        ArrayLength.CountFromField c => $"up to {c.MaxCount}, count from an earlier field",
-        ArrayLength.LengthPrefixed l => $"up to {l.MaxCount}, {l.PrefixBits}-bit length prefix",
-        ArrayLength.Terminated t => $"up to {t.MaxCount}, sentinel-terminated",
-        ArrayLength.FillRemaining r => $"up to {r.MaxCount}, fills the frame",
-        _ => "array",
-    };
+        var floor = length.MinimumCount > 0 ? $"at least {length.MinimumCount}, " : "";
+
+        return length switch
+        {
+            ArrayLength.Fixed f => $"exactly {f.Count} elements",
+            ArrayLength.CountFromField c => $"{floor}up to {c.MaxCount}, count from an earlier field",
+            ArrayLength.LengthPrefixed l => $"{floor}up to {l.MaxCount}, {l.PrefixBits}-bit length prefix",
+            ArrayLength.Terminated t => $"{floor}up to {t.MaxCount}, sentinel-terminated",
+            ArrayLength.FillRemaining r => $"{floor}up to {r.MaxCount}, fills the frame",
+            _ => "array",
+        };
+    }
 
     private static string? DescribeScalar(FieldBinding binding, ParameterType type)
     {

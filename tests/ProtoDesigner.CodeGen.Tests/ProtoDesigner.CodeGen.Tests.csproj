@@ -25,6 +25,15 @@
   <!-- Golden files are read from the source tree by GoldenFileTests, never from bin/. Copying them
        to the output directory would let a stale copy shadow the real one. -->
 
+  <!-- The protovalidate harness is the opposite case: it is source to be compiled by Go, not a baseline
+       to compare against, so it travels to the output directory and is rebuilt from there. PreserveNewest
+       means an edit to harness.go reaches the next test run. -->
+  <ItemGroup>
+    <None Update="Protovalidate\harness.go" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Protovalidate\go.mod" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Protovalidate\go.sum" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <Using Include="Xunit" />
     <Using Include="ProtoDesigner.Core.Model" />

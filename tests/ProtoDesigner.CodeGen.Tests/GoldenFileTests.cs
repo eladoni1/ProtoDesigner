@@ -1,4 +1,7 @@
 using ProtoDesigner.CodeGen.C;
+using ProtoDesigner.CodeGen.Proto;
+using ProtoDesigner.Core.Validation;
+using ProtoDesigner.Core.Validation.Rules;
 
 namespace ProtoDesigner.CodeGen.Tests;
 
@@ -49,6 +52,90 @@ public class GoldenFileTests
         f.RelativePath.EndsWith(".h", StringComparison.Ordinal) &&
         f.RelativePath != "protodesigner_runtime.h" &&
         !f.RelativePath.EndsWith("_types.h", StringComparison.Ordinal));
+
+    // ---- the protobuf target ----------------------------------------------------------------------
+
+    private static readonly ProtoGenerator ProtoGenerator = new();
+
+    /// <summary>
+    /// The corpus entries the compatibility gate lets through, which are the only ones a golden should
+    /// exist for.
+    /// </summary>
+    /// <remarks>
+    /// Generating a schema for a refused message is possible — the generator does not re-check the gate,
+    /// because the caller narrows the scope — but checking one in would enshrine output we would never
+    /// ship, and reviewers would start treating it as correct.
+    /// </remarks>
+    public static TheoryData<string> ExportableCorpusNames()
+    {
+        var data = new TheoryData<string>();
+        foreach (var name in Exportable()) data.Add(name);
+        return data;
+    }
+
+    private static IEnumerable<string> Exportable() =>
+        Corpus.All()
+            .Where(c => !new Validator(ProtobufRules.All).Validate(c.Factory().Item1)
+                .Any(d => d.Severity == Severity.Error))
+            .Select(c => c.Name);
+
+    [Theory]
+    [MemberData(nameof(ExportableCorpusNames))]
+    public void The_generated_proto_matches_the_golden_file(string corpusName)
+    {
+        // Constraints on, because that is the default and the interesting half. protoc proves the schema
+        // compiles and protovalidate proves the rules bite; this is what makes a change to either
+        // *visible* — a dropped constraint or a renumbered field otherwise passes both while silently
+        // changing what consumers see.
+        var factory = Corpus.All().Single(c => c.Name == corpusName).Factory;
+        var (project, bus) = factory();
+        var ir = new IrBuilder().Build(project, bus);
+
+        var set = ProtoGenerator.Generate(ir, new GeneratorOptions(Namespace: "proto"));
+
+        AssertMatchGoldens(
+            (Path.Combine(GoldenDirectory(), $"{corpusName}_types.proto"),
+             set.Files.Single(f => f.RelativePath == "proto_types.proto").Contents),
+            (Path.Combine(GoldenDirectory(), $"{corpusName}.proto"),
+             BusProto(set).Contents));
+    }
+
+    /// <summary>The bus's own schema: the one .proto that is not the shared declarations.</summary>
+    private static GeneratedFile BusProto(GeneratedFileSet set) => set.Files.Single(f =>
+        f.RelativePath.EndsWith(".proto", StringComparison.Ordinal) &&
+        !f.RelativePath.EndsWith("_types.proto", StringComparison.Ordinal));
+
+    [Fact]
+    public void The_gate_withholds_exactly_the_corpus_entries_protobuf_cannot_express()
+    {
+        // Pins which entries have no golden, and why. Without this the golden set could quietly shrink —
+        // a gate that started refusing everything would look like a passing suite with fewer files.
+        var withheld = Corpus.All().Select(c => c.Name).Except(Exportable()).Order().ToArray();
+
+        // `biased-signed` belongs here despite the name: its transform is `MinimumScale(-100..100, 8)`,
+        // which is 200/255 rather than 1, so it is quantization and not the offset-only case protobuf can
+        // carry. An offset alone would be exportable.
+        Assert.Equal(new[] { "biased-signed", "packed-bits", "quantized" }, withheld);
+    }
+
+    [Fact]
+    public void The_constraint_rich_schema_matches_its_golden_file()
+    {
+        // The corpus is shaped for wire layouts and declares almost no ranges, so its goldens would show
+        // nothing if every protovalidate constraint vanished. This fixture is shaped for the rule groups
+        // instead — every constraint the generator can emit appears in it, which makes a dropped or
+        // rescoped rule a visible diff rather than a silent one.
+        var (project, bus) = ProtovalidateFixture.BuildProject();
+        var ir = new IrBuilder().Build(project, bus);
+
+        var set = ProtoGenerator.Generate(ir, new GeneratorOptions(Namespace: "pv"));
+
+        AssertMatchGoldens(
+            (Path.Combine(GoldenDirectory(), "constraints_types.proto"),
+             set.Files.Single(f => f.RelativePath == "pv_types.proto").Contents),
+            (Path.Combine(GoldenDirectory(), "constraints.proto"),
+             BusProto(set).Contents));
+    }
 
     [Fact]
     public void The_runtime_header_matches_its_golden_file()

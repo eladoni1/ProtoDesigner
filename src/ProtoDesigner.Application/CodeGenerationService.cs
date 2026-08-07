@@ -14,14 +14,20 @@ namespace ProtoDesigner.Application;
 /// </param>
 /// <param name="BlockingErrors">The <see cref="Severity.Error"/> diagnostics that caused a refusal.</param>
 /// <param name="MessageCount">How many messages the run covered — for reporting.</param>
+/// <param name="Excluded">
+/// Messages the chosen target cannot represent, with the reason. Empty for a target whose wire format is
+/// ours. Never silent: a message dropped without saying so is the failure this whole path exists to
+/// avoid.
+/// </param>
 public sealed record CodeGenerationResult(
     GeneratedFileSet Files,
     bool Refused,
     IReadOnlyList<Diagnostic> BlockingErrors,
-    int MessageCount)
+    int MessageCount,
+    IReadOnlyList<ProtoEligibility> Excluded)
 {
     public static CodeGenerationResult RefusedWith(IReadOnlyList<Diagnostic> errors) =>
-        new(GeneratedFileSet.Empty, true, errors, 0);
+        new(GeneratedFileSet.Empty, true, errors, 0, Array.Empty<ProtoEligibility>());
 }
 
 /// <summary>
@@ -67,14 +73,30 @@ public static class CodeGenerationService
             .ToList();
         if (errors.Count > 0) return CodeGenerationResult.RefusedWith(errors);
 
+        // A target borrowing a foreign wire format cannot express every message. Narrowing here rather
+        // than in each caller means the CLI and the editor cannot disagree about what got exported, and
+        // the excluded list travels with the result so neither can drop a message quietly.
+        var excluded = Array.Empty<ProtoEligibility>() as IReadOnlyList<ProtoEligibility>;
+        if (!generator.CoversEveryMessage)
+        {
+            excluded = scopes
+                .SelectMany(s => ProtobufCompatibility.ForBus(project, s.Bus)
+                    .Where(e => !e.IsEligible && s.Messages.Any(m => m.Id == e.Message.Id)))
+                .ToList();
+
+            scopes = ProtobufCompatibility.Narrow(project, scopes);
+        }
+
         if (scopes.Count == 0)
-            return new CodeGenerationResult(GeneratedFileSet.Empty, false, Array.Empty<Diagnostic>(), 0);
+            return new CodeGenerationResult(
+                GeneratedFileSet.Empty, false, Array.Empty<Diagnostic>(), 0, excluded);
 
         var builder = new IrBuilder();
         var irs = scopes.Select(s => builder.Build(project, s.Bus, s.MessageIds)).ToList();
 
         var files = generator.Generate(irs, options);
-        return new CodeGenerationResult(files, false, Array.Empty<Diagnostic>(), scopes.Sum(s => s.Messages.Count));
+        return new CodeGenerationResult(
+            files, false, Array.Empty<Diagnostic>(), scopes.Sum(s => s.Messages.Count), excluded);
     }
 
     /// <summary>

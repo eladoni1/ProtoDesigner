@@ -409,3 +409,71 @@ public sealed class RenameTypeCommand : IEditCommand
     public void Apply(Project _) { _oldName = _type.Name; _type.Name = _newName; }
     public void Undo(Project _)  { _type.Name = _oldName; }
 }
+
+// ---- protobuf export ---------------------------------------------------------------------------
+
+/// <summary>
+/// Assigns protobuf field numbers to any field that does not yet have one, across the whole project.
+/// </summary>
+/// <remarks>
+/// <para>
+/// It is a command rather than something the generator does on the way past, for two reasons. Generators
+/// read the IR and must never mutate the project — that one-way boundary is what keeps "add a language
+/// without touching the editor" true. And a field number is permanent: once assigned and shipped it can
+/// never mean a different field, so the act of creating one belongs in the undo history where the user
+/// can see it.
+/// </para>
+/// <para>
+/// Existing numbers are never reassigned or compacted. New ones continue above the highest already in
+/// use within that message, so a field added after a gap does not silently claim a retired number.
+/// </para>
+/// </remarks>
+public sealed class AssignProtoFieldNumbersCommand : IEditCommand
+{
+    private readonly List<(FieldBinding Field, int? Previous)> _changed = new();
+
+    public string Describe() => "Assign protobuf field numbers";
+
+    public void Apply(Project project)
+    {
+        _changed.Clear();
+
+        foreach (var fields in FieldGroups(project))
+        {
+            // One number space per message and per struct, since each becomes its own protobuf message.
+            var next = fields
+                .Select(f => f.ProtoFieldNumber ?? 0)
+                .DefaultIfEmpty(0)
+                .Max() + 1;
+
+            foreach (var field in fields)
+            {
+                if (field.ProtoFieldNumber is not null) continue;
+
+                _changed.Add((field, null));
+                field.ProtoFieldNumber = next++;
+            }
+        }
+    }
+
+    public void Undo(Project _)
+    {
+        foreach (var (field, previous) in _changed) field.ProtoFieldNumber = previous;
+        _changed.Clear();
+    }
+
+    /// <summary>True when anything at all would be assigned — lets a caller skip a no-op edit.</summary>
+    public static bool HasUnassigned(Project project) =>
+        FieldGroups(project).Any(group => group.Any(f => f.ProtoFieldNumber is null));
+
+    private static IEnumerable<IReadOnlyList<FieldBinding>> FieldGroups(Project project)
+    {
+        foreach (var bus in project.Buses)
+            foreach (var message in bus.Messages)
+                yield return message.Fields;
+
+        foreach (var type in project.Types.All)
+            if (type is StructType s)
+                yield return s.Fields;
+    }
+}

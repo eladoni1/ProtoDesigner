@@ -51,7 +51,14 @@ public static class CommandLine
     {
         stdout.WriteLine("Available code generation targets:");
         foreach (var g in Generators)
+        {
             stdout.WriteLine($"  {g.Id,-8} {g.DisplayName}");
+            if (!g.CoversEveryMessage)
+                stdout.WriteLine($"  {"",-8} (cannot express every message; incompatible ones are reported and skipped)");
+            foreach (var option in g.Options)
+                stdout.WriteLine($"  {"",-8}   --option {option.Key}=<{option.Kind.ToString().ToLowerInvariant()}>"
+                    + $"   {option.Label} (default {option.Default ?? "unset"})");
+        }
         return ExitOk;
     }
 
@@ -97,6 +104,7 @@ public static class CommandLine
         {
             stderr.WriteLine("usage: protodesigner generate <file.pdproj> --out <dir> [--target <id>]");
             stderr.WriteLine("       [--bus <name> [--messages <a,b,c>]] | [--module <name>] [--namespace <ns>]");
+            stderr.WriteLine("       [--option key=value ...]   run 'targets' to list each target's options");
             return ExitUsage;
         }
 
@@ -109,6 +117,8 @@ public static class CommandLine
         var moduleName = GetOption(args, "--module");
         var messageList = GetOption(args, "--messages");
         var ns = GetOption(args, "--namespace") ?? "proto";
+
+        if (!TryParseTargetOptions(args, stderr, out var targetOptions)) return ExitUsage;
 
         if (outDir is null)
         {
@@ -146,13 +156,27 @@ public static class CommandLine
         // and the editor's Generate dialog cannot drift apart. Refusing on an Error is part of it: a broken
         // protocol fails here with a diagnostic rather than at the compiler with a mystery.
         var result = CodeGenerationService.Generate(
-            project!, generator, scopes, new GeneratorOptions(Namespace: ns));
+            project!, generator, scopes, new GeneratorOptions(ns, IncludeReadme: true, targetOptions));
 
         if (result.Refused)
         {
             stderr.WriteLine($"Refusing to generate: {result.BlockingErrors.Count} validation error(s).");
             foreach (var d in result.BlockingErrors)
                 stderr.WriteLine($"  {d.Code} {d.Message} [{d.Target}]");
+            return ExitValidationErrors;
+        }
+
+        // A target that cannot express every message must say which it left out. Silently exporting a
+        // subset is how someone ships half a protocol and finds out from the other end.
+        foreach (var skipped in result.Excluded)
+            stdout.WriteLine($"  skipped {skipped.Message.Name}: {skipped.Reason}");
+
+        if (result.MessageCount == 0)
+        {
+            stderr.WriteLine(result.Excluded.Count > 0
+                ? $"Nothing generated: all {result.Excluded.Count} selected message(s) are outside what "
+                  + $"the '{generator.Id}' target can express."
+                : "Nothing generated: the selection covers no messages.");
             return ExitValidationErrors;
         }
 
@@ -269,6 +293,40 @@ public static class CommandLine
             stderr.WriteLine($"Could not read '{path}': {ex.Message}");
             return false;
         }
+    }
+
+    /// <summary>
+    /// Collects repeated <c>--option key=value</c> pairs into the bag a generator reads its own settings
+    /// from. An unparseable pair is a usage error rather than a silent no-op: a typo in a flag that
+    /// changes the output should not look like the flag being ignored.
+    /// </summary>
+    private static bool TryParseTargetOptions(
+        string[] args, TextWriter stderr, out Dictionary<string, string> options)
+    {
+        options = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        for (var i = 0; i < args.Length; i++)
+        {
+            if (args[i] != "--option") continue;
+
+            if (i + 1 >= args.Length)
+            {
+                stderr.WriteLine("--option needs a key=value pair.");
+                return false;
+            }
+
+            var pair = args[++i];
+            var split = pair.IndexOf('=');
+            if (split <= 0 || split == pair.Length - 1)
+            {
+                stderr.WriteLine($"Could not read '--option {pair}'. Expected key=value, e.g. protovalidate=false.");
+                return false;
+            }
+
+            options[pair[..split]] = pair[(split + 1)..];
+        }
+
+        return true;
     }
 
     private static string? GetOption(string[] args, string name)

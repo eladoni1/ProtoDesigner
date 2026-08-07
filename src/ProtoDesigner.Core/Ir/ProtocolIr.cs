@@ -28,7 +28,12 @@ public sealed record ProtocolIr(
 /// <param name="Name">The type's name, as the user declared it.</param>
 /// <param name="Host">The primitive kind it is stored as.</param>
 /// <param name="WireBits">Its declared wire size, or the host kind's natural width.</param>
-public sealed record IrPrimitive(string Name, PrimitiveKind Host, int WireBits);
+/// <param name="Range">
+/// The limits the user declared, or null for an unbounded type. Carried because a target may be able to
+/// express the range even when it cannot express the encoding that the range made possible — protobuf
+/// has no 12-bit field, but it can state that a value is between 1000 and 1015.
+/// </param>
+public sealed record IrPrimitive(string Name, PrimitiveKind Host, int WireBits, NumericRange? Range);
 
 /// <summary>An enum type referenced by one or more fields. Emitted as a first-class type by generators.</summary>
 /// <param name="Name">The type's name, as the user declared it.</param>
@@ -97,7 +102,18 @@ public sealed record IrMember(
     // second already has a count field, and a second copy could disagree with it.
     bool NeedsCountMember,
     // Human-readable note the generator can put in a comment — width, transform, array length rule.
-    string? Note);
+    string? Note,
+    // The limits declared on the member's type, or on an array's element type. Null when unbounded.
+    // A target that cannot reproduce the narrow encoding can still often state the constraint.
+    NumericRange? Range = null,
+    // The binding's assigned protobuf field number, or null when it has never been exported. Carried
+    // because the number must be stable across regenerations — deriving one from declaration order
+    // would renumber every field the moment one moved, silently breaking deployed protobuf peers.
+    int? ProtoFieldNumber = null,
+    // Fewest elements a valid message may carry, when this member is an array. Equals ArrayCapacity for
+    // a fixed-count array. Carried as a number rather than left to be inferred from Note, because a
+    // target that emits a lower bound must not depend on the wording of a human-readable comment.
+    int? ArrayMinCount = null);
 
 /// <summary>
 /// One message. <see cref="Fields"/> are flattened in wire order (structs and static arrays expanded);

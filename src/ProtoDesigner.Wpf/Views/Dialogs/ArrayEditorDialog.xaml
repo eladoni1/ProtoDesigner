@@ -19,10 +19,32 @@
       <ComboBox x:Name="ElementBox" Margin="0,4,0,4" SelectionChanged="OnElementChanged"/>
       <TextBlock x:Name="ElementHint" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,14"/>
 
-      <TextBlock Style="{StaticResource SectionLabel}" Text="Number of elements"/>
-      <TextBox x:Name="CountBox" Padding="10,7" Margin="0,4,0,4"
-               FontFamily="{StaticResource MonoFont}" TextChanged="OnCountChanged"/>
-      <TextBlock x:Name="SizeHint" Style="{StaticResource CaptionText}" TextWrapping="Wrap"/>
+      <TextBlock Style="{StaticResource SectionLabel}" Text="Length"
+                 ToolTip="A fixed array is always the same size on the wire. A variable one carries its own count, so the message length changes with it."/>
+      <ComboBox x:Name="LengthBox" Margin="0,4,0,10" SelectionChanged="OnLengthKindChanged"/>
+
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="12"/>
+          <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <StackPanel Grid.Column="0" x:Name="MinPanel">
+          <TextBlock Style="{StaticResource SectionLabel}" Text="Minimum elements"
+                     ToolTip="The fewest a valid message may carry. 0 means an empty array is allowed. This is a declared limit, not a wire mechanism — it reaches the protobuf schema as min_items and raises the message's reported minimum size."/>
+          <TextBox x:Name="MinBox" Padding="10,7" Margin="0,4,0,0"
+                   FontFamily="{StaticResource MonoFont}" TextChanged="OnCountChanged"/>
+        </StackPanel>
+
+        <StackPanel Grid.Column="2">
+          <TextBlock x:Name="CountLabel" Style="{StaticResource SectionLabel}" Text="Number of elements"/>
+          <TextBox x:Name="CountBox" Padding="10,7" Margin="0,4,0,0"
+                   FontFamily="{StaticResource MonoFont}" TextChanged="OnCountChanged"/>
+        </StackPanel>
+      </Grid>
+
+      <TextBlock x:Name="SizeHint" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,6,0,0"/>
 
       <Border x:Name="ErrorBanner" Background="{StaticResource Surface3}" CornerRadius="6"
               Padding="10,7" Margin="0,14,0,0" Visibility="Collapsed">

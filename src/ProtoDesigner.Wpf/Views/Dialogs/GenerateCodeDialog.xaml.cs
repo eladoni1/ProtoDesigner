@@ -4,7 +4,9 @@ using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
 using ProtoDesigner.Application;
+using ProtoDesigner.Application.Commands;
 using ProtoDesigner.CodeGen;
+using ProtoDesigner.Wpf.Mvvm;
 using ProtoDesigner.Wpf.ViewModels;
 
 namespace ProtoDesigner.Wpf.Views.Dialogs;
@@ -60,12 +62,38 @@ public partial class GenerateCodeDialog : Window
         public override string ToString() => Generator.DisplayName;
     }
 
+    /// <summary>
+    /// One target-declared setting, bound to a checkbox. The dialog knows nothing about what any
+    /// particular key means — it renders whatever the selected generator declares.
+    /// </summary>
+    private sealed class TargetOptionRow : ObservableObject
+    {
+        public TargetOptionRow(GeneratorOption option)
+        {
+            Option = option;
+            _isEnabled = option.Default is not "false" and not "0";
+        }
+
+        public GeneratorOption Option { get; }
+
+        public string Label => Option.Label;
+
+        public string Description => Option.Description;
+
+        private bool _isEnabled;
+        public bool IsEnabled { get => _isEnabled; set => SetProperty(ref _isEnabled, value); }
+    }
+
+    private readonly ObservableCollection<TargetOptionRow> _targetOptions = new();
+
     private GenerateCodeDialog(ProjectViewModel project)
     {
         InitializeComponent();
         _project = project;
 
         FileList.ItemsSource = _files;
+
+        TargetOptionsList.ItemsSource = _targetOptions;
 
         TargetBox.ItemsSource = GeneratorCatalog.All.Select(g => new TargetOption(g)).ToArray();
         TargetBox.SelectedIndex = 0;
@@ -134,7 +162,62 @@ public partial class GenerateCodeDialog : Window
 
     // ---- preview -------------------------------------------------------------------------------
 
-    private void OnOptionChanged(object sender, RoutedEventArgs e) => Refresh();
+    private void OnOptionChanged(object sender, RoutedEventArgs e)
+    {
+        // Changing the target changes which settings exist, so the panel is rebuilt before regenerating.
+        if (ReferenceEquals(sender, TargetBox)) RebuildTargetOptions();
+        Refresh();
+    }
+
+    private void OnTargetOptionToggled(object sender, RoutedEventArgs e) => Refresh();
+
+    /// <summary>Shows the settings the selected generator declares, and nothing else.</summary>
+    private void RebuildTargetOptions()
+    {
+        _targetOptions.Clear();
+
+        if (TargetBox.SelectedItem is TargetOption target)
+            foreach (var option in target.Generator.Options)
+                _targetOptions.Add(new TargetOptionRow(option));
+
+        TargetOptionsList.Visibility = _targetOptions.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        RefreshAssignButton();
+    }
+
+    /// <summary>
+    /// Offers the assign action only where it means something: a target that needs stable field numbers,
+    /// and a project that still has fields without one.
+    /// </summary>
+    private void RefreshAssignButton()
+    {
+        var needsNumbers = TargetBox.SelectedItem is TargetOption { Generator.Id: "proto" }
+                           && AssignProtoFieldNumbersCommand.HasUnassigned(_project.Project);
+
+        AssignNumbersButton.Visibility = needsNumbers ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void OnAssignFieldNumbers(object sender, RoutedEventArgs e)
+    {
+        // Through the journal, so it is undoable and marks the project dirty. A generator must never
+        // mutate the model on its way past, and a permanent decision like this belongs in the history
+        // where the user can see and reverse it.
+        _project.Journal.Do(new AssignProtoFieldNumbersCommand());
+
+        RefreshAssignButton();
+        Refresh();
+    }
+
+    /// <summary>The checkbox states as the option bag a generator reads.</summary>
+    private GeneratorOptions BuildOptions()
+    {
+        var ns = string.IsNullOrWhiteSpace(NamespaceBox.Text) ? _project.Project.Name : NamespaceBox.Text.Trim();
+        var options = new GeneratorOptions(Namespace: ns);
+
+        foreach (var row in _targetOptions)
+            options = options.With(row.Option.Key, row.IsEnabled ? "true" : "false");
+
+        return options;
+    }
 
     /// <summary>Regenerates in memory and repaints the list, the preview and the banner.</summary>
     private void Refresh()
@@ -151,13 +234,11 @@ public partial class GenerateCodeDialog : Window
             return;
         }
 
-        var ns = string.IsNullOrWhiteSpace(NamespaceBox.Text) ? _project.Project.Name : NamespaceBox.Text.Trim();
-
         CodeGenerationResult result;
         try
         {
             result = CodeGenerationService.Generate(
-                _project.Project, target.Generator, scope.Resolve(), new GeneratorOptions(Namespace: ns));
+                _project.Project, target.Generator, scope.Resolve(), BuildOptions());
         }
         catch (Exception ex)
         {
@@ -179,14 +260,31 @@ public partial class GenerateCodeDialog : Window
         foreach (var file in result.Files.Files)
             _files.Add(new GeneratedFileRow(file.RelativePath, file.Contents));
 
+        // What a target cannot express is stated with the blocking field named. A message that vanishes
+        // from the output without explanation is the failure this whole gate exists to prevent — the user
+        // should never have to work out why their message is missing.
+        var skipped = result.Excluded
+            .Select(e => $"{e.Message.Name}: {e.Reason}")
+            .ToArray();
+
         if (_files.Count == 0)
         {
-            ShowStatus("Nothing to generate for this selection.",
-                new[] { "That scope covers no messages." }, blocking: true);
+            ShowStatus(
+                skipped.Length > 0
+                    ? $"Nothing to generate: none of the {skipped.Length} selected message(s) can be "
+                      + $"expressed by {target.Generator.DisplayName}."
+                    : "Nothing to generate for this selection.",
+                skipped.Length > 0 ? skipped : new[] { "That scope covers no messages." },
+                blocking: true);
             return;
         }
 
-        HideStatus();
+        if (skipped.Length > 0)
+            ShowStatus($"{skipped.Length} message(s) left out — this target cannot express them.",
+                skipped, blocking: false);
+        else
+            HideStatus();
+
         WriteButton.IsEnabled = true;
         WriteButton.Content = $"Write {_files.Count} file(s)";
 

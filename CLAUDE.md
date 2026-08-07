@@ -7,8 +7,8 @@
 ProtoDesigner is a desktop tool for designing **binary communication protocols** over
 Ethernet/UART — think "database schema designer, but for compressed message layouts on the
 wire." A user defines reusable types, composes them into messages on a bus, controls exactly
-how each field is serialized (down to the bit), and later generates C++/C#/Rust/… encode and
-decode code from that definition.
+how each field is serialized (down to the bit), and later generates C/C#/Rust/… encode and
+decode code from that definition — or a protobuf schema, for the messages protobuf can express.
 
 **Stack:** C# / .NET 8 / WPF. Windows-first. xUnit for tests.
 
@@ -22,7 +22,7 @@ across every message. Message direction is not modeled (not needed yet).
 
 1. [The rules that must not be broken](#1-the-rules-that-must-not-be-broken)
 2. [The core mental model](#2-the-core-mental-model)
-3. [Current state — Phase 0 (done)](#3-current-state--phase-0-done)
+3. [Current state](#3-current-state--phases-0-through-4)
 4. [API surface that already exists](#4-api-surface-that-already-exists)
 5. [Conventions](#5-conventions)
 6. [Roadmap — phases 1 through 6](#6-roadmap--phases-1-through-6)
@@ -114,12 +114,39 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 3 | Resolved IR + C generator | **Done** |
 | 4 | WPF editor | **Usable** — tree, field grid, live byte map, diagnostics, generate dialog |
 | 5 | C# generator + advanced protocol features | **Started** — C# emits declarations only |
+| 5b | Protobuf schema target + protovalidate | **Done** — gated per message, protoc-verified |
 | 6 | Shared storage & collaboration | Not started — see `docs/shared-storage-design.md` |
 
-**1589 automated tests, all passing.** `CCrossCheck` / `CCompositeCrossCheck` compile the generated code
-with MSVC — once as C, once as C++ — and assert byte-identical output against the C# reference codec.
-They are part of `dotnet test` and **fail** rather than skip when no toolchain is present; set
-`PROTODESIGNER_SKIP_CPP_CROSSCHECK=1` to accept generation-only coverage.
+**1730 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
+rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
+red one. None of the toolchains is vendored.
+
+| Check | Proves | Needs | Opt out with |
+|---|---|---|---|
+| `CCrossCheck` / `CCompositeCrossCheck` | the generated C compiles as C *and* as C++ and produces bytes identical to the C# reference codec | MSVC | `PROTODESIGNER_SKIP_CPP_CROSSCHECK=1` |
+| `ProtocConformanceTests` | the generated `.proto` and its `buf.validate` options **compile** | protoc + Buf's `validate.proto` | `PROTODESIGNER_SKIP_PROTOC=1` |
+| `ProtovalidateConformanceTests` | those constraints **actually reject** what they claim to | the above, plus Go | `PROTODESIGNER_SKIP_PROTOVALIDATE=1` |
+
+The protoc check runs against Buf's actual `validate.proto` rather than a stub — a stub would only check
+the generator against a guess at protovalidate's shape and would pass for exactly the reason it was
+wrong. Lay the toolchain out as the gitignored `protobuf/{bin,include,validate.proto}`, or set
+`PROTODESIGNER_PROTOC`.
+
+**The third check is not redundant with the second, and the difference is the whole point.** protoc
+proves an option parses and resolves against the real extension — that the rule exists and is spelled
+correctly. It never *evaluates* one. A constraint bound to the wrong field, carrying a bound off by a
+factor of ten, or scoped to the array where it belongs on the items, compiles perfectly and protects
+nothing. So `ProtovalidateConformanceTests` states a bound and then sends a message that breaks it.
+It found a real defect the moment it first ran (see the `repeated.items` gotcha in §8).
+
+The runtime is Go because protovalidate has no .NET implementation, and reimplementing it in C# would
+only prove the generator agrees with *our reading* of the spec — which is the assumption under test.
+`tests/ProtoDesigner.CodeGen.Tests/Protovalidate/` holds `harness.go` plus its `go.mod`/`go.sum`, all
+checked in; the harness loads a descriptor set, builds the message with `dynamicpb` and validates it, so
+no `protoc-gen-go` step exists and it never needs regenerating alongside a schema. Its dependencies live
+in Go's global module cache, **not** in this repo — so `protobuf/protovalidate-go/` is a staging
+directory and deleting it costs nothing. Deleting all of `protobuf/` also removes protoc and
+`validate.proto`, which turns the second and third checks red until you set their skip variables.
 
 ```
 src/
@@ -128,13 +155,20 @@ src/
   ProtoDesigner.Application/     IProjectRepository, IEditCommand + CommandJournal,
                                  GenerationScopes, CodeGenerationService
   ProtoDesigner.Persistence.Json canonical ID-keyed JSON + migration chain
+  ProtoDesigner.Application/     …also ProtobufCompatibility (the export gate) and WireSizePolicy
   ProtoDesigner.CodeGen/         IProtocolGenerator, GeneratorCatalog, BitBuffer + ReferenceCodec,
-                                 C/ (full codec)     CSharp/ (declarations only)
+                                 C/ (full codec)   CSharp/ (declarations only)   Proto/ (schema)
   ProtoDesigner.Cli/             validate / generate / targets
   ProtoDesigner.Wpf/             the editor
 tests/                           one suite per src project
+  …CodeGen.Tests/Golden/         checked-in expected output: C headers *and* .proto schemas
+  …CodeGen.Tests/Protovalidate/  harness.go + go.mod/go.sum — the Go runtime check, all in git
 samples/telemetry.pdproj         a worked example exercising most features
+samples/protobuf-demo.pdproj     aimed at the protobuf target: two exportable messages covering every
+                                 constraint shape, plus one bit-packed and one quantized message that
+                                 the gate must refuse by name
 docs/shared-storage-design.md    Phase 6 design note — read before building any of it
+protobuf/                        gitignored toolchain: bin/protoc, include/, validate.proto
 ```
 
 **Model additions since the original Phase 0 sketch** (§4 below predates them):
@@ -146,7 +180,28 @@ docs/shared-storage-design.md    Phase 6 design note — read before building an
   modelled now — it is what `GenerationScopes.ForModule*` selects on.
 - `IrMember` alongside `IrField`: **flat for the wire, nested for the host**. Fields stay flattened
   because offsets are defined over leaves in wire order; members describe the struct the user actually
-  declared, so a `Header` used by ten messages is emitted once and referenced by name.
+  declared, so a `Header` used by ten messages is emitted once and referenced by name. **A generator
+  emitting declarations walks `Members`; one emitting a codec walks `Fields`.**
+- `IrPrimitive` — named primitives reach the IR now, carrying `WireBits` and `Range`. They declare no
+  type in any target (the host kind is a built-in) but their size and limits are the things a caller
+  cannot otherwise derive.
+- `IrMember.Range` / `IrMember.ProtoFieldNumber` — a target that cannot reproduce a narrow *encoding*
+  can often still state the *constraint*, and protobuf field numbers must survive regeneration.
+- `ArrayLength.MinimumCount` (persisted as an optional `minCount`) — a declared floor on a variable
+  array. It is not a wire mechanism: it raises `MessageLayout.MinBits` and becomes protovalidate's
+  `min_items`, and the C codec ignores it. `IrMember.ArrayMinCount` carries it, which is what let
+  `ProtoGenerator` stop deciding "is this exact?" by string-matching a human-readable note.
+- `FieldBinding.ProtoFieldNumber` (`int?`, persisted). Not a violation of rule 2: a field number is not
+  a position on the wire — protobuf puts it in the tag explicitly — so it is declarative intent the user
+  owns, in the same category as `Message.WireId`.
+
+**Target-specific generator options.** `GeneratorOptions` carries `TargetOptions`, a string bag, plus
+`Flag()`/`Value()`/`With()` helpers. Each `IProtocolGenerator` *declares* what it accepts via
+`Options` (`GeneratorOption` records), so the CLI (`--option key=value`, repeatable) and the Generate
+dialog render them without knowing which target is selected. A generator reads its own keys and ignores
+the rest. This exists because widening the shared record per language is exactly what the "no language
+bias" boundary forbids. `IProtocolGenerator.CoversEveryMessage` is the other declaration: false means
+the target borrows a foreign wire format and the caller must narrow the scope.
 
 **Checksums and CRCs are not modelled — do not add them back.** They were removed deliberately in
 schema v2. Width, polynomial and technique vary per message, teams already have vetted routines or a
@@ -160,6 +215,18 @@ is then `OnWireLength(msg) - <Type>_OnWireBytes`, with no offset stored anywhere
 `Core/Ir/WireLength.cs` is the single definition both generators mirror; `WireLengthTests` pins it
 against what the reference codec actually writes, so the emitted formula cannot drift from the encoder.
 
+**The protobuf target is gated, and the gate is the feature.** `proto` emits a `.proto` schema so one
+definition serves both the embedded link and a protobuf backend. It is a *different wire format*, not a
+second encoding of ours, so it is refused per message for anything protobuf cannot represent:
+sub-byte widths, and transforms with `Scale != 1`. An **offset is fine** — protobuf sends the value, not
+the wire code, so the offset was only a width trick and the range survives as a protovalidate
+constraint. `ProtobufRules` is deliberately **not** in `Validator.DefaultRules`: a bit-packed message is
+exactly what this tool is for and must never fail ordinary generation. `ProtobufCompatibility` is the
+single place the gate lives; `CodeGenerationService` narrows the scope for any generator whose
+`CoversEveryMessage` is false and reports what it left out. `FieldBinding.ProtoFieldNumber` is persisted
+and assigned through an undoable command, never by the generator — a number that moves breaks every
+deployed peer silently.
+
 **The generated code is C, not C++, and must stay freestanding** — no heap, no exceptions, no std
 containers. It targets microcontrollers where an allocation is a fault, not a slowdown, and where C is
 often the only option. `CFreestandingTests` enforces the freestanding part; the cross-checks enforce
@@ -171,7 +238,94 @@ every emitted function name must be unique.
 - `FillRemaining` and `Terminated` arrays *decode* by asking the caller for the count rather than
   scanning for the sentinel or consuming the remainder. Encode is correct for both.
 - The C# target emits declarations and the wire layout as comments; no encode/decode yet.
-- The WPF layer has no automated tests. Everything below it does.
+- The WPF layer has no automated tests. Everything below it does. Dialog logic that is really *policy*
+  should be extracted so it can be — `WireSizePolicy` was pulled out of the primitive editor for exactly
+  this reason, after a defect that was untestable where it lived.
+- The Generate dialog reports which messages a target left out, but does not yet let you tick individual
+  messages for export.
+- Nothing consumes a generated `.proto` end to end (`protoc --csharp_out`, populate, serialize,
+  deserialize). The schema is proven valid and its constraints proven to fire; it is not proven *usable*
+  by a generated stub. See the note under "Open work" before spending time on it.
+- **`ArrayLength.LengthPrefixed` never reaches a generator.** `IrBuilder.ResolveField` throws on the
+  synthetic `x.__length` layout node ("has no TypeId"). It has layout tests and no `Corpus` entry, which
+  is why nothing caught it. `Terminated` and `FillRemaining` are likely in the same position. The array
+  editor therefore only ever produces `Fixed` or `CountFromField` in practice.
+
+The corpus is shaped for wire layouts and declares almost no ranges, so it would show nothing if every
+protovalidate constraint vanished. `ProtovalidateFixture.BuildProject()` is the fixture shaped for the
+rule groups instead — one message per constraint family, covering `uint32`/`int32`/`uint64`/`int64`/
+`float`/`double`, `bool`, `char`, scalar and `repeated` enums, fixed and dynamic arrays, an offset-only
+field and a deliberately unconstrained full-span one. It is goldened as `Golden/constraints.proto`, which
+is what makes a dropped or rescoped rule a visible diff. Add new rule shapes there, not to `Corpus` —
+widening the corpus drags the C golden and cross-check suites along for a different axis entirely.
+
+### Verifying the claims (these are not obvious, and were hard-won)
+
+A conformance test that cannot fail is decoration. Each of these was proven by deliberately breaking
+something and watching it go red — do the same before trusting a change here.
+
+- **Is the C cross-check really compiling?** Point `PROTODESIGNER_PROTOC`-style env vars at nothing, or
+  temporarily corrupt the emitted code. With MSVC present and no skip variable, `CCrossCheck` compiles
+  the *same driver source* twice (`/TC` then `/TP`) and runs both.
+- **Is protoc really running?** `PROTODESIGNER_PROTOC=C:/nonexistent/protoc.exe dotnet test --filter
+  ProtocConformanceTests` must turn every case red. If it stays green, the test is skipping.
+- **Are the protovalidate constraints real, or just syntactically accepted?** Compile to a descriptor
+  set and decode it — this proves the options are *attached with the right rule tags*, not merely
+  parsed:
+
+  ```bash
+  protoc --proto_path=OUT --proto_path=protobuf/include --descriptor_set_out=OUT/x.desc OUT/*.proto
+  protoc --decode=google.protobuf.FileDescriptorSet --proto_path=protobuf/include google/protobuf/descriptor.proto < OUT/x.desc
+  ```
+
+  `validate.proto` must be staged at `OUT/buf/validate/validate.proto` first, because protoc resolves
+  imports by path, not package. Verified tags in `FieldRules`: `int32 = 3`, `uint32 = 5`, `enum = 16`,
+  `repeated = 18`; inside a scalar rule set, `lte = 3` and `gte = 5`. A negative `gte` appears as a
+  two's-complement varint (`-90` → `18446744073709551526`), which is correct, not a bug.
+- **Do the constraints actually reject anything?** The descriptor decode above proves the right tag with
+  the right value; it still does not prove the rule *fires*. Three mutations, each verified to go red:
+
+  | Mutation | Expected |
+  |---|---|
+  | `PROTODESIGNER_GO=C:/nonexistent/go.exe` | all 35 runtime cases red (the protoc cases stay green — they do not need Go) |
+  | the same, plus `PROTODESIGNER_SKIP_PROTOVALIDATE=1` | green, and nothing validated |
+  | widen a bound: `Number(range.Max + 100, …)` in `ProtoGenerator.Constraints` | 7 cases red across three rule groups |
+
+  If the first stays green the test is skipping when it should be failing, which is the failure mode the
+  whole fail-loudly policy exists to prevent.
+
+### Open work, in the order I would take it
+
+1. **Endianness + bit order in the UI.** The model resolves both (field → message → bus → project) and
+   the layout engine honours them, but nothing in the editor sets either. Surface a bus default with
+   per-message and per-field overrides, and show the resolved value on each field row. **Bit order is
+   not just a picker**: `BitOrder.LsbFirst` is modelled and laid out but the generated runtime only ever
+   packs MSB-first (`pd_bw_write_unsigned` takes an endianness and no bit order), so LSB-first needs
+   implementing in the generated read/write paths *and* in `ReferenceCodec`, with round-trip tests. UART
+   commonly transmits LSB-first, so this is real, not theoretical.
+2. **Right-click a field to edit its type**, offering what right-clicking the type in the library does.
+3. **Per-message export checklist** in the Generate dialog. It currently reports what a target left out;
+   it does not let you tick individual messages.
+4. **C# encode/decode.** Declarations and `OnWireLength` exist; the codec does not.
+5. **`FillRemaining` / `Terminated` decode** — scan for the sentinel or consume the remainder instead of
+   asking the caller for a count.
+6. **Wire-compatibility diffing** — compare two versions' `MessageLayout`s and report which changes
+   break a deployed decoder (reorder, narrow, widen, endianness, `WireId` change) versus which are safe
+   (rename anything — identity is an ID). This needs no database, works against the last git commit, and
+   is the thing git structurally cannot do for a binary protocol. Recommended before any of Phase 6.
+
+**The protobuf target is finished and tested; do not reopen it looking for gaps.** Schema compiles,
+constraints compile against the real extension, constraints are *enforced* by a real runtime, the gate
+refuses and names, field numbers survive reorder and round-trip, goldens make output changes visible, and
+both samples run in CI. The one thing deliberately left undone is a round-trip through a generated
+language (`protoc --csharp_out`, populate, serialize, deserialize): it would prove the schema is
+*consumable*, which nothing currently checks, but every constraint and every field number is already
+pinned by something sharper. Do it only if a consumer actually reports trouble.
+
+**A note on endianness, since it comes up:** the *host's* byte order never matters and you never need to
+know it. The generated runtime assembles bytes with shifts, not `memcpy` of a machine word, so the same
+header produces identical bytes on a big- or little-endian CPU. What matters is the *wire* endianness,
+which is a property of the protocol that both sides already agree on by sharing the generated header.
 
 ---
 
@@ -448,8 +602,31 @@ editor). The declarations and the on-wire length API already exist; what remains
 Advanced features: automatic `WireId`/Message-ID assignment, MTU/frame-budget checks promoted from
 warnings to codegen options, configurable alignment policies.
 
-**Acceptance.** Extend the round-trip corpus to C++↔C# (encode in one, decode in the other).
+**Acceptance.** Extend the round-trip corpus to C↔C# (encode in one, decode in the other).
 Golden files for the C# target.
+
+---
+
+### Phase 5b — Protobuf schema target (done)
+
+Built out of a long design conversation whose conclusions matter more than the code:
+
+**Should you just use protobuf instead of this tool?** If you control both ends, can choose the wire
+format, and bandwidth is not tight — **yes, and this tool is over-engineering.** Protobuf's tag-length-
+value + varint design costs ~2 bytes for a bool and gives no stable byte offsets, no fixed message size,
+and no sub-byte fields. This tool exists for the cases protobuf structurally cannot serve: a fixed frame
+budget, a hardware-defined frame format you do not get to choose, or a link where per-field overhead is
+the problem. Say so plainly if asked again rather than defending the codebase.
+
+**Why the target exists anyway:** one definition, two consumers — the embedded link on the C codec, a
+backend or dashboard on protobuf, without a second hand-written schema that drifts.
+
+**What was rejected on the way here:** packing sub-byte fields into an opaque `bytes` blob with
+generated accessors (works, but the blob is unreadable to every other protobuf consumer and gets no
+schema evolution — you pay protobuf's cost for none of its benefit); emitting `.pb.cc`/`.pb.h`
+ourselves; bundling protoc; CEL expressions. If protobuf interop is genuinely wanted for dense
+messages, the coherent shape is protobuf as the *envelope* (`bytes payload = 1;`) with our codec as the
+payload — and that needs no generator at all, just one hand-written `.proto`.
 
 ---
 
@@ -486,6 +663,20 @@ overflow.
   suffice).
 - YAML/SQLite as the initial local format (chose JSON for diff/merge + zero-dep; SQLite arrives
   as the *shared* backend in Phase 6, not the local file).
+- A separate C++ generator. The C target's header compiles as C *and* C++, so a second one would be a
+  near-identical thing to keep correct for no capability the first lacks.
+- Emitting protobuf output that silently drops what it cannot express. Anything unrepresentable is
+  refused per message with the offending field named — see `ProtobufRules`.
+- Vendoring toolchains (MSVC, protoc, Go). Tests locate them and **fail loudly** when absent; a green
+  suite that compiled nothing is worse than a red one.
+- A hand-written stub of `buf/validate/validate.proto` to make the constraint test runnable without the
+  real file. A stub only checks the generator against a guess at protovalidate's shape, and passes for
+  exactly the reason it is wrong.
+- A C# reimplementation of protovalidate to avoid the Go dependency. It would only prove the generator
+  agrees with our reading of the spec, which is the assumption the check exists to test — the same
+  mistake as the stub, one layer up.
+- Treating "protoc accepted it" as proof a constraint works. It is proof the option *parses*, nothing
+  more, and the `repeated.items` bug in §8 got through exactly that way.
 
 ---
 
@@ -511,3 +702,64 @@ overflow.
   loses precision past 2^53). Keep wire-code math in `decimal`/integer, not `double`.
 - **`LayoutNode` and `LayoutRegion` use `required` members** (C# 11 / .NET 7+). Every
   construction site must set them; that's by design, not a bug to "fix" by making them nullable.
+- **The serializer writes messages in canonical (ID) order, not declaration order.** Message order is
+  not wire-significant so this is deliberate and diff-friendly — but do not be surprised when a
+  round-tripped project emits its messages in a different order than you added them. **Field** order is
+  preserved, and must be: field order *is* wire order.
+- **`ProtobufRules` is not in `Validator.DefaultRules`.** Run it with `new Validator(ProtobufRules.All)`,
+  or through `ProtobufCompatibility`. Registering it in the default set would make a bit-packed
+  message — the thing this tool is for — fail ordinary C generation.
+- **The protobuf gate reads the computed layout, not `FieldEncoding` directly**, because a binding's
+  width is usually null and inherited from the message, bus or project. `ProtobufRules.ValueNodes`
+  walks `MessageLayout.Values()`, which has the resolved widths and reaches inside structs and arrays.
+- **An offset-only transform is protobuf-exportable; a scale is not.** `wire = (value - Offset) / Scale`.
+  The offset only narrows the width and protobuf sends the value itself, so the range survives as a
+  constraint. A scale is lossy quantization, and a protobuf peer would carry full precision while a C
+  peer would not — the two would disagree about the number. Getting this backwards either blocks good
+  messages or ships wrong ones.
+- **protoc resolves imports by path, not package.** `validate.proto` must sit at
+  `<dir>/buf/validate/validate.proto` for `import "buf/validate/validate.proto";` to work, however the
+  toolchain is laid out on disk. `ProtocToolchain.Compile` stages a copy per run for that reason.
+- **Only emit a protovalidate range when it narrows the *protobuf* scalar, not the host.** A `u16`
+  becomes `uint32`, so its 0..65535 span is real information the type no longer carries. A `u32`'s full
+  span is exactly `uint32`'s, and restating it reads as a designed limit when it is the absence of one.
+- **A generated `.proto` must never carry `OnWireLength` or wire-size macros.** Those are our byte
+  counts, and protobuf's are different; printing them side by side is the confusion the gate exists to
+  prevent.
+- **Emitting an import that nothing uses is a protoc warning.** The generator therefore builds the body
+  first and decides on `import "buf/validate/validate.proto";` by inspecting it (`Compose`).
+- **`CoversEveryMessage` is a default interface member**, so it is only reachable through an
+  `IProtocolGenerator`-typed reference — casting a concrete generator is required in tests.
+- **Every rule on a `repeated` field belongs under `repeated.items.`** — `repeated.items.enum.defined_only`,
+  not `enum.defined_only`. This was a live bug: the numeric branch of `ProtoGenerator.Constraints` had the
+  `scope` prefix and the enum branch did not. **protoc accepts the wrong form happily**, because the option
+  is well-formed and the extension resolves; protovalidate then refuses to compile the *entire message*
+  (`expected rule "buf.validate.FieldRules.repeated", got "buf.validate.FieldRules.enum"`), so every
+  constraint on it silently stops working at the consumer. Nothing short of a runtime notices this — it is
+  the reason `ProtovalidateConformanceTests` exists.
+- **A violation on an array element carries no field descriptor.** `Violation.FieldDescriptor` is nil
+  there; the location is in `Violation.Proto.GetField()`, rendered by `protovalidate.FieldPathString` as
+  `samples[2]`. Reading only the descriptor reports an empty field name for exactly the cases where
+  knowing which element failed matters most.
+- **Only a *declared* range becomes a constraint.** A `u8` with no `NumericRange` emits nothing, even
+  though `uint32` cannot express 0..255. That is deliberate — inventing a limit the user never declared
+  would contradict rule 6 — but it means two `u8` fields can emit different options depending on whether
+  the type declares its range. `samples/protobuf-demo.pdproj` declares 0..255 on its `u8`; the
+  `ProtovalidateFixture` does not. Neither is a bug.
+- **An array's lower bound is `ArrayLength.MinimumCount`, and it defaults to 0.** Every variant except
+  `Fixed` takes an optional `MinCount`; `Fixed` returns its `Count` for both ends. Without a declared
+  minimum an empty array is legal and the schema emits `repeated.max_items` alone — `min_items: 0` would
+  be noise. With one, both ends are emitted together. `IsExactCount` is the "min equals max" test; do not
+  reach for `is Fixed`, since a length-prefixed array pinned at 4..4 is exact too.
+- **A minimum is declarative intent, not a wire mechanism.** Nothing about the encoding changes because a
+  caller promised at least one element, and **the generated C does not enforce it** — it enforces no
+  bound today. What a minimum does is raise `MessageLayout.MinBits` (so a frame budget is measured
+  against the real floor rather than an empty array) and emit `repeated.min_items` for protobuf. If you
+  ever want C-side enforcement, that is a new decision, not a bug.
+- **`minCount` is written only when non-zero**, so every file predating it round-trips byte-identically
+  and no schema bump was needed. `ArrayLengthFromJson` reads a missing key as 0, which is what those
+  files always meant.
+- **`biased-signed` in the corpus is quantized, despite the name.** Its transform is
+  `BitMath.MinimumScale(-100..100, 8)`, which is `200/255`, not `1` — so the gate refuses it along with
+  `packed-bits` and `quantized`, and it has no `.proto` golden. An offset *alone* would be exportable;
+  reaching for `MinimumScale` is what makes it a scale.

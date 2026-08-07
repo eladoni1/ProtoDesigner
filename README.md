@@ -24,12 +24,15 @@ so resizing or reordering a field is just an edit followed by a recompute.
 | 3 | Resolved IR + C generator | **Done** — compiled and cross-checked as C and C++ |
 | 4 | WPF editor | **Usable** — tree, field grid, live byte map, diagnostics, generate dialog |
 | 5 | C# generator + advanced protocol features | **Started** — C# emits declarations only |
+| 5b | Protobuf schema target + protovalidate | **Done** — gated per message, protoc- and runtime-verified |
 | 6 | Shared storage & collaboration | Not started — [design note](docs/shared-storage-design.md) |
 
-**1589 automated tests, all passing.** That includes a cross-language check that compiles the generated
+**1730 automated tests, all passing.** That includes a cross-language check that compiles the generated
 code under MSVC — once as C, once as C++ — and asserts it produces byte-identical output to the C#
 reference codec over the whole wire matrix. Two independent implementations: wherever they disagree, one
-of them is wrong.
+of them is wrong. The protobuf target gets the same treatment: its schema is compiled by real `protoc`,
+and its constraints are then run against a real protovalidate runtime that has to *reject* the values
+they forbid.
 
 ### Wire sizes, and finding a field without storing an offset
 
@@ -52,6 +55,8 @@ variable one.
   than scanning for the sentinel or consuming the remainder. Encoding both is correct.
 - **The C# target emits declarations only** — classes, enums and each message's wire layout as a
   comment. Encode/decode is C-only today.
+- **Endianness and bit order have no UI.** Both are modelled and both are honoured by the layout engine,
+  but nothing in the editor sets either, and the generated runtime only ever packs MSB-first.
 
 ---
 
@@ -68,7 +73,7 @@ src/
                                  GenerationScopes, CodeGenerationService (the generate use case)
   ProtoDesigner.Persistence.Json canonical ID-keyed JSON with a migration chain
   ProtoDesigner.CodeGen/         IProtocolGenerator, GeneratorCatalog, BitBuffer + ReferenceCodec,
-                                 C/ (full codec), CSharp/ (declarations only)
+                                 C/ (full codec), CSharp/ (declarations only), Proto/ (schema)
   ProtoDesigner.Cli/             validate / generate / targets
   ProtoDesigner.Wpf/             the editor
 
@@ -77,10 +82,14 @@ tests/
   ProtoDesigner.Persistence.Json.Tests round-trip, canonical form, schema migrations
   ProtoDesigner.CodeGen.Tests/         golden files, plus the C cross-checks that compile the
                                        generated code (as C and as C++) and diff the bytes
+    Golden/                            expected output: C headers and .proto schemas
+    Protovalidate/                     the Go harness that enforces the emitted constraints
   ProtoDesigner.Cli.Tests/             exit codes and diagnostic output
   ProtoDesigner.Application.Tests/     edit commands, generation scopes, the generate use case
 
 samples/telemetry.pdproj         a worked example exercising most features
+samples/protobuf-demo.pdproj     two exportable messages plus one bit-packed and one quantized that
+                                 the protobuf gate must refuse by name
 ```
 
 Dependencies point inward: UI → Application → Core. Persistence and CodeGen depend only on Core.
@@ -100,10 +109,25 @@ dotnet test
 
 Requires the .NET 8 SDK (or newer — .NET 10 builds it fine).
 
-The cross-language checks compile the generated C with MSVC and run it. They are part of `dotnet test`,
-not a separate step. On a machine with no C++ toolchain they **fail** rather than pass quietly — a green
-suite that never compiled anything is the worst outcome available. To accept generation-only coverage
-there, set `PROTODESIGNER_SKIP_CPP_CROSSCHECK=1`.
+Three conformance checks run as part of `dotnet test`, not as separate steps. All **fail** rather than
+pass quietly when their toolchain is missing — a green suite that never compiled anything is the worst
+outcome available.
+
+| Check | Needs | Skip with |
+|---|---|---|
+| Generated C compiled as C *and* C++, bytes diffed against the C# reference codec | MSVC | `PROTODESIGNER_SKIP_CPP_CROSSCHECK=1` |
+| Generated `.proto` compiled by real `protoc`, **including** its `buf.validate` constraints | protoc + Buf's `validate.proto` | `PROTODESIGNER_SKIP_PROTOC=1` |
+| Those constraints enforced by a real protovalidate runtime — out-of-range values must be *rejected* | the above, plus Go | `PROTODESIGNER_SKIP_PROTOVALIDATE=1` |
+
+The third is not a repeat of the second. protoc proves a constraint *parses* and resolves against the
+real extension; it never evaluates one, so a rule bound to the wrong field or scoped to an array where it
+belongs on the items compiles perfectly and protects nothing. The runtime check states a bound and then
+sends a message that breaks it. It found exactly that bug the first time it ran.
+
+No toolchain is vendored — protoc alone is a 12 MB platform binary git would keep forever. Lay it out as
+`protobuf/{bin,include,validate.proto}` (gitignored) or set `PROTODESIGNER_PROTOC`. The Go harness and
+its `go.mod` *are* checked in, under `tests/ProtoDesigner.CodeGen.Tests/Protovalidate/`; its dependencies
+come from Go's own module cache.
 
 ---
 
@@ -117,9 +141,46 @@ dotnet run --project src/ProtoDesigner.Cli -- validate samples/telemetry.pdproj
 dotnet run --project src/ProtoDesigner.Cli -- generate samples/telemetry.pdproj --out ./generated --target c --namespace telemetry
 ```
 
-Targets: `c` (full encode/decode; the header compiles as C or C++) and `csharp` (declarations only).
-The editor exposes the same thing via the **Generate code** button (Ctrl+G), with a preview of every
-file before anything is written.
+Targets:
+
+| Id | Output |
+|---|---|
+| `c` | Full encode/decode. The header compiles as C or as C++. |
+| `csharp` | Declarations and the wire layout as comments; no encode/decode yet. |
+| `proto` | A protobuf schema, with protovalidate constraints. **A different wire format** — see below. |
+
+Per-target settings go through `--option key=value` (repeatable); `targets` lists what each one accepts.
+The editor exposes all of it via the **Generate code** button (Ctrl+G), with a preview of every file
+before anything is written.
+
+### The protobuf target
+
+`proto` emits a `.proto` schema so one definition can serve two consumers — the embedded link on the C
+codec, a backend or dashboard on protobuf — instead of two hand-written schemas that drift.
+
+It is **not** an alternative encoding of the same bytes. Protobuf is tag-length-value with varints, so a
+message through this schema and the same message through the C codec do not interoperate.
+
+Because of that it is gated per message. Anything protobuf cannot represent is **refused and named**,
+never silently translated:
+
+- sub-byte field widths — protobuf has no 4-bit field
+- a scalar transform with a scale other than 1 — quantization is lossy, so a protobuf peer and a C peer
+  would disagree about the number
+
+An *offset* is fine, because protobuf carries the value rather than the wire code, and the declared range
+survives as a `buf.validate` constraint. That is what protovalidate buys: without it a 1000..1015 field
+is bare `uint32` and a 32-element capacity is bare `repeated`, and every limit you designed is lost.
+
+Both the schema and its constraints are compiled by real `protoc` in the test suite, against Buf's actual
+`validate.proto` rather than a stub — so a misspelled or wrongly nested rule fails here rather than at
+whatever consumer eventually builds the schema. The constraints are then handed to a real protovalidate
+runtime and given values they forbid, which is the only way to tell a rule that works from one that
+merely compiles.
+
+```bash
+dotnet run --project src/ProtoDesigner.Cli -- generate samples/telemetry.pdproj --out ./out --target proto --option protovalidate=false
+```
 
 Exit codes: `0` success, `1` validation errors (generation refused), `2` usage error, `3` I/O error.
 
@@ -167,7 +228,8 @@ pd_bw_write_unsigned(&w, (uint64_t)(msg->crc), 16, PD_ENDIAN_LITTLE);
 - User-defined width down to the bit, with `ScalarTransform` (`wire = (v - offset) / scale`)
   covering enums that start at 100, range compression (1000..1015 → 4 bits), and float quantization.
 - Structs (inline, nested, reused) and arrays (static; dynamic via count-field, length-prefix,
-  sentinel, or fill-remaining).
+  sentinel, or fill-remaining), with an optional declared minimum element count — so a variable array
+  can be "1 to 10", not just "up to 10".
 - Rejects, with the offending path: recursive types, a count field that doesn't precede its array, a
   too-narrow length prefix, a dynamic array inside a dynamic array, and a sub-byte stride under byte
   padding.

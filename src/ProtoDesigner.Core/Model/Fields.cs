@@ -70,5 +70,27 @@ public sealed class FieldBinding
 
     public string? Description { get; set; }
 
+    /// <summary>
+    /// This field's protobuf field number, once assigned. Null until the project is exported to
+    /// <c>.proto</c> for the first time.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// It lives on the model, and is persisted, because protobuf's whole value is schema evolution and
+    /// that depends on the number being stable forever. A number derived from declaration order would
+    /// change the moment a field moved, silently breaking every already-deployed protobuf peer — the
+    /// exact class of failure the rest of this model avoids by never storing offsets.
+    /// </para>
+    /// <para>
+    /// It does <em>not</em> violate rule 2 ("layout is computed, never stored"): a field number is not a
+    /// position on the wire. Protobuf encodes it explicitly in the tag, so it is declarative intent the
+    /// user owns, in the same category as <see cref="Message.WireId"/>.
+    /// </para>
+    /// <para>
+    /// Once assigned it must never be reused for a different field, which <c>PD0073</c> guards.
+    /// </para>
+    /// </remarks>
+    public int? ProtoFieldNumber { get; set; }
+
     public override string ToString() => $"{Name}: {TypeId}";
 }

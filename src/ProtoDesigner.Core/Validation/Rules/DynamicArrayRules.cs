@@ -132,3 +132,41 @@ public sealed class ArrayOfCompositeElementRule : IValidationRule
         }
     }
 }
+
+/// <summary>
+/// An array's declared minimum element count must be reachable: at least zero, and no more than its
+/// capacity.
+/// </summary>
+/// <remarks>
+/// The layout engine also refuses a minimum above the capacity, because a region cannot have
+/// <c>MinBits &gt; MaxBits</c> — but it throws, and a user who typed 10 into a box that holds 8 deserves
+/// a diagnostic pointing at the array, not an exception. This runs first and says which two numbers
+/// disagree.
+/// </remarks>
+public sealed class ArrayMinCountRule : IValidationRule
+{
+    public string Code => DiagnosticCodes.ArrayMinCountUnreachable;
+
+    public IEnumerable<Diagnostic> Validate(ValidationContext ctx)
+    {
+        foreach (var array in ctx.Project.Types.All.OfType<ArrayType>())
+        {
+            var length = array.Length;
+
+            if (length.MinimumCount < 0)
+            {
+                yield return new Diagnostic(Code, Severity.Error,
+                    $"Array '{array.Name}' declares a minimum of {length.MinimumCount} elements; "
+                    + "a minimum cannot be negative.",
+                    EntityPath.ForType(array));
+            }
+            else if (length.MinimumCount > length.Capacity)
+            {
+                yield return new Diagnostic(Code, Severity.Error,
+                    $"Array '{array.Name}' requires at least {length.MinimumCount} elements but holds at "
+                    + $"most {length.Capacity}. No message can satisfy both.",
+                    EntityPath.ForType(array));
+            }
+        }
+    }
+}

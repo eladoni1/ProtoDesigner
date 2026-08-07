@@ -182,6 +182,66 @@ public class RoundTripTests
         }
     }
 
+    // ---- array minimums ----------------------------------------------------------------------------
+
+    [Fact]
+    public void A_declared_array_minimum_survives_a_round_trip()
+    {
+        var project = new Project("Bounds");
+        var u8 = project.Types.Add(new ParameterType(TypeId.New(), "u8", PrimitiveKind.U8));
+        var count = new FieldBinding("count", u8.Id);
+        var payload = project.Types.Add(new ArrayType(TypeId.New(), "Payload", u8.Id,
+            new ArrayLength.CountFromField(count.Id, MaxCount: 10, MinCount: 1)));
+
+        var bus = new Bus(BusId.New(), "Main", Transport.Ethernet);
+        var message = new Message(MessageId.New(), "M") { WireId = 1 };
+        message.Fields.Add(count);
+        message.Fields.Add(new FieldBinding("payload", payload.Id));
+        bus.Messages.Add(message);
+        project.Buses.Add(bus);
+
+        var reloaded = JsonProjectRepository.LoadFromString(JsonProjectRepository.SaveToString(project));
+
+        var length = Assert.IsType<ArrayLength.CountFromField>(
+            reloaded.Types.All.OfType<ArrayType>().Single().Length);
+        Assert.Equal(1, length.MinCount);
+        Assert.Equal(10, length.MaxCount);
+    }
+
+    [Fact]
+    public void An_array_with_no_declared_minimum_writes_no_minCount_key()
+    {
+        // Omitting the default is what keeps every existing project byte-identical after a round trip.
+        // Writing `minCount: 0` everywhere would put an unrelated diff in front of every reviewer the
+        // first time they opened a file after upgrading.
+        var json = JsonProjectRepository.SaveToString(BuildSample());
+
+        Assert.DoesNotContain("minCount", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_file_written_before_minCount_existed_loads_with_no_minimum()
+    {
+        // Backward compatibility without a schema bump: an added optional key means an older file simply
+        // means what it always meant.
+        var project = new Project("Old");
+        var u8 = project.Types.Add(new ParameterType(TypeId.New(), "u8", PrimitiveKind.U8));
+        var payload = project.Types.Add(new ArrayType(TypeId.New(), "Payload", u8.Id,
+            new ArrayLength.LengthPrefixed(PrefixBits: 8, MaxCount: 16)));
+
+        var bus = new Bus(BusId.New(), "Main", Transport.Ethernet);
+        var message = new Message(MessageId.New(), "M") { WireId = 1 };
+        message.Fields.Add(new FieldBinding("payload", payload.Id));
+        bus.Messages.Add(message);
+        project.Buses.Add(bus);
+
+        var json = JsonProjectRepository.SaveToString(project);
+        Assert.DoesNotContain("minCount", json, StringComparison.Ordinal);
+
+        var reloaded = JsonProjectRepository.LoadFromString(json);
+        Assert.Equal(0, reloaded.Types.All.OfType<ArrayType>().Single().Length.MinimumCount);
+    }
+
     private static Project BuildSample()
     {
         var project = new Project("Sample");

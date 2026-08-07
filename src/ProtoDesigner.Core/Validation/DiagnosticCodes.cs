@@ -43,6 +43,7 @@ public static class DiagnosticCodes
     public const string LengthPrefixTooNarrow     = "PD0034";
     public const string DynamicArrayInsideDynamic = "PD0035";
     public const string ArrayOfCompositeElement   = "PD0036";
+    public const string ArrayMinCountUnreachable  = "PD0037";
 
     // ---- retired: CRC (PD0040..PD0049) ------------------------------------------------------------
     //
@@ -63,4 +64,16 @@ public static class DiagnosticCodes
     public const string BusHasNoMessages          = "PD0061";
     public const string MessageHasNoFields        = "PD0062";
     public const string WireIdNotAssigned         = "PD0063";
+
+    // ---- protobuf export (PD0070..PD0079) --------------------------------------------------------
+    //
+    // These are NOT part of the default rule set. They answer "could this message be exported as
+    // .proto?", which is a question about one optional target rather than a defect in the protocol —
+    // a bit-packed message is perfectly correct and must never fail ordinary generation because of
+    // them. ProtobufCompatibility runs them on their own.
+
+    public const string ProtoSubByteField         = "PD0070";
+    public const string ProtoScaledField          = "PD0071";
+    public const string ProtoEndiannessIgnored    = "PD0072";
+    public const string ProtoDuplicateFieldNumber = "PD0073";
 }
