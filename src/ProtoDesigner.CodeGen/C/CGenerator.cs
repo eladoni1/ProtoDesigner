@@ -516,7 +516,14 @@ public sealed class CGenerator : IProtocolGenerator
             };
 
             if (arr.Kind == IrArrayKind.LengthPrefixed)
-                sb.AppendLine($"    pd_bw_write_unsigned(&w, (uint64_t)({countExpr}), {arr.PrefixBits}, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);");
+            {
+                // Clamped, because the element loop below clamps too. The generator owns this prefix — unlike
+                // a CountFromField count, which is the caller's field and is left as written — so a prefix
+                // announcing 30 elements ahead of the 24 actually emitted would be the generator's own lie,
+                // and any third-party decoder reading the frame would run straight off the end of it.
+                sb.AppendLine($"    {{ uint64_t n = (uint64_t)({countExpr}); if (n > {arr.MaxElements}u) n = {arr.MaxElements}u;");
+                sb.AppendLine($"      pd_bw_write_unsigned(&w, n, {arr.PrefixBits}, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST); }}");
+            }
 
             sb.AppendLine($"    for (size_t i = 0; i < (size_t)({countExpr}) && i < {arr.MaxElements}; ++i) {{");
             var elemAccess = arr.ElementEnumIndex is not null

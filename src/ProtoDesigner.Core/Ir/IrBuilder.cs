@@ -1,4 +1,4 @@
-using ProtoDesigner.Core.Layout;
+﻿using ProtoDesigner.Core.Layout;
 using ProtoDesigner.Core.Model;
 
 namespace ProtoDesigner.Core.Ir;
@@ -6,7 +6,7 @@ namespace ProtoDesigner.Core.Ir;
 /// <summary>
 /// Turns a bus + project into a <see cref="ProtocolIr"/>. Runs the layout engine, walks the produced
 /// tree, resolves every type reference into a concrete kind, and collects the enums referenced by any
-/// field into a top-level list so codegen can emit them once. Fails fast on any unresolved reference —
+/// field into a top-level list so codegen can emit them once. Fails fast on any unresolved reference â€”
 /// validation is expected to have run first.
 /// </summary>
 public sealed class IrBuilder
@@ -21,7 +21,7 @@ public sealed class IrBuilder
     /// <param name="only">
     /// The messages to include, or null for all of them. Filtering happens before anything else is
     /// collected, so the enum and struct tables end up holding only what the chosen messages actually
-    /// reach — asking for one message does not drag in the types only its neighbours used.
+    /// reach â€” asking for one message does not drag in the types only its neighbours used.
     /// </param>
     public ProtocolIr Build(Project project, Bus bus, IReadOnlySet<MessageId>? only = null)
     {
@@ -40,7 +40,7 @@ public sealed class IrBuilder
             CollectEnums(project, message.Fields, enumTable, enums);
 
         // A synthetic enum declares no members of its own; the bus supplies them. Filling them here is
-        // what makes one shared Header mean the right thing on every bus that uses it — and why the
+        // what makes one shared Header mean the right thing on every bus that uses it â€” and why the
         // member list is never stored: renaming a message or a module changes it, and there is nothing
         // left behind to go stale.
         // The name takes the bus with it for the same reason the members do: the type is project-wide but
@@ -99,7 +99,7 @@ public sealed class IrBuilder
     /// </summary>
     /// <remarks>
     /// Reached through struct members and array elements as well as directly, so a <c>u16</c> used only
-    /// inside a <c>Header</c> still gets its size emitted — that is exactly the case where the caller
+    /// inside a <c>Header</c> still gets its size emitted â€” that is exactly the case where the caller
     /// cannot see the width from the message alone.
     /// </remarks>
     private static IReadOnlyList<IrPrimitive> CollectPrimitives(Project project, IEnumerable<Message> messages)
@@ -141,8 +141,8 @@ public sealed class IrBuilder
     /// Registers a struct and everything it reaches, depth first, so dependencies precede dependants.
     /// </summary>
     /// <remarks>
-    /// The entry is reserved before the members are built. Recursion is impossible in a valid model — the
-    /// layout engine rejects it and <c>PD0010</c> reports it — so the reservation is only there to stop a
+    /// The entry is reserved before the members are built. Recursion is impossible in a valid model â€” the
+    /// layout engine rejects it and <c>PD0010</c> reports it â€” so the reservation is only there to stop a
     /// malformed one from recursing forever before those checks run.
     /// </remarks>
     private static void CollectStructs(Project project, TypeId typeId,
@@ -190,7 +190,7 @@ public sealed class IrBuilder
         }
         catch (LayoutException)
         {
-            // A struct that cannot stand alone — one ending in a fill-remaining array, say — has no size
+            // A struct that cannot stand alone â€” one ending in a fill-remaining array, say â€” has no size
             // of its own. Reporting 0 says "not a fixed size" without failing the whole build, and the
             // generators omit the constant rather than emitting a wrong one.
             return 0;
@@ -200,7 +200,7 @@ public sealed class IrBuilder
     // ---- host-shape members -----------------------------------------------------------------
 
     /// <summary>
-    /// Describes a list of bindings as host struct members — the shape the user declared, not the
+    /// Describes a list of bindings as host struct members â€” the shape the user declared, not the
     /// flattened wire order.
     /// </summary>
     private static IReadOnlyList<IrMember> BuildMembers(Project project, IReadOnlyList<FieldBinding> fields,
@@ -284,7 +284,7 @@ public sealed class IrBuilder
     }
 
     /// <summary>
-    /// The human-readable length note. Comment text only — nothing parses it back.
+    /// The human-readable length note. Comment text only â€” nothing parses it back.
     /// </summary>
     private static string DescribeLength(ArrayLength length)
     {
@@ -355,9 +355,11 @@ public sealed class IrBuilder
 
         foreach (var node in layout.Flatten())
         {
-            // Skip: padding, struct openers (their members flow through as separate leaves), and array
-            // element descriptors (path contains "[]" — those describe one element, not a real field).
-            if (node.Kind is LayoutNodeKind.Padding or LayoutNodeKind.Struct)
+            // Skip: padding, struct openers (their members flow through as separate leaves), length
+            // prefixes (framing the array field already describes through IrArrayInfo.PrefixBits â€” emitting
+            // it again would both double-count it and hand the generator an untyped field), and array
+            // element descriptors (path contains "[]" â€” those describe one element, not a real field).
+            if (node.Kind is LayoutNodeKind.Padding or LayoutNodeKind.Struct or LayoutNodeKind.LengthPrefix)
                 continue;
             if (node.Path.Contains("[]"))
                 continue;
@@ -432,7 +434,7 @@ public sealed class IrBuilder
     /// <remarks>
     /// This is a property of the <em>transform applied to the range</em>, not of the host kind. An
     /// unsigned host can never produce a negative code, so it is always unsigned. A signed host usually
-    /// can — but not when its transform biases the range non-negative, which is exactly what the editor
+    /// can â€” but not when its transform biases the range non-negative, which is exactly what the editor
     /// derives when a user narrows a -100..100 field onto a byte. Getting this from the host kind instead
     /// meant those codes were written unsigned and read back signed, silently corrupting every value from
     /// 0x80 up.
@@ -482,7 +484,7 @@ public sealed class IrBuilder
         };
 
         // CountFieldIndex uses the original binding's FieldId here; the second pass in BuildMessage
-        // maps that id to the flattened index. We stash the id in ElementEnumIndex? No — instead we
+        // maps that id to the flattened index. We stash the id in ElementEnumIndex? No â€” instead we
         // resolve it at second-pass time via the layout region's CountFieldId. To keep BuildArrayField
         // self-contained we leave CountFieldIndex null here.
         var (irKind, count, maxCount, prefixBits, sentinel) = type.Length switch

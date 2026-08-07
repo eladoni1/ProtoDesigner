@@ -318,7 +318,7 @@ public sealed class LayoutEngine
         sink.Add(new LayoutNode
         {
             Path = $"{path}.__length",
-            Kind = LayoutNodeKind.Parameter,
+            Kind = LayoutNodeKind.LengthPrefix,
             RegionIndex = ctx.RegionIndex,
             BitOffset = ctx.Bit,
             BitWidth = prefixBits,

@@ -479,8 +479,8 @@ public sealed class ProtovalidateFixture : IDisposable
 
         // A variable array with both ends declared — the case a plain capacity cannot express, and the
         // only one that proves a lower bound survives as far as a consumer. Count-driven rather than
-        // length-prefixed because IrBuilder rejects the synthetic `__length` node a prefix produces, so
-        // that rule has never reached a generator.
+        // length-prefixed simply because that is the commoner shape; both work now, and the prefix variant
+        // is covered by `length-prefixed-array` in the corpus.
         var readingCount = new FieldBinding(FieldId.New(), "readingCount", u32.Id);
         var readings = p.Types.Add(new ArrayType(TypeId.New(), "Readings", ratio.Id,
             new ArrayLength.CountFromField(readingCount.Id, MaxCount: 6, MinCount: 2)));

@@ -75,6 +75,9 @@ public sealed class LayoutRowViewModel
         // to the node kind and print "Parameter" instead of the type the user actually chose.
         TypeName = node.TypeId is { } id && project is not null
             ? project.TypeName(id)
+            // A length prefix has no type to name — it is the engine's own framing — but it does occupy
+            // wire bytes, so it stays in the map rather than being hidden the way padding is.
+            : node.Kind == LayoutNodeKind.LengthPrefix ? "length prefix"
             : node.Kind.ToString();
 
         Offset = FormatOffset(node.BitOffset);

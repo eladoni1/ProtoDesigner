@@ -117,7 +117,7 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 5b | Protobuf schema target + protovalidate | **Done** — gated per message, protoc-verified |
 | 6 | Shared storage & collaboration | Not started — see `docs/shared-storage-design.md` |
 
-**1795 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
+**1816 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
 rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
 red one. None of the toolchains is vendored.
 
@@ -265,8 +265,6 @@ C has no namespaces, so `GeneratorOptions.Namespace` becomes a symbol prefix, an
 every emitted function name must be unique.
 
 **Known gaps, honestly:**
-- `FillRemaining` and `Terminated` arrays *decode* by asking the caller for the count rather than
-  scanning for the sentinel or consuming the remainder. Encode is correct for both.
 - The C# target emits declarations and the wire layout as comments; no encode/decode yet.
 - The WPF layer has no automated tests. Everything below it does. Dialog logic that is really *policy*
   should be extracted so it can be — `WireSizePolicy` was pulled out of the primitive editor for exactly
@@ -276,7 +274,9 @@ every emitted function name must be unique.
 - Nothing consumes a generated `.proto` end to end (`protoc --csharp_out`, populate, serialize,
   deserialize). The schema is proven valid and its constraints proven to fire; it is not proven *usable*
   by a generated stub. See the note under "Open work" before spending time on it.
-- **`ArrayLength.LengthPrefixed` never reaches a generator** — see open-work item 1 below.
+- `FillRemaining` and `Terminated` *decode* by asking the caller for the count rather than scanning for the
+  sentinel or consuming the remainder. Encode is correct for both, and both reach the IR and the C generator
+  correctly — only the decode strategy is missing.
 
 The corpus is shaped for wire layouts and declares almost no ranges, so it would show nothing if every
 protovalidate constraint vanished. `ProtovalidateFixture.BuildProject()` is the fixture shaped for the
@@ -323,26 +323,23 @@ something and watching it go red — do the same before trusting a change here.
 
 ### Open work, in the order I would take it
 
-1. **`ArrayLength.LengthPrefixed` never reaches a generator.** `IrBuilder.ResolveField` throws on the
-   synthetic `x.__length` layout node ("has no TypeId"). It has layout tests and no `Corpus` entry, which
-   is why nothing caught it. `Terminated` and `FillRemaining` are likely in the same position, and the
-   array editor therefore only ever produces `Fixed` or `CountFromField` in practice.
-2. **Right-click a field to edit its type**, offering what right-clicking the type in the library does.
-3. **Per-message export checklist** in the Generate dialog. It currently reports what a target left out;
+1. **Right-click a field to edit its type**, offering what right-clicking the type in the library does.
+2. **Per-message export checklist** in the Generate dialog. It currently reports what a target left out;
    it does not let you tick individual messages.
-4. **C# encode/decode.** Declarations and `OnWireLength` exist; the codec does not.
-5. **`FillRemaining` / `Terminated` decode** — scan for the sentinel or consume the remainder instead of
-   asking the caller for a count.
-6. **Test the built-in ID enums.** Deferred deliberately, not forgotten: `MessageId`/`ModuleId` are seeded
+3. **C# encode/decode.** Declarations and `OnWireLength` exist; the codec does not.
+4. **`FillRemaining` / `Terminated` decode** — scan for the sentinel or consume the remainder instead of
+   asking the caller for a count. This is the *only* remaining gap in those two: they reach the IR and the
+   C generator correctly, which `DynamicArrayKindTests` now pins.
+5. **Test the built-in ID enums.** Deferred deliberately, not forgotten: `MessageId`/`ModuleId` are seeded
    into every project and their members are derived per bus, so the cases to cover are a renamed bus, a
    renamed message, a changed `WireId`, a renamed module, and a project saved before they existed loading
    without them. None of that is covered yet.
-7. **Match the ID enums to the requested spelling, or decide not to.** The shape asked for was
+6. **Match the ID enums to the requested spelling, or decide not to.** The shape asked for was
    `<BUS_NAME>_MESSAGE_ID_NA` / `<BUS_NAME>_<MODULE_NAME>`; what is emitted is
    `<ns>_<Bus>MessageId_NotAssigned` / `<ns>_<Bus>ModuleId_<Module>`, which is the C target's own naming
    convention and already carries the bus scope the request was after. Renaming would churn every golden
    and break any deployed code that switches on these. Worth a decision, not an assumption.
-8. **Wire-compatibility diffing** — compare two versions' `MessageLayout`s and report which changes
+7. **Wire-compatibility diffing** — compare two versions' `MessageLayout`s and report which changes
    break a deployed decoder (reorder, narrow, widen, endianness, `WireId` change) versus which are safe
    (rename anything — identity is an ID). This needs no database, works against the last git commit, and
    is the thing git structurally cannot do for a binary protocol. Recommended before any of Phase 6.
@@ -750,6 +747,17 @@ overflow.
   arrays produce two `Variable` regions with **no empty `Fixed` region between them** — the
   engine suppresses zero-width fixed regions except the single region of an otherwise-empty
   message. Tested in `DynamicArrayTests`.
+- **A length prefix is `LayoutNodeKind.LengthPrefix`, not a `Parameter`, and is not a field.** The engine
+  inserts an `x.__length` node for a `LengthPrefixed` array. It occupies wire space but the user never
+  declared it, cannot name it and cannot encode it — it is framing, in the same category as padding, and it
+  carries no `TypeId`. `MessageLayout.Values()` excludes it and `IrBuilder` skips it; the information lives
+  on the array instead, as `IrArrayInfo.PrefixBits`. Modelling it as a `Parameter` is what made
+  `LengthPrefixed` arrays unusable for a long time: `IrBuilder` threw on the missing `TypeId`, and had it
+  not thrown it would have become a phantom `IrField`, shifting every `CountFieldIndex` after it by one.
+  The protobuf rules would also have reported a width against a field called `payload.__length`.
+- **`Terminated` and `FillRemaining` were never broken the way `LengthPrefixed` was** — only
+  `LengthPrefixed` emits a synthetic node. `DynamicArrayKindTests` pins all five variants through the IR
+  and the C generator so this stops being a guess. Their real gap is decode strategy, nothing else.
 - **A count field must be laid out *before* its dynamic array** (earlier in the same message,
   including inside an earlier struct). The engine enforces this via a "seen fields" set;
   forward references throw. The validator should catch it first with a friendly message.

@@ -90,6 +90,36 @@ internal static class Corpus
     }
 
     /// <summary>
+    /// A dynamic array that carries its own count inline, with a fixed field after it.
+    /// </summary>
+    /// <remarks>
+    /// The counterpart to <see cref="DynamicArray"/>, and here because its absence was the whole reason a
+    /// length-prefixed array never reached a generator: the shape had layout tests and no corpus entry, so
+    /// nothing ever asked the IR builder, the C generator or the reference codec to handle it. Every suite
+    /// runs over this list, which is what makes one entry cover all of them.
+    /// </remarks>
+    public static (Project Project, Bus Bus) LengthPrefixedArray()
+    {
+        var p = new Project("PrefixedSample");
+        var u8 = p.Types.Add(new ParameterType(TypeId.New(), "u8", PrimitiveKind.U8));
+        var u16 = p.Types.Add(new ParameterType(TypeId.New(), "u16", PrimitiveKind.U16));
+
+        // An 8-bit prefix for a capacity of 24: wide enough, and byte-aligned so the elements after it
+        // stay addressable under the default byte padding.
+        var payload = p.Types.Add(new ArrayType(TypeId.New(), "Prefixed", u8.Id,
+            new ArrayLength.LengthPrefixed(8, 24)));
+
+        var bus = new Bus(BusId.New(), "Framed", Transport.Ethernet);
+        var m = new Message(MessageId.New(), "Frame") { WireId = 31 };
+        m.Fields.Add(new FieldBinding(FieldId.New(), "kind", u8.Id));
+        m.Fields.Add(new FieldBinding(FieldId.New(), "payload", payload.Id));
+        m.Fields.Add(new FieldBinding(FieldId.New(), "trailer", u16.Id));
+        bus.Messages.Add(m);
+        p.Buses.Add(bus);
+        return (p, bus);
+    }
+
+    /// <summary>
     /// Floating-point hosts quantized onto narrow integer wires — what the editor now produces whenever a
     /// range is narrowed. The scales are irrational-ish fractions, which is what makes the precision of
     /// the emitted literal matter.
@@ -257,6 +287,7 @@ internal static class Corpus
         yield return ("packed-bits", PackedBits);
         yield return ("struct-and-array", StructAndArray);
         yield return ("dynamic-array", DynamicArray);
+        yield return ("length-prefixed-array", LengthPrefixedArray);
         yield return ("quantized", Quantized);
         yield return ("raw-floats", RawFloats);
         yield return ("biased-signed", BiasedSigned);

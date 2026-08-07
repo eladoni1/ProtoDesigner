@@ -9,6 +9,19 @@ public enum LayoutNodeKind
     Struct,
     Array,
     Padding,
+
+    /// <summary>
+    /// The inline element count written before a length-prefixed array.
+    /// </summary>
+    /// <remarks>
+    /// Framing rather than a value, which is why it is its own kind and not a <see cref="Parameter"/>.
+    /// The user never declared it, cannot name it, and cannot set its encoding — it is entirely derived
+    /// from the array's <c>PrefixBits</c>, in the same category as <see cref="Padding"/>. Modelling it as
+    /// a parameter made it an untyped node that reached anything walking value nodes: the IR builder threw
+    /// on its missing <c>TypeId</c>, and the protobuf rules would have reported a bit width against a field
+    /// called <c>payload.__length</c> that no user could act on.
+    /// </remarks>
+    LengthPrefix,
 }
 
 public enum LayoutRegionKind
@@ -165,10 +178,15 @@ public sealed class MessageLayout
         }
     }
 
-    /// <summary>Every node that carries a value, padding excluded.</summary>
-    public IEnumerable<LayoutNode> Values() => Flatten().Where(n => n.Kind != LayoutNodeKind.Padding);
+    /// <summary>Every node that carries a value the user declared — padding and framing excluded.</summary>
+    public IEnumerable<LayoutNode> Values() =>
+        Flatten().Where(n => n.Kind is not (LayoutNodeKind.Padding or LayoutNodeKind.LengthPrefix));
 
     public IEnumerable<LayoutNode> Padding() => Flatten().Where(n => n.Kind == LayoutNodeKind.Padding);
+
+    /// <summary>The length prefixes the engine inserted. Occupies wire space, but is not anyone's field.</summary>
+    public IEnumerable<LayoutNode> LengthPrefixes() =>
+        Flatten().Where(n => n.Kind == LayoutNodeKind.LengthPrefix);
 
     public LayoutNode this[string path] => TryGet(path, out var node)
         ? node!

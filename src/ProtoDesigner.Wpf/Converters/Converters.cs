@@ -97,7 +97,9 @@ public sealed class NodeKindToBrushConverter : IValueConverter
             LayoutNodeKind.Enum => "NodeEnumFill",
             LayoutNodeKind.Struct => "NodeStructFill",
             LayoutNodeKind.Array => "NodeArrayFill",
-            LayoutNodeKind.Padding => "NodePaddingFill",
+            // Framing, not a value — same muted fill as padding, so the byte map reads as "space the
+            // engine took" rather than "a field you declared".
+            LayoutNodeKind.Padding or LayoutNodeKind.LengthPrefix => "NodePaddingFill",
             _ => "NodeParameterFill",
         };
         return System.Windows.Application.Current.Resources[key] ?? Brushes.SteelBlue;
