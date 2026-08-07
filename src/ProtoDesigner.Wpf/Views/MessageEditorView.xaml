@@ -173,7 +173,24 @@
               <DataTemplate>
                 <Border Padding="10,7" Margin="0,3" CornerRadius="8"
                         Background="{StaticResource Surface2}"
-                        BorderBrush="{StaticResource SurfaceStroke}" BorderThickness="1">
+                        BorderBrush="{StaticResource SurfaceStroke}" BorderThickness="1"
+                        Tag="{Binding}">
+                  <!-- The type panel is not the only place a user meets a type: by the time a field is in
+                       front of them, the type is what they want to change. Delete is deliberately absent —
+                       this field is itself a use, so it could never succeed from here. -->
+                  <Border.ContextMenu>
+                    <ContextMenu>
+                      <!-- HeaderStringFormat, not StringFormat on the binding: Header is typed object, and
+                           WPF silently drops a binding StringFormat when the target is not a string. -->
+                      <MenuItem Header="{Binding TypeName}" HeaderStringFormat="Edit {0}..."
+                                Click="OnEditFieldType" FontWeight="SemiBold"/>
+                      <MenuItem Header="Rename type..." Click="OnRenameFieldType"/>
+                      <MenuItem Header="Select in Types list" Click="OnSelectFieldType"
+                                ToolTip="Makes this the type Add field will use."/>
+                      <Separator/>
+                      <MenuItem Header="Remove field" Click="OnRemoveFieldFromMenu"/>
+                    </ContextMenu>
+                  </Border.ContextMenu>
                   <Grid>
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="{StaticResource ColDrag}"/>
@@ -193,10 +210,15 @@
                                ToolTip="Drag to reorder"/>
 
                     <!-- type name comes before the instance name -->
+                    <!-- Double-click opens the type's editor, matching the Types list. Cursor and tooltip
+                         are what make that discoverable; nothing else on the row responds to a double-click. -->
                     <TextBlock Grid.Column="1" Text="{Binding TypeName}" Margin="0,0,8,0"
                                FontFamily="{StaticResource MonoFont}" FontWeight="SemiBold"
                                Foreground="{StaticResource Teal}" VerticalAlignment="Center"
-                               TextTrimming="CharacterEllipsis"/>
+                               TextTrimming="CharacterEllipsis"
+                               Cursor="Hand" Tag="{Binding}"
+                               MouseLeftButtonDown="OnTypeNameClicked"
+                               ToolTip="Double-click to edit this type. Right-click the row for more."/>
 
                     <TextBox Grid.Column="2" Text="{Binding Name, UpdateSourceTrigger=LostFocus}"
                              FontFamily="{StaticResource MonoFont}" Margin="0,0,8,0"/>

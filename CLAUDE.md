@@ -323,23 +323,22 @@ something and watching it go red — do the same before trusting a change here.
 
 ### Open work, in the order I would take it
 
-1. **Right-click a field to edit its type**, offering what right-clicking the type in the library does.
-2. **Per-message export checklist** in the Generate dialog. It currently reports what a target left out;
+1. **Per-message export checklist** in the Generate dialog. It currently reports what a target left out;
    it does not let you tick individual messages.
-3. **C# encode/decode.** Declarations and `OnWireLength` exist; the codec does not.
-4. **`FillRemaining` / `Terminated` decode** — scan for the sentinel or consume the remainder instead of
+2. **C# encode/decode.** Declarations and `OnWireLength` exist; the codec does not.
+3. **`FillRemaining` / `Terminated` decode** — scan for the sentinel or consume the remainder instead of
    asking the caller for a count. This is the *only* remaining gap in those two: they reach the IR and the
    C generator correctly, which `DynamicArrayKindTests` now pins.
-5. **Test the built-in ID enums.** Deferred deliberately, not forgotten: `MessageId`/`ModuleId` are seeded
+4. **Test the built-in ID enums.** Deferred deliberately, not forgotten: `MessageId`/`ModuleId` are seeded
    into every project and their members are derived per bus, so the cases to cover are a renamed bus, a
    renamed message, a changed `WireId`, a renamed module, and a project saved before they existed loading
    without them. None of that is covered yet.
-6. **Match the ID enums to the requested spelling, or decide not to.** The shape asked for was
+5. **Match the ID enums to the requested spelling, or decide not to.** The shape asked for was
    `<BUS_NAME>_MESSAGE_ID_NA` / `<BUS_NAME>_<MODULE_NAME>`; what is emitted is
    `<ns>_<Bus>MessageId_NotAssigned` / `<ns>_<Bus>ModuleId_<Module>`, which is the C target's own naming
    convention and already carries the bus scope the request was after. Renaming would churn every golden
    and break any deployed code that switches on these. Worth a decision, not an assumption.
-7. **Wire-compatibility diffing** — compare two versions' `MessageLayout`s and report which changes
+6. **Wire-compatibility diffing** — compare two versions' `MessageLayout`s and report which changes
    break a deployed decoder (reorder, narrow, widen, endianness, `WireId` change) versus which are safe
    (rename anything — identity is an ID). This needs no database, works against the last git commit, and
    is the thing git structurally cannot do for a binary protocol. Recommended before any of Phase 6.
@@ -758,6 +757,10 @@ overflow.
 - **`Terminated` and `FillRemaining` were never broken the way `LengthPrefixed` was** — only
   `LengthPrefixed` emits a synthetic node. `DynamicArrayKindTests` pins all five variants through the IR
   and the C generator so this stops being a guess. Their real gap is decode strategy, nothing else.
+- **`MenuItem.Header` ignores a binding's `StringFormat`.** `Header` is typed `object`, and WPF drops
+  `StringFormat` silently when the target is not a string — you get the bare value, no error. Use
+  `HeaderStringFormat` (and `ContentStringFormat` on a `ContentControl`). This bit the "Edit {0}..." item
+  on the field row's context menu, which rendered as just the type name.
 - **A count field must be laid out *before* its dynamic array** (earlier in the same message,
   including inside an earlier struct). The engine enforces this via a "seen fields" set;
   forward references throw. The validator should catch it first with a friendly message.

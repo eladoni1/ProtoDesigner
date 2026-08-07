@@ -180,15 +180,9 @@ public partial class ProjectTreeView : UserControl
     private void OnRenameType(object sender, RoutedEventArgs e)
     {
         var item = ContextTarget<TypeItemViewModel>(sender) ?? Vm?.SelectedType;
-        if (item is null) return;
+        if (item is null || Vm is null) return;
 
-        var name = TextPromptDialog.Ask(OwnerWindow, "Rename type", "Type name", item.Name,
-            "References are by identity, so renaming never breaks a field that uses this type.");
-        if (name is not null)
-        {
-            item.Name = name;
-            Vm?.RefreshAll();
-        }
+        TypeEditors.Rename(OwnerWindow, Vm, item.Type);
     }
 
     private void OnDuplicateType(object sender, RoutedEventArgs e)
@@ -213,29 +207,12 @@ public partial class ProjectTreeView : UserControl
 
     private void EditType(TypeItemViewModel item)
     {
-        if (Vm is null) return;
-
-        switch (item.Type)
-        {
-            case ParameterType p: PrimitiveEditorDialog.Edit(OwnerWindow, Vm, p); break;
-            case EnumType en:     EnumEditorDialog.Edit(OwnerWindow, Vm, en); break;
-            case StructType s:    StructEditorDialog.Edit(OwnerWindow, Vm, s); break;
-            case ArrayType a:     ArrayEditorDialog.Edit(OwnerWindow, Vm, a); break;
-            default: return;
-        }
-        Vm.RefreshAll();
-    }
-
-    private void EditTypeById(TypeId id)
-    {
-        var item = Vm?.Types.All.FirstOrDefault(t => t.Type.Id == id);
-        if (item is not null) EditType(item);
+        if (Vm is not null) TypeEditors.Edit(OwnerWindow, Vm, item.Type);
     }
 
     private void SelectType(TypeDefinition type)
     {
-        if (Vm is null) return;
-        Vm.SelectedType = Vm.Types.All.FirstOrDefault(t => t.Type.Id == type.Id);
+        if (Vm is not null) TypeEditors.Select(Vm, type);
     }
 
     // ---- helpers --------------------------------------------------------------------------------

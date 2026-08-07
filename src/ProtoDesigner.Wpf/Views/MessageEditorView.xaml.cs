@@ -1,7 +1,11 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
+using ProtoDesigner.Core.Model;
 using ProtoDesigner.Wpf.Behaviors;
 using ProtoDesigner.Wpf.ViewModels;
+using ProtoDesigner.Wpf.Views.Dialogs;
 
 namespace ProtoDesigner.Wpf.Views;
 
@@ -35,6 +39,76 @@ public partial class MessageEditorView : UserControl
     {
         if (sender is Button { Tag: FieldViewModel field })
             Selected?.RemoveField(field);
+    }
+
+    // ---- editing a field's type -------------------------------------------------------------------
+
+    /// <summary>The type a context-menu click was raised against, resolved through the row's Tag.</summary>
+    /// <remarks>
+    /// A ContextMenu lives outside the visual tree, so walking up from the MenuItem to the menu and reading
+    /// its PlacementTarget is the reliable route back to the bound row — the same approach the project tree
+    /// uses for buses and messages.
+    /// </remarks>
+    private static FieldViewModel? MenuField(object? sender)
+    {
+        if (sender is not MenuItem item) return null;
+
+        DependencyObject? current = item;
+        while (current is not null)
+        {
+            if (current is ContextMenu menu)
+                return menu.PlacementTarget is FrameworkElement { Tag: FieldViewModel field } ? field : null;
+
+            current = current is Visual
+                ? VisualTreeHelper.GetParent(current)
+                : LogicalTreeHelper.GetParent(current);
+        }
+        return null;
+    }
+
+    private TypeDefinition? TypeOf(FieldViewModel? field) =>
+        field is not null && Project is { } p && p.Project.Types.TryGet(field.Field.TypeId, out var type)
+            ? type
+            : null;
+
+    private void OnEditFieldType(object sender, RoutedEventArgs e) => EditType(TypeOf(MenuField(sender)));
+
+    private void OnRenameFieldType(object sender, RoutedEventArgs e)
+    {
+        if (Project is { } project && TypeOf(MenuField(sender)) is { } type)
+            TypeEditors.Rename(Window.GetWindow(this), project, type);
+    }
+
+    private void OnSelectFieldType(object sender, RoutedEventArgs e)
+    {
+        if (Project is { } project && TypeOf(MenuField(sender)) is { } type)
+            TypeEditors.Select(project, type);
+    }
+
+    private void OnRemoveFieldFromMenu(object sender, RoutedEventArgs e)
+    {
+        if (MenuField(sender) is { } field) Selected?.RemoveField(field);
+    }
+
+    /// <summary>Double-clicking the type name edits it, the same as double-clicking it in the Types list.</summary>
+    private void OnTypeNameClicked(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount < 2) return;
+        if (sender is not FrameworkElement { Tag: FieldViewModel field }) return;
+
+        e.Handled = true;
+        EditType(TypeOf(field));
+    }
+
+    private void EditType(TypeDefinition? type)
+    {
+        if (Project is not { } project || type is null) return;
+
+        if (!TypeEditors.Edit(Window.GetWindow(this), project, type))
+        {
+            MessageBox.Show($"'{type.Name}' has no editor.",
+                "ProtoDesigner", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
     }
 
     // ---- routes ----------------------------------------------------------------------------------
