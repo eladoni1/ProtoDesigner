@@ -1,3 +1,4 @@
+using ProtoDesigner.Application;
 using ProtoDesigner.Persistence.Json;
 
 namespace ProtoDesigner.Cli.Tests;
@@ -560,6 +561,66 @@ public sealed class CommandLineTests : IDisposable
         var schema = File.ReadAllText(Path.Combine(outDir, "main.proto"));
 
         Assert.Contains("min_items: 1, max_items: 64", schema, StringComparison.Ordinal);
+    }
+
+    // ---- compiling the schema ----------------------------------------------------------------------
+
+    [Fact]
+    public void An_unknown_protoc_language_is_a_usage_error()
+    {
+        // Checked before anything runs, and the message names the C confusion explicitly, because
+        // "--protoc-out c" is the obvious thing to type and protobuf has no C backend.
+        var path = WriteProject(ConstrainedProject());
+        var (code, _, err) = Run("generate", path, "--out", Path.Combine(_dir, "x"),
+            "--target", "proto", "--protoc-out", "c");
+
+        Assert.Equal(CommandLine.ExitUsage, code);
+        Assert.Contains("no C output", err, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_trailing_protoc_out_with_no_language_is_a_usage_error()
+    {
+        var path = WriteProject(ConstrainedProject());
+        var (code, _, err) = Run("generate", path, "--out", Path.Combine(_dir, "x"),
+            "--target", "proto", "--protoc-out");
+
+        Assert.Equal(CommandLine.ExitUsage, code);
+        Assert.Contains("--protoc-out", err, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Compiling_the_schema_produces_real_cpp_beside_it()
+    {
+        if (ProtocCompiler.Locate() is null) return;   // ProtocCompilerTests fails loudly for this
+
+        var path = WriteProject(ConstrainedProject());
+        var outDir = Path.Combine(_dir, "cpp");
+
+        var (code, output, err) = Run("generate", path, "--out", outDir, "--target", "proto",
+            "--namespace", "demo", "--protoc-out", "cpp");
+
+        Assert.Equal(0, code);
+        Assert.Equal("", err);
+        Assert.True(File.Exists(Path.Combine(outDir, "main.pb.h")));
+        Assert.True(File.Exists(Path.Combine(outDir, "main.pb.cc")));
+        Assert.Contains("compiled main.pb.h", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_C_target_ignores_protoc_out()
+    {
+        // The flag only means something for a target that emits a schema. Asking for it alongside the C
+        // target must not fail — it should simply have nothing to compile.
+        if (ProtocCompiler.Locate() is null) return;
+
+        var path = WriteProject(CleanProject());
+        var outDir = Path.Combine(_dir, "c-with-flag");
+
+        var (code, _, _) = Run("generate", path, "--out", outDir, "--target", "c");
+
+        Assert.Equal(0, code);
+        Assert.True(File.Exists(Path.Combine(outDir, "main.h")));
     }
 
     [Fact]

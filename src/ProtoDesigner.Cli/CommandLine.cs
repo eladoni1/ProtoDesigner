@@ -119,6 +119,7 @@ public static class CommandLine
         var ns = GetOption(args, "--namespace") ?? "proto";
 
         if (!TryParseTargetOptions(args, stderr, out var targetOptions)) return ExitUsage;
+        if (!TryParseProtocLanguages(args, stderr, out var protocLanguages)) return ExitUsage;
 
         if (outDir is null)
         {
@@ -195,6 +196,32 @@ public static class CommandLine
         stdout.WriteLine(
             $"Generated {result.Files.Files.Count} file(s) covering {result.MessageCount} message(s) "
             + $"across {scopes.Count} bus(es) into {outDir}.");
+
+        // Compiling the schema is a separate step on purpose: the generator produced text, and this turns
+        // that text into source for a language protobuf supports. Asked-for-and-missing is an error, not
+        // a shrug — a run that reported success while producing no C++ is exactly the outcome the rest of
+        // this tool refuses to ship.
+        if (protocLanguages.Count > 0)
+        {
+            var compilation = ProtocCompiler.Run(outDir, protocLanguages);
+
+            if (!compilation.Succeeded)
+            {
+                stderr.WriteLine(compilation.Error);
+                return compilation.Ran ? ExitValidationErrors : ExitIoError;
+            }
+
+            foreach (var file in compilation.Produced) stdout.WriteLine($"  compiled {file}");
+            stdout.WriteLine(
+                $"protoc produced {compilation.Produced.Count} file(s) for "
+                + $"{string.Join(", ", protocLanguages)}.");
+
+            if (compilation.CompiledValidate)
+                stdout.WriteLine(
+                    "  (buf/validate was compiled too — the generated code includes it. Turn constraints "
+                    + "off with '--option protovalidate=false' if you would rather not carry it.)");
+        }
+
         return ExitOk;
     }
 
@@ -329,6 +356,46 @@ public static class CommandLine
         return true;
     }
 
+    /// <summary>
+    /// Reads <c>--protoc-out &lt;language&gt;</c>, repeatable, into the list of languages to compile.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <c>--option</c> because it is not a generator setting: the generator has already
+    /// finished by the time this runs, and the languages available depend on the installed protoc rather
+    /// than on the target.
+    /// </remarks>
+    private static bool TryParseProtocLanguages(string[] args, TextWriter stderr, out List<string> languages)
+    {
+        languages = [];
+
+        for (var i = 0; i < args.Length; i++)
+        {
+            if (args[i] != "--protoc-out") continue;
+
+            if (i + 1 >= args.Length)
+            {
+                stderr.WriteLine(
+                    "--protoc-out needs a language, one of: "
+                    + string.Join(", ", ProtocCompiler.Languages.Select(l => l.Id)) + ".");
+                return false;
+            }
+
+            var id = args[++i];
+            if (ProtocCompiler.FindLanguage(id) is null)
+            {
+                stderr.WriteLine(
+                    $"Unknown protoc language '{id}'. Available: "
+                    + string.Join(", ", ProtocCompiler.Languages.Select(l => l.Id))
+                    + ". Note that protobuf has no C output — use the 'c' target for that.");
+                return false;
+            }
+
+            if (!languages.Contains(id, StringComparer.OrdinalIgnoreCase)) languages.Add(id);
+        }
+
+        return true;
+    }
+
     private static string? GetOption(string[] args, string name)
     {
         var idx = Array.IndexOf(args, name);
@@ -350,6 +417,15 @@ public static class CommandLine
         stdout.WriteLine("  --bus <name> --messages A,B   one bus, only those messages");
         stdout.WriteLine("  --module <name>           every message that module sends or receives, on every");
         stdout.WriteLine("                            bus it sits on — both directions, so loopback works");
+        stdout.WriteLine();
+        stdout.WriteLine("Per-target settings:");
+        stdout.WriteLine("  --option key=value        repeatable; 'targets' lists what each target accepts");
+        stdout.WriteLine();
+        stdout.WriteLine("Compiling the schema (--target proto only; needs protoc on PATH or in protobuf/bin):");
+        stdout.WriteLine("  --protoc-out <language>   repeatable; " +
+                         string.Join(", ", ProtocCompiler.Languages.Select(l => l.Id)));
+        stdout.WriteLine("                            protobuf has no C backend — for C use --target c,");
+        stdout.WriteLine("                            which is freestanding and speaks our own wire format");
         stdout.WriteLine();
         stdout.WriteLine("Exit codes:");
         stdout.WriteLine($"  {ExitOk}  success");

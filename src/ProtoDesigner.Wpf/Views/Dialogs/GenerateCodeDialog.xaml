@@ -13,6 +13,8 @@
         <RowDefinition Height="Auto"/>
         <!-- Options the selected target declares. Auto-sized, so a target with none costs no space. -->
         <RowDefinition Height="Auto"/>
+        <!-- protoc languages, for the schema target only. Same deal: no target, no space. -->
+        <RowDefinition Height="Auto"/>
         <RowDefinition Height="Auto"/>
         <RowDefinition Height="*"/>
         <RowDefinition Height="Auto"/>
@@ -78,8 +80,32 @@
         </ItemsControl.ItemsPanel>
       </ItemsControl>
 
+      <!-- Compiling the emitted schema. Only for the schema target, and only when protoc is installed:
+           this is a second step over the written files, not a generator setting. -->
+      <StackPanel Grid.Row="3" x:Name="ProtocPanel" Visibility="Collapsed" Margin="0,0,0,12">
+        <TextBlock Style="{StaticResource SectionLabel}" Text="Also compile the schema with protoc"
+                   ToolTip="Runs the real protobuf compiler over the .proto files after they are written, so you get usable source rather than a schema you still have to build."/>
+        <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,2,0,0"
+                   Text="protobuf has no C backend. For C, use the 'c' target — it is freestanding, allocation-free, and speaks this tool's own wire format rather than protobuf's."/>
+        <ItemsControl x:Name="ProtocList" Margin="0,4,0,0">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <CheckBox Content="{Binding Label}" IsChecked="{Binding IsEnabled}"
+                        ToolTip="{Binding Description}" Margin="0,4,16,0"/>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+        </ItemsControl>
+      </StackPanel>
+
+      <TextBlock Grid.Row="3" x:Name="ProtocMissingText" Visibility="Collapsed"
+                 Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,12"
+                 Text="protoc was not found, so the schema can only be written, not compiled. Put it in protobuf/bin/ next to the solution, set PROTODESIGNER_PROTOC, or add it to PATH — it is not bundled, because it is a large platform-specific binary."/>
+
       <!-- Refusal / status banner -->
-      <Border Grid.Row="3" x:Name="StatusBanner" Background="{StaticResource Surface3}" CornerRadius="6"
+      <Border Grid.Row="4" x:Name="StatusBanner" Background="{StaticResource Surface3}" CornerRadius="6"
               Padding="12,9" Margin="0,0,0,12" Visibility="Collapsed">
         <StackPanel>
           <TextBlock x:Name="StatusText" TextWrapping="Wrap" FontWeight="SemiBold"/>
@@ -95,7 +121,7 @@
       </Border>
 
       <!-- File list + preview -->
-      <Grid Grid.Row="4">
+      <Grid Grid.Row="5">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="260" MinWidth="180"/>
           <ColumnDefinition Width="10"/>
@@ -156,7 +182,7 @@
       </Grid>
 
       <!-- Output folder + actions -->
-      <Grid Grid.Row="5" Margin="0,16,0,0">
+      <Grid Grid.Row="6" Margin="0,16,0,0">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto"/>
           <ColumnDefinition Width="*"/>

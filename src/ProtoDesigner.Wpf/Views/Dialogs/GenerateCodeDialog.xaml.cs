@@ -86,6 +86,21 @@ public partial class GenerateCodeDialog : Window
 
     private readonly ObservableCollection<TargetOptionRow> _targetOptions = new();
 
+    /// <summary>One protoc language the user can tick, shown only for a target that emits a schema.</summary>
+    private sealed class ProtocLanguageRow(ProtocLanguage language) : ObservableObject
+    {
+        private bool _isEnabled;
+
+        public string Id => language.Id;
+        public string Label => language.Label;
+
+        public string? Description => language.Note;
+
+        public bool IsEnabled { get => _isEnabled; set => SetProperty(ref _isEnabled, value); }
+    }
+
+    private readonly ObservableCollection<ProtocLanguageRow> _protocLanguages = new();
+
     private GenerateCodeDialog(ProjectViewModel project)
     {
         InitializeComponent();
@@ -94,6 +109,10 @@ public partial class GenerateCodeDialog : Window
         FileList.ItemsSource = _files;
 
         TargetOptionsList.ItemsSource = _targetOptions;
+
+        foreach (var language in ProtocCompiler.Languages)
+            _protocLanguages.Add(new ProtocLanguageRow(language));
+        ProtocList.ItemsSource = _protocLanguages;
 
         TargetBox.ItemsSource = GeneratorCatalog.All.Select(g => new TargetOption(g)).ToArray();
         TargetBox.SelectedIndex = 0;
@@ -181,8 +200,35 @@ public partial class GenerateCodeDialog : Window
                 _targetOptions.Add(new TargetOptionRow(option));
 
         TargetOptionsList.Visibility = _targetOptions.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        RefreshProtocPanel();
         RefreshAssignButton();
     }
+
+    /// <summary>
+    /// Offers to compile the schema, but only for the target that emits one and only when protoc is
+    /// actually installed.
+    /// </summary>
+    /// <remarks>
+    /// Hidden rather than disabled when protoc is missing: a greyed row invites a hunt for the switch
+    /// that enables it, and there is none — the answer is to install a compiler this project
+    /// deliberately does not vendor. The panel's own caption says where to put it.
+    /// </remarks>
+    private void RefreshProtocPanel()
+    {
+        var isSchemaTarget = TargetBox.SelectedItem is TargetOption { Generator.Id: "proto" };
+        var available = isSchemaTarget && ProtocCompiler.Locate() is not null;
+
+        ProtocPanel.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
+        ProtocMissingText.Visibility = isSchemaTarget && !available ? Visibility.Visible : Visibility.Collapsed;
+
+        if (!available)
+            foreach (var row in _protocLanguages) row.IsEnabled = false;
+    }
+
+    private List<string> SelectedProtocLanguages() =>
+        ProtocPanel.Visibility == Visibility.Visible
+            ? _protocLanguages.Where(l => l.IsEnabled).Select(l => l.Id).ToList()
+            : [];
 
     /// <summary>
     /// Offers the assign action only where it means something: a target that needs stable field numbers,
@@ -368,8 +414,30 @@ public partial class GenerateCodeDialog : Window
                 _files.Select(f => new GeneratedFile(f.Name, f.Contents)).ToList());
             var written = CodeGenerationService.Write(set, outDir);
 
-            ShowStatus($"Wrote {written.Count} file(s) to {outDir}.",
-                written.Select(Path.GetFileName).OfType<string>().ToArray(), blocking: false);
+            var detail = written.Select(Path.GetFileName).OfType<string>().ToList();
+            var summary = $"Wrote {written.Count} file(s) to {outDir}.";
+
+            // Compiling the schema is a second step over what was just written, so it happens here rather
+            // than in the preview — there is nothing to preview, and protoc needs files on disk.
+            var languages = SelectedProtocLanguages();
+            if (languages.Count > 0)
+            {
+                var compilation = ProtocCompiler.Run(outDir, languages);
+
+                if (!compilation.Succeeded)
+                {
+                    // The schema is on disk and correct; only the compile failed. Say both, so the user
+                    // does not go looking for output that was never the problem.
+                    ShowStatus($"{summary} protoc did not run: {compilation.Error}", detail, blocking: false);
+                    return;
+                }
+
+                detail.AddRange(compilation.Produced);
+                summary += $" protoc produced {compilation.Produced.Count} more for "
+                           + $"{string.Join(", ", languages)}.";
+            }
+
+            ShowStatus(summary, detail, blocking: false);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {

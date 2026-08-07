@@ -128,7 +128,7 @@ public static class WireEncodingPropagator
             return new ScalarTransform(0m, magnitude / codes);
         }
 
-        return new ScalarTransform(r.Min, BitMath.MinimumScale(r, bits));
+        return new ScalarTransform(r.Min, WireSizePolicy.FittedScale(r, bits, hostIsFloat));
     }
 
     /// <summary>Every binding in the project: message fields and struct members alike.</summary>

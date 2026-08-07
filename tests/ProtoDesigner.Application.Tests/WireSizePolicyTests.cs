@@ -117,4 +117,92 @@ public class WireSizePolicyTests
             Assert.Equal(width, binding.Encoding.BitWidth);
         }
     }
+
+    // ---- the factor ---------------------------------------------------------------------------------
+
+    /// <summary>The worked example from the samples: a u16 declared 1000..1015, so 16 values.</summary>
+    private static readonly NumericRange Temperature = new(1000, 1015);
+
+    [Theory]
+    [InlineData(4)]    // exactly enough: 16 values in 16 codes
+    [InlineData(5)]    // room to spare
+    [InlineData(8)]
+    [InlineData(16)]
+    public void An_integer_never_gets_a_factor_below_one(int bits)
+    {
+        // The reported bug. MinimumScale answers "the finest step these bits allow", which at 5 bits is
+        // 15/31 and at 16 bits is 15/65535 — correct arithmetic, wrong question for a u16. There is
+        // nothing between 1000 and 1001 to resolve, and dividing by 0.4838 makes a stored 1001 come back
+        // as 1000.96. The offset already does the compressing; the factor's only job is to be 1.
+        Assert.Equal(1m, WireSizePolicy.FittedScale(Temperature, bits, hostIsFloat: false));
+    }
+
+    [Fact]
+    public void An_integer_too_wide_for_its_bits_still_gets_a_coarse_factor()
+    {
+        // The genuinely lossy direction, which stays. 1001 values cannot fit in 16 codes, so each code
+        // has to stand for several — the user asked for that by choosing the width.
+        var scale = WireSizePolicy.FittedScale(new NumericRange(0, 1000), bits: 4, hostIsFloat: false);
+
+        Assert.True(scale > 1m, $"a range wider than its width should still be scaled, got {scale}");
+    }
+
+    [Fact]
+    public void A_float_still_gets_the_finest_factor_its_width_allows()
+    {
+        // The clamp must not reach floats: quantizing a continuous quantity into the available codes is
+        // the entire point of a scaled encoding, and 1 would throw away the resolution paid for.
+        var scale = WireSizePolicy.FittedScale(new NumericRange(-1, 1), bits: 12, hostIsFloat: true);
+
+        Assert.True(scale < 1m, $"a float should use a sub-unit step, got {scale}");
+    }
+
+    [Theory]
+    [InlineData(5)]
+    [InlineData(8)]
+    public void Narrowing_an_integer_type_propagates_an_offset_and_no_scaling(int bits)
+    {
+        // The same bug seen from the binding side: this is what actually reaches the layout engine and
+        // the generators, so a factor leaking in here changes the bytes on the wire.
+        var project = new Project("Temp");
+        var type = new ParameterType(TypeId.New(), "Temperature", PrimitiveKind.U16, Temperature)
+        {
+            WireForm = WireForm.Unsigned,
+            WireBits = bits,
+        };
+        project.Types.Add(type);
+
+        var binding = new FieldBinding("temperature", type.Id);
+        WireEncodingPropagator.Apply(type, binding);
+
+        var transform = Assert.NotNull(binding.Encoding.Transform);
+        Assert.Equal(1000m, transform.Offset);
+        Assert.Equal(1m, transform.Scale);
+    }
+
+    [Fact]
+    public void A_narrowed_integer_stays_protobuf_exportable()
+    {
+        // Why the factor matters beyond arithmetic: the protobuf gate refuses any field whose scale is
+        // not 1. A spurious 0.4838 would silently drop this message from every .proto export.
+        var project = new Project("Temp");
+        var type = new ParameterType(TypeId.New(), "Temperature", PrimitiveKind.U16, Temperature)
+        {
+            WireForm = WireForm.Unsigned,
+            WireBits = 8,
+        };
+        project.Types.Add(type);
+
+        var bus = new Bus(BusId.New(), "Main", Transport.Ethernet);
+        var message = new Message(MessageId.New(), "Reading") { WireId = 1 };
+        var binding = new FieldBinding("temperature", type.Id);
+        WireEncodingPropagator.Apply(type, binding);
+        message.Fields.Add(binding);
+        bus.Messages.Add(message);
+        project.Buses.Add(bus);
+
+        var eligibility = ProtobufCompatibility.ForBus(project, bus).Single();
+
+        Assert.True(eligibility.IsEligible, $"a narrowed integer was refused: {eligibility.Reason}");
+    }
 }

@@ -243,7 +243,10 @@ public partial class PrimitiveEditorDialog : Window
         UpdateScaleHint();
     }
 
-    /// <summary>The fitted mapping: wire 0 is the range minimum, one step is the finest the width allows.</summary>
+    /// <summary>
+    /// The fitted mapping: wire 0 is the range minimum, and one step is the finest the width allows —
+    /// but never finer than 1 for an integer host, which has nothing between its values.
+    /// </summary>
     private bool TryDerive(out decimal offset, out decimal scale)
     {
         offset = 0m;
@@ -251,7 +254,7 @@ public partial class PrimitiveEditorDialog : Window
         if (!TryCurrentRange(out var range) || range.IsConstant) return false;
 
         offset = range.Min;
-        scale = BitMath.MinimumScale(range, SelectedWireBits);
+        scale = WireSizePolicy.FittedScale(range, SelectedWireBits, HostIsFloat);
         return true;
     }
 

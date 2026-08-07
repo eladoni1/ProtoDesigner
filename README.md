@@ -27,7 +27,7 @@ so resizing or reordering a field is just an edit followed by a recompute.
 | 5b | Protobuf schema target + protovalidate | **Done** — gated per message, protoc- and runtime-verified |
 | 6 | Shared storage & collaboration | Not started — [design note](docs/shared-storage-design.md) |
 
-**1730 automated tests, all passing.** That includes a cross-language check that compiles the generated
+**1753 automated tests, all passing.** That includes a cross-language check that compiles the generated
 code under MSVC — once as C, once as C++ — and asserts it produces byte-identical output to the C#
 reference codec over the whole wire matrix. Two independent implementations: wherever they disagree, one
 of them is wrong. The protobuf target gets the same treatment: its schema is compiled by real `protoc`,
@@ -181,6 +181,26 @@ merely compiles.
 ```bash
 dotnet run --project src/ProtoDesigner.Cli -- generate samples/telemetry.pdproj --out ./out --target proto --option protovalidate=false
 ```
+
+### Getting compiled source, not just a schema
+
+`--protoc-out <language>` (repeatable) runs the real protobuf compiler over the emitted `.proto` files, so
+you get source you can link against rather than a schema you still have to build:
+
+```bash
+dotnet run --project src/ProtoDesigner.Cli -- generate samples/protobuf-demo.pdproj --out ./out --target proto --protoc-out cpp --protoc-out csharp
+```
+
+Languages: `cpp`, `csharp`, `java`, `python`. The Generate dialog offers the same as checkboxes, and hides
+them when no protoc is installed.
+
+**There is no C.** Protobuf has never had a C backend — `--cpp_out` emits C++ that needs libprotobuf, a
+C++ runtime and the heap. For a C target, use this tool's own `c` generator: it is freestanding,
+allocation-free, and speaks the wire format you designed rather than protobuf's.
+
+When constraints are on, Buf's `validate.proto` is compiled alongside your schema, because the emitted
+`main.pb.h` includes `buf/validate/validate.pb.h` and will not build without it. Pass
+`--option protovalidate=false` if you would rather not carry it.
 
 Exit codes: `0` success, `1` validation errors (generation refused), `2` usage error, `3` I/O error.
 

@@ -1,3 +1,4 @@
+using ProtoDesigner.Core.Layout;
 using ProtoDesigner.Core.Model;
 
 namespace ProtoDesigner.Application;
@@ -81,4 +82,38 @@ public static class WireSizePolicy
 
         return widths;
     }
+
+    /// <summary>
+    /// The factor a fitted mapping should use for <paramref name="range"/> in <paramref name="bits"/>.
+    /// </summary>
+    /// <param name="range">The declared limits the mapping has to cover.</param>
+    /// <param name="bits">The chosen wire width.</param>
+    /// <param name="hostIsFloat">
+    /// Whether the host type is <c>f32</c>/<c>f64</c>. This is the whole distinction: a float is a sample
+    /// of a continuous quantity, so a finer step is more resolution and worth having. An integer has no
+    /// values between its values.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// <b>An integer never gets a factor below 1.</b> <see cref="BitMath.MinimumScale"/> answers "what is
+    /// the finest step these bits allow across this range", which for 1000..1015 in 5 bits is 15/31 —
+    /// mathematically right and meaningless for a <c>u16</c>, because there is nothing between 1000 and
+    /// 1001 to resolve. Worse, it is *lossy in practice*: the encoder divides by 0.4838, so a stored 1001
+    /// comes back as 1000.96 and rounds to whatever the decoder's rounding mode says. The offset alone
+    /// already compresses the range; the factor's only job is to be 1.
+    /// </para>
+    /// <para>
+    /// A factor above 1 is kept. That is the genuinely lossy case — a range too wide for the bits, where
+    /// each code has to stand for several values — and the user asked for it by choosing the width.
+    /// </para>
+    /// </remarks>
+    public static decimal FittedScale(NumericRange range, int bits, bool hostIsFloat)
+    {
+        var minimum = BitMath.MinimumScale(range, bits);
+        return hostIsFloat ? minimum : Math.Max(1m, minimum);
+    }
+
+    /// <summary>Whether a host kind has values between its values.</summary>
+    public static bool IsFloatKind(PrimitiveKind kind) =>
+        kind is PrimitiveKind.F32 or PrimitiveKind.F64;
 }

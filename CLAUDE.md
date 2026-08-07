@@ -117,7 +117,7 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 5b | Protobuf schema target + protovalidate | **Done** — gated per message, protoc-verified |
 | 6 | Shared storage & collaboration | Not started — see `docs/shared-storage-design.md` |
 
-**1730 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
+**1753 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
 rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
 red one. None of the toolchains is vendored.
 
@@ -313,6 +313,18 @@ something and watching it go red — do the same before trusting a change here.
    break a deployed decoder (reorder, narrow, widen, endianness, `WireId` change) versus which are safe
    (rename anything — identity is an ID). This needs no database, works against the last git commit, and
    is the thing git structurally cannot do for a binary protocol. Recommended before any of Phase 6.
+
+**Compiling the schema is a step after generation, never inside a generator.**
+`ProtocCompiler` (Application) runs the real protoc over the written `.proto` files, producing C++, C#,
+Java or Python on request — `--protoc-out <lang>` on the CLI, checkboxes in the Generate dialog. It lives
+outside the generator on purpose: an `IProtocolGenerator` is a pure function from IR to text, which is
+what makes golden files meaningful and lets the whole suite run with no toolchain installed. Shelling out
+from inside one would give up both. **There is no C backend** — protobuf has never had one; `--cpp_out`
+emits C++ needing libprotobuf and the heap, and a C consumer wants either this project's own freestanding
+`c` target or a third-party generator like nanopb. When constraints are on, Buf's `validate.proto` is
+staged and compiled too, because the emitted `main.pb.h` carries
+`#include "buf/validate/validate.pb.h"` and would not build without it; that is reported, since its C#
+form alone is close to a megabyte.
 
 **The protobuf target is finished and tested; do not reopen it looking for gaps.** Schema compiles,
 constraints compile against the real extension, constraints are *enforced* by a real runtime, the gate
@@ -751,6 +763,14 @@ overflow.
   minimum an empty array is legal and the schema emits `repeated.max_items` alone — `min_items: 0` would
   be noise. With one, both ends are emitted together. `IsExactCount` is the "min equals max" test; do not
   reach for `is Fixed`, since a length-prefixed array pinned at 4..4 is exact too.
+- **An integer never derives a factor below 1.** `BitMath.MinimumScale` answers "the finest step these
+  bits allow across this range", which for a `u16` of 1000..1015 is 15/31 at 5 bits and 15/65535 at 16 —
+  correct arithmetic, wrong question. There is nothing between 1000 and 1001 to resolve, and dividing by
+  0.4838 makes a stored 1001 come back as 1000.96. Go through `WireSizePolicy.FittedScale`, which clamps
+  at 1 for an integer host and leaves a float alone (quantizing a continuous quantity is the point
+  there). A factor *above* 1 is kept for both: that is the genuinely lossy case the width asked for.
+  Getting this wrong is not only arithmetic — a spurious 0.48 makes the protobuf gate refuse the message,
+  since `ProtoScaledFieldRule` blocks any `Scale != 1`.
 - **A minimum is declarative intent, not a wire mechanism.** Nothing about the encoding changes because a
   caller promised at least one element, and **the generated C does not enforce it** — it enforces no
   bound today. What a minimum does is raise `MessageLayout.MinBits` (so a frame budget is measured
