@@ -31,6 +31,11 @@ out/
 
 # NOTE: samples/ was ignored here, which meant samples/telemetry.pdproj — a hand-maintained fixture the
 # README and the CLI tests both point at — was never tracked. It is source, and it is tracked now.
+#
+# Only the .pdproj files are source, though. The Generate dialog defaults its output folder to
+# samples/<BusName>/, so opening a sample and writing files drops generated code right beside it — which
+# is how a stray samples/Telemetry/ of .proto files once got committed.
+samples/*/
 
 # The protobuf toolchain used by ProtocConformanceTests: bin/protoc, include/ (the well-known types),
 # and Buf's validate.proto. Not vendored — protoc alone is a 12 MB platform-specific binary that git
