@@ -59,9 +59,12 @@
         <TextBlock x:Name="WireHint" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,14"/>
         <Grid Margin="0,0,0,6">
           <TextBlock Style="{StaticResource SectionLabel}" Text="Members" VerticalAlignment="Center"/>
-          <Button Content="+ Add member" Style="{StaticResource GhostButton}" Padding="10,4" FontSize="11"
-                  HorizontalAlignment="Right" Click="OnAddMember"/>
+          <Button x:Name="AddMemberButton" Content="+ Add member" Style="{StaticResource GhostButton}"
+                  Padding="10,4" FontSize="11" HorizontalAlignment="Right" Click="OnAddMember"/>
         </Grid>
+
+        <TextBlock x:Name="SyntheticHint" Style="{StaticResource CaptionText}" TextWrapping="Wrap"
+                   Visibility="Collapsed" Margin="0,0,0,8"/>
 
         <!-- Column headers — the row template below repeats these widths. -->
         <Grid Margin="7,0,7,5">
@@ -90,11 +93,14 @@
                     <ColumnDefinition Width="{StaticResource ColRemove}"/>
                   </Grid.ColumnDefinitions>
                   <TextBox Grid.Column="0" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
-                           FontFamily="{StaticResource MonoFont}" Margin="0,0,6,0"/>
+                           FontFamily="{StaticResource MonoFont}" Margin="0,0,6,0"
+                           IsReadOnly="{Binding IsEditable, Converter={StaticResource NotBool}}"/>
                   <TextBox Grid.Column="1" Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
-                           FontFamily="{StaticResource MonoFont}" Margin="0,0,6,0"/>
+                           FontFamily="{StaticResource MonoFont}" Margin="0,0,6,0"
+                           IsReadOnly="{Binding IsEditable, Converter={StaticResource NotBool}}"/>
                   <Button Grid.Column="2" Style="{StaticResource IconButton}" Content="✕" Width="26" Height="26"
-                          ToolTip="Remove member" Click="OnRemoveMember" Tag="{Binding}"/>
+                          ToolTip="Remove member" Click="OnRemoveMember" Tag="{Binding}"
+                          Visibility="{Binding IsEditable, Converter={StaticResource BoolToVis}}"/>
                 </Grid>
               </DataTemplate>
             </ItemsControl.ItemTemplate>

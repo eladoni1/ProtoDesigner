@@ -106,3 +106,13 @@ public sealed class NodeKindToBrushConverter : IValueConverter
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();
 }
+
+/// <summary>Inverts a bool. Used where a row is editable but the control takes <c>IsReadOnly</c>.</summary>
+public sealed class NotBoolConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
+        value is bool b && !b;
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+        value is bool b && !b;
+}

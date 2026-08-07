@@ -17,6 +17,16 @@ public sealed class EnumMemberRow : ObservableObject
 
     private string _value = "0";
     public string Value { get => _value; set => SetProperty(ref _value, value); }
+
+    /// <summary>
+    /// False for a bus-filled enum, whose members are derived and must not be typed over.
+    /// </summary>
+    /// <remarks>
+    /// Shown rather than hidden: "0 members" on a MessageId reads as broken, when the truth is that the
+    /// bus supplies them and here is exactly what it supplies. Showing them read-only answers the
+    /// question without letting anyone edit a list that is regenerated on every build.
+    /// </remarks>
+    public bool IsEditable { get; init; } = true;
 }
 
 /// <summary>
@@ -55,13 +65,50 @@ public partial class EnumEditorDialog : Window
             NameBox.Text = existing.Name;
             KindBox.SelectedItem = existing.UnderlyingKind;
             WireFormBox.SelectedItem = WireForms.FirstOrDefault(f => f.Value == existing.WireForm) ?? WireForms[0];
-            foreach (var m in existing.Members)
-                _members.Add(new EnumMemberRow { Name = m.Name, Value = m.Value.ToString(CultureInfo.InvariantCulture) });
+            if (existing.Synthetic != SyntheticEnum.None) LoadSyntheticMembers(existing);
+            else
+                foreach (var m in existing.Members)
+                    _members.Add(new EnumMemberRow { Name = m.Name, Value = m.Value.ToString(CultureInfo.InvariantCulture) });
         }
 
         _loaded = true;
         RebuildWireSizes(existing?.WireBits);
         Loaded += (_, _) => { NameBox.Focus(); NameBox.SelectAll(); };
+    }
+
+    /// <summary>
+    /// Fills the member list from every bus, since a bus-filled enum resolves differently on each.
+    /// </summary>
+    /// <remarks>
+    /// The bus name is appended when the project has more than one, because the same type genuinely means
+    /// different things on each and a bare list would look self-contradictory.
+    /// </remarks>
+    private void LoadSyntheticMembers(EnumType existing)
+    {
+        var buses = _project.Project.Buses;
+        var qualify = buses.Count > 1;
+
+        foreach (var bus in buses)
+            foreach (var m in SyntheticEnumMembers.For(bus, existing.Synthetic))
+            {
+                // NotAssigned is the same on every bus, so listing it per bus is noise.
+                if (qualify && m.Value == 0 && !ReferenceEquals(bus, buses[0])) continue;
+
+                _members.Add(new EnumMemberRow
+                {
+                    Name = qualify ? $"{m.Name}  ({bus.Name})" : m.Name,
+                    Value = m.Value.ToString(CultureInfo.InvariantCulture),
+                    IsEditable = false,
+                });
+            }
+
+        AddMemberButton.Visibility = Visibility.Collapsed;
+        SyntheticHint.Visibility = Visibility.Visible;
+        SyntheticHint.Text = existing.Synthetic == SyntheticEnum.MessageId
+            ? "Filled from the bus: every message that carries a wire id. Add or rename a message and this "
+              + "list follows — it is regenerated on every build, so it cannot go stale and cannot be edited here."
+            : "Filled from the bus: every module, numbered in declaration order. Add or rename a module on "
+              + "the bus and this list follows.";
     }
 
     public static EnumType? CreateNew(Window? owner, ProjectViewModel project)
@@ -203,6 +250,10 @@ public partial class EnumEditorDialog : Window
         members = new List<EnumMember>();
         error = null;
 
+        // A bus-filled enum's rows are a read-only view of what the bus resolves to, not something to
+        // write back. Storing them would recreate exactly the stale list this type exists to avoid.
+        if (_existing?.Synthetic is not null and not SyntheticEnum.None) return true;
+
         foreach (var row in _members)
         {
             var name = row.Name?.Trim();
@@ -265,8 +316,11 @@ public partial class EnumEditorDialog : Window
             target.UnderlyingKind = SelectedKind;
         }
 
-        target.Members.Clear();
-        foreach (var m in members) target.Members.Add(m);
+        if (target.Synthetic == SyntheticEnum.None)
+        {
+            target.Members.Clear();
+            foreach (var m in members) target.Members.Add(m);
+        }
         target.WireForm = SelectedWireForm;
         target.WireBits = bits;
 
