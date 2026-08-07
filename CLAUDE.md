@@ -339,16 +339,26 @@ something and watching it go red — do the same before trusting a change here.
 4. **C# encode/decode.** Declarations and `OnWireLength` exist; the codec does not.
 5. **`FillRemaining` / `Terminated` decode** — scan for the sentinel or consume the remainder instead of
    asking the caller for a count.
-6. **Test the built-in ID enums.** Deferred deliberately, not forgotten: `MessageId`/`ModuleId` are seeded
+6. **The built-in ID enums show as empty in the editor, and that is the bug.** Members are filled by
+   `IrBuilder` at generation, so the model's `Members` list really is empty and the Types panel honestly
+   reports it — but a user adding a message or a module sees nothing happen, which reads as broken. The
+   editor needs to show the *resolved* members for the selected bus (derive on display, still never
+   store), and say which bus they came from. Fix this before the test item below.
+7. **Decide what a duplicate message `WireId` should do.** Today it is a `Diagnostic` and the edit stands,
+   which follows the rule that the validator reports rather than blocks. The alternative is for the
+   editor to refuse the keystroke and revert to the previous id. Worth deciding deliberately: reverting is
+   friendlier for a typo, but it is the first place the editor would override a user instead of telling
+   them, and every other invalid state in this tool is allowed to exist while being reported.
+8. **Test the built-in ID enums.** Deferred deliberately, not forgotten: `MessageId`/`ModuleId` are seeded
    into every project and their members are derived per bus, so the cases to cover are a renamed bus, a
    renamed message, a changed `WireId`, a renamed module, and a project saved before they existed loading
    without them. None of that is covered yet.
-7. **Match the ID enums to the requested spelling, or decide not to.** The shape asked for was
+9. **Match the ID enums to the requested spelling, or decide not to.** The shape asked for was
    `<BUS_NAME>_MESSAGE_ID_NA` / `<BUS_NAME>_<MODULE_NAME>`; what is emitted is
    `<ns>_<Bus>MessageId_NotAssigned` / `<ns>_<Bus>ModuleId_<Module>`, which is the C target's own naming
    convention and already carries the bus scope the request was after. Renaming would churn every golden
    and break any deployed code that switches on these. Worth a decision, not an assumption.
-8. **Wire-compatibility diffing** — compare two versions' `MessageLayout`s and report which changes
+10. **Wire-compatibility diffing** — compare two versions' `MessageLayout`s and report which changes
    break a deployed decoder (reorder, narrow, widen, endianness, `WireId` change) versus which are safe
    (rename anything — identity is an ID). This needs no database, works against the last git commit, and
    is the thing git structurally cannot do for a binary protocol. Recommended before any of Phase 6.
