@@ -1,0 +1,2 @@
+PD0074 bus 'Main' / message 'Reading' / field 'id': Field 'id' is 1 byte(s). Protobuf's integers are 32- or 64-bit, so this would go on the wire as a different size than you designed. Set its wire size to 4 or 8 bytes, or keep this message on the C target.
+PD0074 bus 'Main' / message 'Reading' / field 'sequence': Field 'sequence' is 2 byte(s). Protobuf's integers are 32- or 64-bit, so this would go on the wire as a different size than you designed. Set its wire size to 4 or 8 bytes, or keep this message on the C target.

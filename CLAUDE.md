@@ -117,7 +117,7 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 5b | Protobuf schema target + protovalidate | **Done** — gated per message, protoc-verified |
 | 6 | Shared storage & collaboration | Not started — see `docs/shared-storage-design.md` |
 
-**1752 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
+**1758 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
 rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
 red one. None of the toolchains is vendored.
 
@@ -732,9 +732,14 @@ overflow.
   keep their meaning rather than widened integers. The fix for a refused field is to set its wire size to
   4 or 8 bytes; otherwise the message stays on the C target.
 - **Nearly the whole `Corpus` is withheld from protobuf as a result**, because it is built from `u8`/`u16`
-  to exercise wire layouts. Only `raw-floats` exports. That is why proto golden coverage lives on
-  `ProtovalidateFixture` (goldened as `Golden/constraints.proto`), which is all-32-bit by design — do not
-  widen the corpus to restore it.
+  to exercise wire layouts. Only `raw-floats` exports. Do not widen the corpus to change that — it is
+  shared with the C golden and cross-check suites, which are a different axis. Rich protobuf coverage
+  lives on `ProtovalidateFixture` (`Golden/constraints.proto`), which is all-32-bit by design.
+- **A refused corpus entry still has a checked-in expected result**, as `Golden/<name>.refused.txt`
+  holding the exact diagnostics. Both outcomes are output worth pinning: if only the survivors were
+  tested, a rule that started refusing everything — or stopped refusing anything — would leave the suite
+  green and merely quieter. `The_protobuf_result_matches_the_golden_file` runs over every entry and
+  compares one or the other.
 - **An offset-only transform is protobuf-exportable; a scale is not.** `wire = (value - Offset) / Scale`.
   The offset only narrows the width and protobuf sends the value itself, so the range survives as a
   constraint. A scale is lossy quantization, and a protobuf peer would carry full precision while a C

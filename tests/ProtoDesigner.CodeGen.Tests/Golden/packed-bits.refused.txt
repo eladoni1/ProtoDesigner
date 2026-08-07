@@ -1,0 +1,3 @@
+PD0070 bus 'Control' / message 'Status' / field 'mode': Field 'mode' is 4 bits. Protobuf has no sub-byte fields, so this message cannot be exported as .proto. Widen it to a whole number of bytes, or keep this message on the C target.
+PD0070 bus 'Control' / message 'Status' / field 'temperature': Field 'temperature' is 4 bits. Protobuf has no sub-byte fields, so this message cannot be exported as .proto. Widen it to a whole number of bytes, or keep this message on the C target.
+PD0074 bus 'Control' / message 'Status' / field 'checksum': Field 'checksum' is 2 byte(s). Protobuf's integers are 32- or 64-bit, so this would go on the wire as a different size than you designed. Set its wire size to 4 or 8 bytes, or keep this message on the C target.

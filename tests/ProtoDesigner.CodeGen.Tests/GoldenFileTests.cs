@@ -58,80 +58,78 @@ public class GoldenFileTests
     private static readonly ProtoGenerator ProtoGenerator = new();
 
     /// <summary>
-    /// The corpus entries the compatibility gate lets through, which are the only ones a golden should
-    /// exist for.
+    /// Every corpus entry gets a checked-in expected result for the protobuf target — the schema when it
+    /// exports, and the refusal when it does not.
     /// </summary>
     /// <remarks>
-    /// Generating a schema for a refused message is possible — the generator does not re-check the gate,
-    /// because the caller narrows the scope — but checking one in would enshrine output we would never
-    /// ship, and reviewers would start treating it as correct.
+    /// <para>
+    /// Both outcomes are output worth pinning. Most of this corpus is built from <c>u8</c> and <c>u16</c>
+    /// because it exists to exercise wire layouts, and protobuf's integers are 32- and 64-bit, so most of
+    /// it is refused. Testing only the survivors would mean the day a rule started refusing everything —
+    /// or stopped refusing anything — the suite would still be green, just quieter.
+    /// </para>
+    /// <para>
+    /// So a refused entry is compared against a <c>.refused.txt</c> holding the exact reasons. A change to
+    /// what the gate blocks, or to how it explains itself, then shows up as a diff in review, which is the
+    /// same protection the schema files give.
+    /// </para>
     /// </remarks>
-    public static TheoryData<string> ExportableCorpusNames()
-    {
-        var data = new TheoryData<string>();
-        foreach (var name in Exportable()) data.Add(name);
-        return data;
-    }
-
-    private static IEnumerable<string> Exportable() =>
-        Corpus.All()
-            .Where(c => !new Validator(ProtobufRules.All).Validate(c.Factory().Item1)
-                .Any(d => d.Severity == Severity.Error))
-            .Select(c => c.Name);
-
     [Theory]
-    [MemberData(nameof(ExportableCorpusNames))]
-    public void The_generated_proto_matches_the_golden_file(string corpusName)
+    [MemberData(nameof(CorpusNames))]
+    public void The_protobuf_result_matches_the_golden_file(string corpusName)
     {
+        var factory = Corpus.All().Single(c => c.Name == corpusName).Factory;
+        var (project, bus) = factory();
+
+        var refusals = new Validator(ProtobufRules.All).Validate(project)
+            .Where(d => d.Severity == Severity.Error)
+            .Select(d => $"{d.Code} {d.Target}: {d.Message}")
+            .OrderBy(line => line, StringComparer.Ordinal)
+            .ToList();
+
+        var refusedPath = Path.Combine(GoldenDirectory(), $"{corpusName}.refused.txt");
+        var schemaPath = Path.Combine(GoldenDirectory(), $"{corpusName}.proto");
+        var typesPath = Path.Combine(GoldenDirectory(), $"{corpusName}_types.proto");
+
+        if (refusals.Count > 0)
+        {
+            // Generating a schema for a refused message is possible — the generator does not re-check the
+            // gate, since the caller narrows the scope — but checking one in would enshrine output that is
+            // never shipped, and a reviewer would start treating it as correct.
+            Delete(schemaPath, typesPath);
+            AssertMatchGoldens((refusedPath, string.Join("\n", refusals) + "\n"));
+            return;
+        }
+
+        Delete(refusedPath);
+
         // Constraints on, because that is the default and the interesting half. protoc proves the schema
         // compiles and protovalidate proves the rules bite; this is what makes a change to either
         // *visible* — a dropped constraint or a renumbered field otherwise passes both while silently
         // changing what consumers see.
-        var factory = Corpus.All().Single(c => c.Name == corpusName).Factory;
-        var (project, bus) = factory();
-        var ir = new IrBuilder().Build(project, bus);
-
-        var set = ProtoGenerator.Generate(ir, new GeneratorOptions(Namespace: "proto"));
+        var set = ProtoGenerator.Generate(new IrBuilder().Build(project, bus),
+            new GeneratorOptions(Namespace: "proto"));
 
         AssertMatchGoldens(
-            (Path.Combine(GoldenDirectory(), $"{corpusName}_types.proto"),
-             set.Files.Single(f => f.RelativePath == "proto_types.proto").Contents),
-            (Path.Combine(GoldenDirectory(), $"{corpusName}.proto"),
-             BusProto(set).Contents));
+            (typesPath, set.Files.Single(f => f.RelativePath == "proto_types.proto").Contents),
+            (schemaPath, BusProto(set).Contents));
+    }
+
+    /// <summary>
+    /// Removes a golden that no longer applies, so an entry that switches between exporting and being
+    /// refused does not leave the other form behind to be read as still current.
+    /// </summary>
+    private static void Delete(params string[] paths)
+    {
+        if (!ShouldUpdate) return;
+        foreach (var path in paths)
+            if (File.Exists(path)) File.Delete(path);
     }
 
     /// <summary>The bus's own schema: the one .proto that is not the shared declarations.</summary>
     private static GeneratedFile BusProto(GeneratedFileSet set) => set.Files.Single(f =>
         f.RelativePath.EndsWith(".proto", StringComparison.Ordinal) &&
         !f.RelativePath.EndsWith("_types.proto", StringComparison.Ordinal));
-
-    [Fact]
-    public void The_gate_withholds_exactly_the_corpus_entries_protobuf_cannot_express()
-    {
-        // Pins which entries have no golden, and why. Without this the golden set could quietly shrink —
-        // a gate that started refusing everything would look like a passing suite with fewer files.
-        var withheld = Corpus.All().Select(c => c.Name).Except(Exportable()).Order().ToArray();
-
-        // Nearly all of it, and that is not a regression. The corpus is built from u8 and u16 because it
-        // exists to exercise *wire layouts*, and protobuf's integers are 32- and 64-bit — so the
-        // narrow-integer rule withholds almost every entry. `raw-floats` survives because a float is a
-        // float in both worlds.
-        //
-        // `biased-signed` would be withheld anyway: its transform is `MinimumScale(-100..100, 8)`, which
-        // is 200/255 rather than 1, so it is quantization and not the offset-only case protobuf carries.
-        //
-        // Proto output is still covered where it matters — `constraints.proto` below is goldened from a
-        // fixture built for protobuf's rule groups, which is the right place for that coverage. Widening
-        // the corpus to suit protobuf would drag the C golden and cross-check suites along for a
-        // different axis entirely.
-        Assert.Equal(
-            new[]
-            {
-                "biased-signed", "dynamic-array", "packed-bits", "quantized", "scalars", "shared-struct",
-                "struct-and-array",
-            },
-            withheld);
-    }
 
     [Fact]
     public void The_constraint_rich_schema_matches_its_golden_file()

@@ -1,0 +1,2 @@
+PD0071 bus 'Attitude' / message 'Angles' / field 'tilt': Field 'tilt' is quantized (one wire step = 0.784313725490196078431372549). Protobuf carries the value at full precision, so a protobuf peer and a C peer would disagree about what was sent. Remove the scale, or keep this message on the C target.
+PD0074 bus 'Attitude' / message 'Angles' / field 'tilt': Field 'tilt' is 1 byte(s). Protobuf's integers are 32- or 64-bit, so this would go on the wire as a different size than you designed. Set its wire size to 4 or 8 bytes, or keep this message on the C target.
