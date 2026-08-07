@@ -208,9 +208,17 @@ the target borrows a foreign wire format and the caller must narrow the scope.
 numbered from 1. `Members` stays empty on the model and `IrBuilder` fills it per bus, so a shared `Header`
 carrying a message-id field means the right thing on every bus that uses it, and renaming a message can
 never leave a hand-written list stale. The marker persists (declarative intent — the user chose this field
-to be "the message id"); the member list never does (derived). Created from the Types tab's
-**+ Message ID** / **+ Module ID** buttons, and deliberately has no editor dialog: the members are not
-yours to edit, and offering that back would restore the staleness the type removes.
+to be "the message id"); the member list never does (derived). **Seeded into every project by `SeedBuiltIns`** — there is
+no button, because the bus's own identities are not something a user should have to know to create. There
+is deliberately no editor dialog either: the members are not yours to edit, and offering that back would
+restore the staleness the type removes.
+
+The generated name takes the bus with it (`MessageId` → `MainMessageId`), because the type is
+project-wide but its contents are per-bus: one C project including headers from two buses would otherwise
+have two different enums with one name. So **renaming the bus, a message, a module, or changing a
+`WireId` all change the emitted enum**, and nothing is stored that could disagree. When a field is typed
+as one, the always-on `<Bus>MessageId` in the bus header is skipped — same identifier, and defining it
+twice would not compile.
 
 **Two identity enums are also synthesized per bus whether or not any field uses them, and neither is stored.** `<ns>_<Bus>MessageId` lists every
 message carrying a `WireId`, with a `_NotAssigned = 0` sentinel and a `<Bus>_MessageIdFromWire()` lookup;
@@ -331,12 +339,16 @@ something and watching it go red — do the same before trusting a change here.
 4. **C# encode/decode.** Declarations and `OnWireLength` exist; the codec does not.
 5. **`FillRemaining` / `Terminated` decode** — scan for the sentinel or consume the remainder instead of
    asking the caller for a count.
-6. **Match the ID enums to the requested spelling, or decide not to.** The shape asked for was
+6. **Test the built-in ID enums.** Deferred deliberately, not forgotten: `MessageId`/`ModuleId` are seeded
+   into every project and their members are derived per bus, so the cases to cover are a renamed bus, a
+   renamed message, a changed `WireId`, a renamed module, and a project saved before they existed loading
+   without them. None of that is covered yet.
+7. **Match the ID enums to the requested spelling, or decide not to.** The shape asked for was
    `<BUS_NAME>_MESSAGE_ID_NA` / `<BUS_NAME>_<MODULE_NAME>`; what is emitted is
    `<ns>_<Bus>MessageId_NotAssigned` / `<ns>_<Bus>ModuleId_<Module>`, which is the C target's own naming
    convention and already carries the bus scope the request was after. Renaming would churn every golden
    and break any deployed code that switches on these. Worth a decision, not an assumption.
-7. **Wire-compatibility diffing** — compare two versions' `MessageLayout`s and report which changes
+8. **Wire-compatibility diffing** — compare two versions' `MessageLayout`s and report which changes
    break a deployed decoder (reorder, narrow, widen, endianness, `WireId` change) versus which are safe
    (rename anything — identity is an ID). This needs no database, works against the last git commit, and
    is the thing git structurally cannot do for a binary protocol. Recommended before any of Phase 6.

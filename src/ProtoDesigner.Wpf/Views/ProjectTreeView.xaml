@@ -142,16 +142,9 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
               </Grid.RowDefinitions>
-              <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="8">
-                <Button Content="+ Create enum" Style="{StaticResource PrimaryButton}"
-                        Padding="10,5" FontSize="12" Click="OnCreateEnum"/>
-                <Button Content="+ Message ID" Style="{StaticResource GhostButton}" Margin="8,0,0,0"
-                        Padding="10,5" FontSize="12" Click="OnCreateMessageIdEnum"
-                        ToolTip="An enum naming every message on the bus, keyed by its wire id. Put it on a header field to carry the id. The members are filled in when you generate, so renaming a message can never leave it stale."/>
-                <Button Content="+ Module ID" Style="{StaticResource GhostButton}" Margin="8,0,0,0"
-                        Padding="10,5" FontSize="12" Click="OnCreateModuleIdEnum"
-                        ToolTip="An enum naming every module on the bus. Members are filled in when you generate, from the bus's module list."/>
-              </StackPanel>
+              <Button Grid.Row="0" Content="+ Create enum" Style="{StaticResource PrimaryButton}"
+                      Padding="10,5" FontSize="12" Margin="8" HorizontalAlignment="Left"
+                      Click="OnCreateEnum"/>
               <ScrollViewer Grid.Row="1" Padding="8,0,8,8" VerticalScrollBarVisibility="Auto">
                 <ItemsControl ItemsSource="{Binding Types.Enums}" ItemTemplate="{StaticResource TypeRow}"/>
               </ScrollViewer>

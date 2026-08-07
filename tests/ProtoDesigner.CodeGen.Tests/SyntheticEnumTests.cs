@@ -47,11 +47,11 @@ public class SyntheticEnumTests
     {
         var types = Generate(SyntheticEnum.MessageId, out _, out _);
 
-        Assert.Contains("app_MessageId_NotAssigned = 0,", types, StringComparison.Ordinal);
-        Assert.Contains("app_MessageId_Alpha = 7,", types, StringComparison.Ordinal);
+        Assert.Contains("app_MainMessageId_NotAssigned = 0,", types, StringComparison.Ordinal);
+        Assert.Contains("app_MainMessageId_Alpha = 7,", types, StringComparison.Ordinal);
 
         // Including messages that do not use the type themselves — the enum names the bus, not the field.
-        Assert.Contains("app_MessageId_Beta = 9,", types, StringComparison.Ordinal);
+        Assert.Contains("app_MainMessageId_Beta = 9,", types, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -61,8 +61,8 @@ public class SyntheticEnumTests
         // it must survive a reorder. Numbering by position would silently break every consumer.
         var types = Generate(SyntheticEnum.MessageId, out _, out _);
 
-        Assert.DoesNotContain("app_MessageId_Alpha = 1,", types, StringComparison.Ordinal);
-        Assert.Contains("app_MessageId_Alpha = 7,", types, StringComparison.Ordinal);
+        Assert.DoesNotContain("app_MainMessageId_Alpha = 1,", types, StringComparison.Ordinal);
+        Assert.Contains("app_MainMessageId_Alpha = 7,", types, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -70,9 +70,9 @@ public class SyntheticEnumTests
     {
         var types = Generate(SyntheticEnum.ModuleId, out _, out _);
 
-        Assert.Contains("app_MessageId_NotAssigned = 0,", types, StringComparison.Ordinal);
-        Assert.Contains("app_MessageId_Sensor = 1,", types, StringComparison.Ordinal);
-        Assert.Contains("app_MessageId_Controller = 2,", types, StringComparison.Ordinal);
+        Assert.Contains("app_MainMessageId_NotAssigned = 0,", types, StringComparison.Ordinal);
+        Assert.Contains("app_MainMessageId_Sensor = 1,", types, StringComparison.Ordinal);
+        Assert.Contains("app_MainMessageId_Controller = 2,", types, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -86,8 +86,8 @@ public class SyntheticEnumTests
         var types = new CGenerator().Generate(ir, new GeneratorOptions(Namespace: "app"))
             .Files.Single(f => f.RelativePath == "app_types.h").Contents;
 
-        Assert.Contains("app_MessageId_Renamed = 7,", types, StringComparison.Ordinal);
-        Assert.DoesNotContain("app_MessageId_Alpha", types, StringComparison.Ordinal);
+        Assert.Contains("app_MainMessageId_Renamed = 7,", types, StringComparison.Ordinal);
+        Assert.DoesNotContain("app_MainMessageId_Alpha", types, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -111,6 +111,6 @@ public class SyntheticEnumTests
                 new GeneratorOptions(Namespace: "app"))
             .Files.Single(f => f.RelativePath == "main.h").Contents;
 
-        Assert.Contains("app_MessageId id;", header, StringComparison.Ordinal);
+        Assert.Contains("app_MainMessageId id;", header, StringComparison.Ordinal);
     }
 }

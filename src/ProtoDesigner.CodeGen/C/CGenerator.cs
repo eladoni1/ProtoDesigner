@@ -187,8 +187,10 @@ public sealed class CGenerator : IProtocolGenerator
         sb.AppendLine();
         OpenExternC(sb, options);
 
-        EmitMessageIdEnum(sb, prefix, ir);
-        EmitModuleIdEnum(sb, prefix, ir);
+        // Skipped when a field is already typed as one: that enum is emitted with the same bus-scoped
+        // name in the types header, and defining it twice would not compile.
+        if (!ir.Enums.Any(e => e.Synthetic == SyntheticEnum.MessageId)) EmitMessageIdEnum(sb, prefix, ir);
+        if (!ir.Enums.Any(e => e.Synthetic == SyntheticEnum.ModuleId)) EmitModuleIdEnum(sb, prefix, ir);
 
         foreach (var m in ir.Messages) EmitMessage(sb, prefix, ir, m);
 

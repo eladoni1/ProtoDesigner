@@ -166,8 +166,8 @@ public sealed class CSharpGenerator : IProtocolGenerator
         sb.AppendLine($"namespace {Namespace(options)};");
         sb.AppendLine();
 
-        EmitMessageIdEnum(sb, ir);
-        EmitModuleIdEnum(sb, ir);
+        if (!ir.Enums.Any(e => e.Synthetic == SyntheticEnum.MessageId)) EmitMessageIdEnum(sb, ir);
+        if (!ir.Enums.Any(e => e.Synthetic == SyntheticEnum.ModuleId)) EmitModuleIdEnum(sb, ir);
         foreach (var m in ir.Messages) EmitMessage(sb, ir, m);
 
         return sb.ToString();

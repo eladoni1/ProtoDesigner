@@ -43,9 +43,12 @@ public sealed class IrBuilder
         // what makes one shared Header mean the right thing on every bus that uses it — and why the
         // member list is never stored: renaming a message or a module changes it, and there is nothing
         // left behind to go stale.
+        // The name takes the bus with it for the same reason the members do: the type is project-wide but
+        // its contents are per-bus, so one C project including headers from two buses would otherwise have
+        // two different enums called MessageId. Renaming the bus therefore renames this too.
         for (var i = 0; i < enums.Count; i++)
             if (SyntheticMembers(bus, enums[i]) is { } filled)
-                enums[i] = enums[i] with { Members = filled };
+                enums[i] = enums[i] with { Members = filled, Name = bus.Name + enums[i].Name };
 
         // Then structs, post-order, so a struct always lands after everything it depends on and a
         // generator can emit the list top to bottom without sorting it again.

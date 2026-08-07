@@ -209,6 +209,13 @@ public sealed class TypeLibraryViewModel : ObservableObject
                 .Any(p => p.Kind == kind && p.Name == name);
             if (!exists) AddPrimitive(name, kind, kind.NaturalRange());
         }
+
+        // The bus's own identities are always available, never created by hand. Their members come from
+        // the bus at generation, so seeding them costs nothing and removes the step where a user has to
+        // know they exist before they can use one.
+        foreach (var kind in new[] { SyntheticEnum.MessageId, SyntheticEnum.ModuleId })
+            if (!_project.Project.Types.All.OfType<EnumType>().Any(e => e.Synthetic == kind))
+                AddSyntheticEnum(kind);
     }
 
     private string UniqueName(string preferred)
