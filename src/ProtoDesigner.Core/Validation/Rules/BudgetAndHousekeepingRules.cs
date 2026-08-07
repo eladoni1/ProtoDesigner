@@ -58,6 +58,10 @@ public sealed class UnreferencedTypeRule : IValidationRule
             // saying. Nothing is generated for an unreferenced type either way.
             if (type is ParameterType) continue;
 
+            // Same argument for the bus's own identity enums: they are seeded into every project rather
+            // than built by anyone, so an unused one is vocabulary, not a leftover.
+            if (type is EnumType { Synthetic: not SyntheticEnum.None }) continue;
+
             if (!reachable.Contains(type.Id))
                 yield return new Diagnostic(Code, Severity.Info,
                     $"Type '{type.Name}' is not used by any message. Remove it or add a field that references it.",

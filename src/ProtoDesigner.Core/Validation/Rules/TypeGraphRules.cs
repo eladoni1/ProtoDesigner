@@ -102,10 +102,17 @@ public sealed class EnumWithoutMembersRule : IValidationRule
     public IEnumerable<Diagnostic> Validate(ValidationContext ctx)
     {
         foreach (var e in ctx.Project.Types.All.OfType<EnumType>())
+        {
+            // A synthetic enum is *supposed* to be empty: the bus fills it at generation, and storing the
+            // members is exactly what this type exists to avoid. Reporting it as an error blocked
+            // generation for every project, since these are seeded into all of them.
+            if (e.Synthetic != SyntheticEnum.None) continue;
+
             if (e.Members.Count == 0)
                 yield return new Diagnostic(Code, Severity.Error,
                     $"Enum '{e.Name}' declares no members. Add at least one member or delete the enum.",
                     EntityPath.ForType(e));
+        }
     }
 }
 

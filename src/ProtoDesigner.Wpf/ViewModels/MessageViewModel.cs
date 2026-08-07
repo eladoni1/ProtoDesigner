@@ -49,6 +49,11 @@ public sealed class MessageViewModel : ObservableObject
             if (Message.Name == value || string.IsNullOrWhiteSpace(value)) return;
             Project.Journal.Do(new RenameMessageCommand(Message, value));
             OnPropertyChanged();
+
+            // The bus's MessageId enum is derived from these, so the type library has to be rebuilt or it
+            // keeps showing the old answer. This is the cost of deriving rather than storing, and it is
+            // cheaper than a stored list that can disagree with the model.
+            Project.RefreshAll();
         }
     }
 
@@ -63,6 +68,7 @@ public sealed class MessageViewModel : ObservableObject
             OnPropertyChanged();
             OnPropertyChanged(nameof(WireIdClash));
             OnPropertyChanged(nameof(HasWireIdClash));
+            Project.RefreshAll();
         }
     }
 
