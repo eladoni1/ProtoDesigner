@@ -30,11 +30,22 @@ public static class ProtobufRules
         new ProtoDuplicateFieldNumberRule(),
     };
 
-    /// <summary>Every value node of a message, or nothing when the layout is impossible.</summary>
+    /// <summary>Every leaf value node of a message, or nothing when the layout is impossible.</summary>
     /// <remarks>
+    /// <para>
     /// Reads the computed layout rather than <see cref="FieldEncoding"/> directly, because a binding's
     /// width is frequently null and inherited from the message, bus or project. The layout is where those
     /// have been resolved, and it reaches leaves nested inside structs and arrays as well.
+    /// </para>
+    /// <para>
+    /// <b>Leaves only.</b> <c>MessageLayout.Values()</c> also yields the struct and array nodes that
+    /// contain them, and those carry the *aggregate* width — a struct holding a 4-bit field spans 52
+    /// bits, which is not a whole number of bytes either. Reporting the container is not wrong so much as
+    /// useless: it refuses the message while pointing at <c>header</c> rather than at
+    /// <c>header.randomType</c>, and naming the offending field is the entire reason this gate exists
+    /// instead of a flat "unsupported". A struct is representable in protobuf as a nested message; only
+    /// its scalars can fail.
+    /// </para>
     /// </remarks>
     internal static IEnumerable<(Bus Bus, Message Message, LayoutNode Node)> ValueNodes(ValidationContext ctx)
     {
@@ -45,7 +56,8 @@ public static class ProtobufRules
                 if (layout is null) continue;   // an impossible layout is another rule's finding
 
                 foreach (var node in layout.Values())
-                    yield return (bus, message, node);
+                    if (node.Kind is LayoutNodeKind.Parameter or LayoutNodeKind.Enum)
+                        yield return (bus, message, node);
             }
     }
 }

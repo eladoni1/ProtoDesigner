@@ -287,6 +287,59 @@ public class ProtobufCompatibilityTests
     }
 
     [Fact]
+    public void A_sub_byte_field_inside_a_struct_is_named_by_its_path_not_its_container()
+    {
+        // MessageLayout.Values() yields the struct node as well as its leaves, and a struct holding a
+        // 4-bit field spans 52 bits — not a whole number of bytes either. Reporting the container refuses
+        // the right message while pointing at the wrong thing, which defeats the reason this gate names
+        // fields at all. A struct is perfectly representable as a nested message; only its scalars fail.
+        var project = new Project("Nested");
+        var u8 = project.Types.Add(new ParameterType(TypeId.New(), "u8", PrimitiveKind.U8));
+        var narrow = project.Types.Add(new ParameterType(TypeId.New(), "Narrow", PrimitiveKind.U16,
+            new NumericRange(0, 15)));
+
+        var header = project.Types.Add(new StructType(TypeId.New(), "Header")
+            .With(new FieldBinding(FieldId.New(), "messageId", u8.Id),
+                  new FieldBinding(FieldId.New(), "randomType", narrow.Id, FieldEncoding.Packed(4))));
+
+        var bus = new Bus(BusId.New(), "Main", Transport.Ethernet);
+        var message = new Message(MessageId.New(), "Telemetry") { WireId = 1 };
+        message.Fields.Add(new FieldBinding(FieldId.New(), "header", header.Id));
+        bus.Messages.Add(message);
+        project.Buses.Add(bus);
+
+        var result = ProtobufCompatibility.ForBus(project, bus).Single();
+
+        Assert.False(result.IsEligible);
+        Assert.Contains("header.randomType", result.Reason!, StringComparison.Ordinal);
+        Assert.Contains("4 bits", result.Reason!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_struct_of_byte_aligned_fields_is_exportable_however_wide_it_is()
+    {
+        // The other half. Nothing about a struct's own total width matters to protobuf — it becomes a
+        // nested message, and its fields are what have to be expressible.
+        var project = new Project("Wide");
+        var u8 = project.Types.Add(new ParameterType(TypeId.New(), "u8", PrimitiveKind.U8));
+        var u32 = project.Types.Add(new ParameterType(TypeId.New(), "u32", PrimitiveKind.U32));
+
+        var header = project.Types.Add(new StructType(TypeId.New(), "Header")
+            .With(new FieldBinding(FieldId.New(), "messageId", u8.Id),
+                  new FieldBinding(FieldId.New(), "timestamp", u32.Id)));
+
+        var bus = new Bus(BusId.New(), "Main", Transport.Ethernet);
+        var message = new Message(MessageId.New(), "Telemetry") { WireId = 1 };
+        message.Fields.Add(new FieldBinding(FieldId.New(), "header", header.Id));
+        bus.Messages.Add(message);
+        project.Buses.Add(bus);
+
+        var result = ProtobufCompatibility.ForBus(project, bus).Single();
+
+        Assert.True(result.IsEligible, $"a byte-aligned struct was refused: {result.Reason}");
+    }
+
+    [Fact]
     public void A_struct_level_finding_leaves_messages_that_do_not_use_it_alone()
     {
         // The other half, and the one that fails if attribution is too eager: marking every message on the
