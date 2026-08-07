@@ -117,7 +117,7 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 5b | Protobuf schema target + protovalidate | **Done** — gated per message, protoc-verified |
 | 6 | Shared storage & collaboration | Not started — see `docs/shared-storage-design.md` |
 
-**1784 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
+**1795 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
 rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
 red one. None of the toolchains is vendored.
 
@@ -276,10 +276,7 @@ every emitted function name must be unique.
 - Nothing consumes a generated `.proto` end to end (`protoc --csharp_out`, populate, serialize,
   deserialize). The schema is proven valid and its constraints proven to fire; it is not proven *usable*
   by a generated stub. See the note under "Open work" before spending time on it.
-- **`ArrayLength.LengthPrefixed` never reaches a generator.** `IrBuilder.ResolveField` throws on the
-  synthetic `x.__length` layout node ("has no TypeId"). It has layout tests and no `Corpus` entry, which
-  is why nothing caught it. `Terminated` and `FillRemaining` are likely in the same position. The array
-  editor therefore only ever produces `Fixed` or `CountFromField` in practice.
+- **`ArrayLength.LengthPrefixed` never reaches a generator** — see open-work item 1 below.
 
 The corpus is shaped for wire layouts and declares almost no ranges, so it would show nothing if every
 protovalidate constraint vanished. `ProtovalidateFixture.BuildProject()` is the fixture shaped for the
@@ -326,41 +323,42 @@ something and watching it go red — do the same before trusting a change here.
 
 ### Open work, in the order I would take it
 
-1. **Bit order has no UI control yet, though it now works everywhere below one.** `pd_bw_write_unsigned`
-   and `BitBuffer` both take a `BitOrder`, LSB-first round-trips in both, and the cross-check compiles and
-   diffes it — but nothing in the editor sets it. Endianness is done at all three levels (bus dialog,
-   message header, per-field picker, resolved value shown with a `*` when inherited); bit order needs the
-   same three controls plus a decision about whether it belongs on a field at all, since a byte-aligned
-   protocol never varies it.
+1. **`ArrayLength.LengthPrefixed` never reaches a generator.** `IrBuilder.ResolveField` throws on the
+   synthetic `x.__length` layout node ("has no TypeId"). It has layout tests and no `Corpus` entry, which
+   is why nothing caught it. `Terminated` and `FillRemaining` are likely in the same position, and the
+   array editor therefore only ever produces `Fixed` or `CountFromField` in practice.
 2. **Right-click a field to edit its type**, offering what right-clicking the type in the library does.
 3. **Per-message export checklist** in the Generate dialog. It currently reports what a target left out;
    it does not let you tick individual messages.
 4. **C# encode/decode.** Declarations and `OnWireLength` exist; the codec does not.
 5. **`FillRemaining` / `Terminated` decode** — scan for the sentinel or consume the remainder instead of
    asking the caller for a count.
-6. **The built-in ID enums show as empty in the editor, and that is the bug.** Members are filled by
-   `IrBuilder` at generation, so the model's `Members` list really is empty and the Types panel honestly
-   reports it — but a user adding a message or a module sees nothing happen, which reads as broken. The
-   editor needs to show the *resolved* members for the selected bus (derive on display, still never
-   store), and say which bus they came from. Fix this before the test item below.
-7. **Decide what a duplicate message `WireId` should do.** Today it is a `Diagnostic` and the edit stands,
-   which follows the rule that the validator reports rather than blocks. The alternative is for the
-   editor to refuse the keystroke and revert to the previous id. Worth deciding deliberately: reverting is
-   friendlier for a typo, but it is the first place the editor would override a user instead of telling
-   them, and every other invalid state in this tool is allowed to exist while being reported.
-8. **Test the built-in ID enums.** Deferred deliberately, not forgotten: `MessageId`/`ModuleId` are seeded
+6. **Test the built-in ID enums.** Deferred deliberately, not forgotten: `MessageId`/`ModuleId` are seeded
    into every project and their members are derived per bus, so the cases to cover are a renamed bus, a
    renamed message, a changed `WireId`, a renamed module, and a project saved before they existed loading
    without them. None of that is covered yet.
-9. **Match the ID enums to the requested spelling, or decide not to.** The shape asked for was
+7. **Match the ID enums to the requested spelling, or decide not to.** The shape asked for was
    `<BUS_NAME>_MESSAGE_ID_NA` / `<BUS_NAME>_<MODULE_NAME>`; what is emitted is
    `<ns>_<Bus>MessageId_NotAssigned` / `<ns>_<Bus>ModuleId_<Module>`, which is the C target's own naming
    convention and already carries the bus scope the request was after. Renaming would churn every golden
    and break any deployed code that switches on these. Worth a decision, not an assumption.
-10. **Wire-compatibility diffing** — compare two versions' `MessageLayout`s and report which changes
+8. **Wire-compatibility diffing** — compare two versions' `MessageLayout`s and report which changes
    break a deployed decoder (reorder, narrow, widen, endianness, `WireId` change) versus which are safe
    (rename anything — identity is an ID). This needs no database, works against the last git commit, and
    is the thing git structurally cannot do for a binary protocol. Recommended before any of Phase 6.
+
+**Settled, so that they are not reopened as questions:**
+
+- **Byte order and bit order are both bus-level, and nowhere else.** One bus is one agreement about wire
+  format; two modules on it disagreeing is a broken link, not a configuration. `LayoutOptions` still
+  carries a message- and field-level override and `EffectiveLayoutOptions.Resolve` still walks the whole
+  chain — the editor simply does not offer them, and the view models read the resolved answer so the grid
+  cannot drift from what is generated. If per-link byte order is ever wanted, the modelling answer is two
+  buses with the shared module as a gateway, not an override: a receiver identifies a frame by its message
+  id and cannot know which sender produced it, so an edge-scoped format is undecodable.
+- **A duplicate message `WireId` is reported, not refused.** The edit stands and an inline red note appears
+  under the Message ID box. This follows rule 5 — the validator reports, it does not block — and the
+  editor never silently overrides a keystroke.
 
 **Compiling the schema is a step after generation, never inside a generator.**
 `ProtocCompiler` (Application) runs the real protoc over the written `.proto` files, producing C++, C#,
@@ -803,6 +801,13 @@ overflow.
 - **Only emit a protovalidate range when it narrows the *protobuf* scalar, not the host.** A `u16`
   becomes `uint32`, so its 0..65535 span is real information the type no longer carries. A `u32`'s full
   span is exactly `uint32`'s, and restating it reads as a designed limit when it is the absence of one.
+- **Byte order and bit order need two protobuf warnings, not one.** PD0072 fires on big-endian, PD0075 on
+  LSB-first, and they cannot be merged because they do not cover the same fields: byte order is only
+  observable above 8 bits, whereas bit order reverses the bits of any field of two or more. An 8-bit
+  LSB-first field has no byte order to lose and very much has a bit order, so folding the two behind the
+  `BitWidth <= 8` guard would let an LSB-first bus export in silence. Both are `Warning` — protobuf fixes
+  both by specification and two protobuf peers still agree with each other, so nothing is lost in the data,
+  only in the design's intent.
 - **A generated `.proto` must never carry `OnWireLength` or wire-size macros.** Those are our byte
   counts, and protobuf's are different; printing them side by side is the confusion the gate exists to
   prevent.

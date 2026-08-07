@@ -20,10 +20,16 @@
       <TextBlock x:Name="TransportHint" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,14"/>
 
       <TextBlock Style="{StaticResource SectionLabel}" Text="Byte order"
-                 ToolTip="Which end of a multi-byte value goes first on the wire. This is the bus default; a message or a single field can override it."/>
+                 ToolTip="Which end of a multi-byte value goes first on the wire. Every message on this bus uses it."/>
       <ComboBox x:Name="EndiannessBox" Margin="0,4,0,4"/>
       <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,14"
                  Text="A property of the protocol, not of your CPU: the generated code assembles bytes with shifts, so the same header produces identical bytes on a big- or little-endian machine."/>
+
+      <TextBlock Style="{StaticResource SectionLabel}" Text="Bit order"
+                 ToolTip="Which end of a value's bits is written first. Unlike byte order this applies to every field of two bits or more, not just multi-byte ones."/>
+      <ComboBox x:Name="BitOrderBox" Margin="0,4,0,4"/>
+      <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,14"
+                 Text="MSB-first is what almost every protocol means, and the only setting that lets whole bytes be copied straight through. Choose LSB-first only if you are matching a device that already does — it reverses the bits of every field, including byte-aligned ones."/>
 
       <TextBlock Style="{StaticResource SectionLabel}" Text="Modules"/>
       <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,2,0,6"

@@ -77,4 +77,5 @@ public static class DiagnosticCodes
     public const string ProtoEndiannessIgnored    = "PD0072";
     public const string ProtoDuplicateFieldNumber = "PD0073";
     public const string ProtoNarrowInteger        = "PD0074";
+    public const string ProtoBitOrderIgnored      = "PD0075";
 }

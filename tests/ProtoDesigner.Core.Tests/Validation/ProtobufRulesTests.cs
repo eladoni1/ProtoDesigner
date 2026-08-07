@@ -138,6 +138,46 @@ public class ProtobufRulesTests
     }
 
     [Fact]
+    public void Lsb_first_is_reported_but_does_not_block()
+    {
+        var b = new ValidationBuilder();
+        var u32 = b.Prim("u32", PrimitiveKind.U32);
+        b.NewMessage("M", ValidationBuilder.F("value", u32,
+            new FieldEncoding { BitOrder = BitOrder.LsbFirst }));
+
+        var findings = Gate(b);
+        var note = findings.Has(DiagnosticCodes.ProtoBitOrderIgnored);
+        Assert.Equal(Severity.Warning, note.Severity);
+        findings.NoErrors();
+    }
+
+    [Fact]
+    public void A_single_byte_field_still_has_a_bit_order_to_lose()
+    {
+        // The point of a separate rule from PD0072: byte order stops applying below 9 bits, bit order
+        // does not. An 8-bit LSB-first field is bit-reversed on the wire, and protobuf would not be.
+        var b = new ValidationBuilder();
+        var u8 = b.Prim("u8", PrimitiveKind.U8);
+        b.NewMessage("M", ValidationBuilder.F("value", u8,
+            new FieldEncoding { BitOrder = BitOrder.LsbFirst }));
+
+        var findings = Gate(b);
+        findings.Has(DiagnosticCodes.ProtoBitOrderIgnored);
+        findings.HasNo(DiagnosticCodes.ProtoEndiannessIgnored);
+    }
+
+    [Fact]
+    public void A_single_bit_field_has_no_bit_order_to_lose()
+    {
+        var b = new ValidationBuilder();
+        var flag = b.Prim("Flag", PrimitiveKind.Bool);
+        b.NewMessage("M", ValidationBuilder.F("value", flag,
+            new FieldEncoding { BitWidth = 1, BitOrder = BitOrder.LsbFirst }));
+
+        Gate(b).HasNo(DiagnosticCodes.ProtoBitOrderIgnored);
+    }
+
+    [Fact]
     public void Two_fields_claiming_one_number_is_an_error()
     {
         var b = new ValidationBuilder();

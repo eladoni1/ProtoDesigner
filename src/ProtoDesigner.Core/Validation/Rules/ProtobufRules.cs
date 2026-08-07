@@ -27,6 +27,7 @@ public static class ProtobufRules
         new ProtoSubByteFieldRule(),
         new ProtoScaledFieldRule(),
         new ProtoEndiannessRule(),
+        new ProtoBitOrderRule(),
         new ProtoDuplicateFieldNumberRule(),
         new ProtoNarrowIntegerRule(),
     };
@@ -216,6 +217,32 @@ public sealed class ProtoEndiannessRule : IValidationRule
 
             yield return new Diagnostic(Code, Severity.Warning,
                 $"Field '{node.Path}' is big-endian. Protobuf fixes byte order in its own specification, "
+                + "so the export drops this and both protobuf peers will still agree with each other.",
+                EntityPath.ForField(bus, message, node.Path));
+        }
+    }
+}
+
+/// <summary>Protobuf fixes bit order too, so an LSB-first bus loses that choice on export.</summary>
+/// <remarks>
+/// The sibling of <see cref="ProtoEndiannessRule"/>, and separate from it because the two do not cover the
+/// same fields. Byte order is only observable above 8 bits; bit order reverses the bits of any field of two
+/// or more, so a byte-aligned 8-bit field has no byte order to lose but very much has a bit order. Reporting
+/// one and not the other would leave an LSB-first bus exporting in silence.
+/// </remarks>
+public sealed class ProtoBitOrderRule : IValidationRule
+{
+    public string Code => DiagnosticCodes.ProtoBitOrderIgnored;
+
+    public IEnumerable<Diagnostic> Validate(ValidationContext ctx)
+    {
+        foreach (var (bus, message, node) in ProtobufRules.ValueNodes(ctx))
+        {
+            // A single bit is the same bit in either order, so there is nothing to lose.
+            if (node.BitOrder != BitOrder.LsbFirst || node.BitWidth < 2) continue;
+
+            yield return new Diagnostic(Code, Severity.Warning,
+                $"Field '{node.Path}' is LSB-first. Protobuf fixes bit order in its own specification, "
                 + "so the export drops this and both protobuf peers will still agree with each other.",
                 EntityPath.ForField(bus, message, node.Path));
         }

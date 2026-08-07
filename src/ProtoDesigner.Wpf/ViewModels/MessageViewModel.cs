@@ -23,6 +23,18 @@ public sealed class MessageViewModel : ObservableObject
     public Endianness ResolvedEndianness =>
         Project.Project.OptionsFor(_bus.Bus, Message).Endianness;
 
+    /// <summary>
+    /// The bit order this message serialises with once the chain has been walked.
+    /// </summary>
+    /// <remarks>
+    /// Bus-level for the same reason as <see cref="ResolvedEndianness"/>, but it is not the same question:
+    /// byte order only exists for a value wider than a byte, whereas bit order reverses the bits of
+    /// <em>any</em> field of two bits or more. A 16-bit value sent LSB-first is not a byte swap of the
+    /// MSB-first form — it is the bit-reversal of it.
+    /// </remarks>
+    public BitOrder ResolvedBitOrder =>
+        Project.Project.OptionsFor(_bus.Bus, Message).BitOrder;
+
     public MessageViewModel(BusViewModel bus, Message message)
     {
         _bus = bus;

@@ -65,6 +65,19 @@ public partial class BusEditorDialog : Window
         new("Big-endian (network order, most significant byte first)", Endianness.Big),
     ];
 
+    /// <summary>A bit-order choice, with the same "inherit" entry as byte order.</summary>
+    private sealed record BitOrderOption(string Label, BitOrder? Value)
+    {
+        public override string ToString() => Label;
+    }
+
+    private static readonly BitOrderOption[] BitOrders =
+    [
+        new("Inherit from project", null),
+        new("MSB-first (most significant bit first)", BitOrder.MsbFirst),
+        new("LSB-first (least significant bit first)", BitOrder.LsbFirst),
+    ];
+
     private BusEditorDialog(ProjectViewModel project, BusViewModel? existing)
     {
         InitializeComponent();
@@ -74,6 +87,7 @@ public partial class BusEditorDialog : Window
         ModulesList.ItemsSource = _rows;
         TransportBox.ItemsSource = Transports;
         EndiannessBox.ItemsSource = Endiannesses;
+        BitOrderBox.ItemsSource = BitOrders;
 
         if (existing is null)
         {
@@ -81,6 +95,7 @@ public partial class BusEditorDialog : Window
             NameBox.Text = "NewBus";
             TransportBox.SelectedItem = Transports[0];
             EndiannessBox.SelectedItem = Endiannesses[0];
+            BitOrderBox.SelectedItem = BitOrders[0];
 
             // Two modules is the smallest set that can carry a route, so seeding them means the routes
             // editor is usable the moment the first message is created.
@@ -94,6 +109,8 @@ public partial class BusEditorDialog : Window
             TransportBox.SelectedItem = Transports.FirstOrDefault(t => t.Value == existing.Transport) ?? Transports[0];
             EndiannessBox.SelectedItem =
                 Endiannesses.FirstOrDefault(e => e.Value == existing.Bus.Options.Endianness) ?? Endiannesses[0];
+            BitOrderBox.SelectedItem =
+                BitOrders.FirstOrDefault(b => b.Value == existing.Bus.Options.BitOrder) ?? BitOrders[0];
             foreach (var m in existing.Bus.Modules) _rows.Add(new ModuleRow(m, m.Name));
         }
 
@@ -186,11 +203,13 @@ public partial class BusEditorDialog : Window
 
         var transport = (TransportBox.SelectedItem as TransportOption)?.Value ?? Transport.Ethernet;
         var endianness = (EndiannessBox.SelectedItem as EndiannessOption)?.Value;
+        var bitOrder = (BitOrderBox.SelectedItem as BitOrderOption)?.Value;
 
         if (_existing is null)
         {
             var bus = _project.AddBus(name!, transport);
             bus.Bus.Options.Endianness = endianness;
+            bus.Bus.Options.BitOrder = bitOrder;
             foreach (var row in _rows)
                 bus.AddModule(row.Name.Trim());
             Result = bus;
@@ -200,6 +219,7 @@ public partial class BusEditorDialog : Window
             _existing.Name = name!;
             _existing.Transport = transport;
             _existing.Bus.Options.Endianness = endianness;
+            _existing.Bus.Options.BitOrder = bitOrder;
             ApplyModuleEdits(_existing);
             Result = _existing;
         }

@@ -153,8 +153,8 @@
                        ToolTip="Serialised size. Type a number, or a value like '5 bits'."/>
             <TextBlock Grid.Column="5" Style="{StaticResource SectionLabel}" Text="Factor"
                        ToolTip="Value represented by one wire step. Auto-set to the finest the width allows."/>
-            <TextBlock Grid.Column="6" Style="{StaticResource SectionLabel}" Text="Byte order"
-                       ToolTip="Which end of a multi-byte value goes first. Set on the bus — one bus is one agreement about wire format, so every message on it shares this."/>
+            <TextBlock Grid.Column="6" Style="{StaticResource SectionLabel}" Text="Wire order"
+                       ToolTip="Byte order · bit order. Both are set on the bus — one bus is one agreement about wire format, so every message on it shares them. Byte order only applies above 8 bits; bit order applies from 2 bits up."/>
             <TextBlock Grid.Column="7" Style="{StaticResource SectionLabel}" Text="Range"/>
           </Grid>
         </Border>
@@ -216,9 +216,10 @@
                                Foreground="{StaticResource InkMuted}"
                                ToolTip="Value represented by one wire step. Derived from the type's range and wire size."/>
 
-                    <TextBlock Grid.Column="6" Text="{Binding EndiannessLabel}" Style="{StaticResource CaptionText}"
+                    <TextBlock Grid.Column="6" Text="{Binding WireOrderLabel}" Style="{StaticResource CaptionText}"
+                               FontFamily="{StaticResource MonoFont}"
                                VerticalAlignment="Center" Margin="0,0,8,0"
-                               ToolTip="Comes from the bus. One bus is one agreement about byte order, so it is not set per message or per field."/>
+                               ToolTip="Byte order · bit order, both from the bus. A 1-bit field shows nothing because neither applies to it; a field of 8 bits or fewer shows bit order alone, since a single byte has no byte order."/>
                     <TextBlock Grid.Column="7" Text="{Binding RangeLabel}" Style="{StaticResource CaptionText}"
                                FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis"
                                VerticalAlignment="Center" Margin="4,0,6,0"

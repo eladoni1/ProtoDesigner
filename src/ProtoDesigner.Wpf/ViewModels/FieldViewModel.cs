@@ -112,25 +112,31 @@ public sealed class FieldViewModel : ObservableObject
     }
 
     /// <summary>
-    /// The byte order this field will actually serialise with, and where that answer came from.
+    /// The byte and bit order this field will actually serialise with — "little · MSB".
     /// </summary>
     /// <remarks>
-    /// Endianness inherits field → message → bus → project, so the value that matters is almost never
-    /// written on the field itself. Showing the resolved answer — and marking an inherited one — is what
-    /// makes the chain legible without opening three dialogs to work out what a byte will look like.
-    ///
-    /// A field narrower than a byte has no byte order to have, so it shows "—" rather than a value that
-    /// would be true but meaningless.
+    /// Both come from the bus, so every row shows the same answer; they are here rather than stated once
+    /// in the header because <em>which of them applies</em> varies per row, and that is the part a reader
+    /// cannot work out at a glance:
+    /// <list type="bullet">
+    /// <item>1 bit — neither applies. There is one bit; no ordering of it exists.</item>
+    /// <item>2..8 bits — bit order only. A byte has no byte order, but its bits can still be reversed.</item>
+    /// <item>over 8 bits — both.</item>
+    /// </list>
+    /// No star marking inheritance any more: both are bus-level agreements, so there is nowhere else the
+    /// answer could have come from and marking it "inherited" would imply an override exists somewhere.
     /// </remarks>
-    public string EndiannessLabel
+    public string WireOrderLabel
     {
         get
         {
-            if (!SupportsWireWidth || WireBits <= 8) return "—";
+            if (!SupportsWireWidth || WireBits < 2) return "—";
 
-            // No star any more: byte order is a bus-level agreement, so there is nowhere else it could
-            // have come from and marking it "inherited" would imply an override exists somewhere.
-            return _message.ResolvedEndianness == Endianness.Big ? "big" : "little";
+            var bits = _message.ResolvedBitOrder == BitOrder.LsbFirst ? "LSB" : "MSB";
+            if (WireBits <= 8) return bits;
+
+            var bytes = _message.ResolvedEndianness == Endianness.Big ? "big" : "little";
+            return $"{bytes} · {bits}";
         }
     }
 
@@ -175,7 +181,7 @@ public sealed class FieldViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(WireBits));
         OnPropertyChanged(nameof(WireLabel));
-        OnPropertyChanged(nameof(EndiannessLabel));
+        OnPropertyChanged(nameof(WireOrderLabel));
         OnPropertyChanged(nameof(Factor));
         OnPropertyChanged(nameof(FactorLabel));
         OnPropertyChanged(nameof(IsCompressed));
