@@ -117,7 +117,7 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 5b | Protobuf schema target + protovalidate | **Done** — gated per message, protoc-verified |
 | 6 | Shared storage & collaboration | Not started — see `docs/shared-storage-design.md` |
 
-**1753 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
+**1752 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
 rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
 red one. None of the toolchains is vendored.
 
@@ -724,6 +724,17 @@ overflow.
 - **The protobuf gate reads the computed layout, not `FieldEncoding` directly**, because a binding's
   width is usually null and inherited from the message, bus or project. `ProtobufRules.ValueNodes`
   walks `MessageLayout.Values()`, which has the resolved widths and reaches inside structs and arrays.
+- **Protobuf gets 32- and 64-bit integers only.** `ProtoNarrowIntegerRule` (PD0074) refuses any integer
+  field whose wire width is not 32 or 64 — `u8`, `u16`, `i16`, `char` at its natural width, and anything
+  narrowed. Nothing is *lost* by widening a `u16` to `uint32`, and the range still survives as a
+  constraint, but the field stops being the two bytes it was designed as, and wire widths meaning
+  something is the premise of this tool. `bool` and enums are exempt: they are real protobuf types that
+  keep their meaning rather than widened integers. The fix for a refused field is to set its wire size to
+  4 or 8 bytes; otherwise the message stays on the C target.
+- **Nearly the whole `Corpus` is withheld from protobuf as a result**, because it is built from `u8`/`u16`
+  to exercise wire layouts. Only `raw-floats` exports. That is why proto golden coverage lives on
+  `ProtovalidateFixture` (goldened as `Golden/constraints.proto`), which is all-32-bit by design — do not
+  widen the corpus to restore it.
 - **An offset-only transform is protobuf-exportable; a scale is not.** `wire = (value - Offset) / Scale`.
   The offset only narrows the width and protobuf sends the value itself, so the range survives as a
   constraint. A scale is lossy quantization, and a protobuf peer would carry full precision while a C

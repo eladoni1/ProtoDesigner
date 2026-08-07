@@ -28,6 +28,7 @@ public static class ProtobufRules
         new ProtoScaledFieldRule(),
         new ProtoEndiannessRule(),
         new ProtoDuplicateFieldNumberRule(),
+        new ProtoNarrowIntegerRule(),
     };
 
     /// <summary>Every leaf value node of a message, or nothing when the layout is impossible.</summary>
@@ -60,6 +61,23 @@ public static class ProtobufRules
                         yield return (bus, message, node);
             }
     }
+
+    /// <summary>
+    /// Whether a node is a plain integer, as opposed to a float, a bool, or an enum.
+    /// </summary>
+    /// <remarks>
+    /// The distinction matters to <see cref="ProtoNarrowIntegerRule"/>: <c>bool</c> and enums are real
+    /// protobuf types that keep their meaning, while a narrow integer is silently rebuilt as a wider one.
+    /// <c>char</c> counts as an integer — it maps to <c>uint32</c>, so it widens like any other.
+    /// </remarks>
+    internal static bool IsIntegerParameter(ValidationContext ctx, LayoutNode node)
+    {
+        if (node.Kind != LayoutNodeKind.Parameter) return false;
+        if (node.TypeId is not { } id) return false;
+        if (!ctx.Project.Types.TryGet(id, out var type) || type is not ParameterType p) return false;
+
+        return p.Kind is not (PrimitiveKind.Bool or PrimitiveKind.F32 or PrimitiveKind.F64);
+    }
 }
 
 /// <summary>A field narrower than a byte, or not a whole number of bytes, has no protobuf equivalent.</summary>
@@ -83,6 +101,50 @@ public sealed class ProtoSubByteFieldRule : IValidationRule
                 $"Field '{node.Path}' is {node.BitWidth} bits. Protobuf has no sub-byte fields, so this "
                 + "message cannot be exported as .proto. Widen it to a whole number of bytes, or keep "
                 + "this message on the C target.",
+                EntityPath.ForField(bus, message, node.Path));
+        }
+    }
+}
+
+/// <summary>
+/// An integer whose wire width is not one protobuf actually has.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Protobuf's integer scalars are 32- and 64-bit. A <c>u16</c> exported as <c>uint32</c> is not wrong —
+/// nothing is lost, and the declared range survives as a protovalidate constraint — but the field stops
+/// being the two bytes it was designed as, and this tool exists to make wire widths mean something. So a
+/// width protobuf cannot name is refused, in the same spirit as the sub-byte rule and one step further.
+/// </para>
+/// <para>
+/// <b>What is still allowed:</b> 32- and 64-bit integers, <c>float</c>/<c>double</c>, <c>bool</c>, and
+/// enums. Bool and enum are real protobuf types rather than widened integers — an enum keeps its named
+/// members and means exactly what it meant, so nothing about it is being silently reinterpreted.
+/// </para>
+/// <para>
+/// Widening the type is the fix: an 8-bit field set to 32 bits on the wire occupies four bytes on both
+/// sides and exports cleanly. Otherwise the message stays on the C target, which is where a two-byte
+/// field is a two-byte field.
+/// </para>
+/// </remarks>
+public sealed class ProtoNarrowIntegerRule : IValidationRule
+{
+    public string Code => DiagnosticCodes.ProtoNarrowInteger;
+
+    public IEnumerable<Diagnostic> Validate(ValidationContext ctx)
+    {
+        foreach (var (bus, message, node) in ProtobufRules.ValueNodes(ctx))
+        {
+            // Sub-byte widths belong to PD0070; reporting both for one field would say the same thing
+            // twice in different words.
+            if (node.BitWidth % 8 != 0) continue;
+            if (node.BitWidth is 32 or 64) continue;
+            if (!ProtobufRules.IsIntegerParameter(ctx, node)) continue;
+
+            yield return new Diagnostic(Code, Severity.Error,
+                $"Field '{node.Path}' is {node.BitWidth / 8} byte(s). Protobuf's integers are 32- or "
+                + "64-bit, so this would go on the wire as a different size than you designed. Set its "
+                + "wire size to 4 or 8 bytes, or keep this message on the C target.",
                 EntityPath.ForField(bus, message, node.Path));
         }
     }

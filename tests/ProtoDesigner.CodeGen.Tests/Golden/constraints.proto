@@ -51,6 +51,7 @@ message Wide {
     (buf.validate.field).double.lte = 1.0
   ];
   bool flag = 5;
+  // 32 bits
   uint32 letter = 6 [
     (buf.validate.field).uint32.gte = 32,
     (buf.validate.field).uint32.lte = 126

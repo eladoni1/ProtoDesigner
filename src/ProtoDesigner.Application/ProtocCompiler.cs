@@ -151,14 +151,17 @@ public static class ProtocCompiler
                 "No .proto files were written, so there was nothing for protoc to compile. This target "
                 + "emits a schema only for messages protobuf can express — check whether any survived the gate.");
 
-        var before = Snapshot(directory);
-
         // The schema imports buf/validate/validate.proto when constraints are on, and protoc resolves
         // imports by path rather than by package. Staging a copy makes the compile work regardless of how
         // the toolchain is laid out on disk — and compiling it too, so the emitted C++ has a
         // validate.pb.h to include rather than a dangling reference.
         var staged = StageValidateProto(directory, sources);
         if (staged is not null) sources.Add(staged);
+
+        // Snapshot *after* staging: the copied validate.proto is an input we brought in, not something
+        // protoc produced, and listing it as output invites the reasonable question of what else in that
+        // list we invented. Its compiled .pb.h/.pb.cc are genuine output and still appear.
+        var before = Snapshot(directory);
 
         var psi = new ProcessStartInfo(compiler)
         {

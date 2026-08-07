@@ -27,7 +27,7 @@ so resizing or reordering a field is just an edit followed by a recompute.
 | 5b | Protobuf schema target + protovalidate | **Done** — gated per message, protoc- and runtime-verified |
 | 6 | Shared storage & collaboration | Not started — [design note](docs/shared-storage-design.md) |
 
-**1753 automated tests, all passing.** That includes a cross-language check that compiles the generated
+**1752 automated tests, all passing.** That includes a cross-language check that compiles the generated
 code under MSVC — once as C, once as C++ — and asserts it produces byte-identical output to the C#
 reference codec over the whole wire matrix. Two independent implementations: wherever they disagree, one
 of them is wrong. The protobuf target gets the same treatment: its schema is compiled by real `protoc`,
@@ -165,6 +165,9 @@ Because of that it is gated per message. Anything protobuf cannot represent is *
 never silently translated:
 
 - sub-byte field widths — protobuf has no 4-bit field
+- integers that are not 32 or 64 bits — protobuf has no `u8` or `u16`, so exporting one would quietly
+  change the size you designed. `bool` and enums are exempt: they are real protobuf types, not widened
+  integers
 - a scalar transform with a scale other than 1 — quantization is lossy, so a protobuf peer and a C peer
   would disagree about the number
 

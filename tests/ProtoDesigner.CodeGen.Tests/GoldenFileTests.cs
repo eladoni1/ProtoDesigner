@@ -112,10 +112,25 @@ public class GoldenFileTests
         // a gate that started refusing everything would look like a passing suite with fewer files.
         var withheld = Corpus.All().Select(c => c.Name).Except(Exportable()).Order().ToArray();
 
-        // `biased-signed` belongs here despite the name: its transform is `MinimumScale(-100..100, 8)`,
-        // which is 200/255 rather than 1, so it is quantization and not the offset-only case protobuf can
-        // carry. An offset alone would be exportable.
-        Assert.Equal(new[] { "biased-signed", "packed-bits", "quantized" }, withheld);
+        // Nearly all of it, and that is not a regression. The corpus is built from u8 and u16 because it
+        // exists to exercise *wire layouts*, and protobuf's integers are 32- and 64-bit — so the
+        // narrow-integer rule withholds almost every entry. `raw-floats` survives because a float is a
+        // float in both worlds.
+        //
+        // `biased-signed` would be withheld anyway: its transform is `MinimumScale(-100..100, 8)`, which
+        // is 200/255 rather than 1, so it is quantization and not the offset-only case protobuf carries.
+        //
+        // Proto output is still covered where it matters — `constraints.proto` below is goldened from a
+        // fixture built for protobuf's rule groups, which is the right place for that coverage. Widening
+        // the corpus to suit protobuf would drag the C golden and cross-check suites along for a
+        // different axis entirely.
+        Assert.Equal(
+            new[]
+            {
+                "biased-signed", "dynamic-array", "packed-bits", "quantized", "scalars", "shared-struct",
+                "struct-and-array",
+            },
+            withheld);
     }
 
     [Fact]

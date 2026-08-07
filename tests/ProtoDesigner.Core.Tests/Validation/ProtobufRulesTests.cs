@@ -28,13 +28,26 @@ public class ProtobufRulesTests
     }
 
     [Fact]
-    public void A_whole_byte_field_is_exportable()
+    public void A_thirty_two_bit_field_is_exportable()
     {
+        // 32 and 64 are the only integer widths protobuf has, so they are the only ones that export.
+        var b = new ValidationBuilder();
+        var u32 = b.Prim("u32", PrimitiveKind.U32);
+        b.NewMessage("M", ValidationBuilder.F("value", u32));
+
+        Gate(b).NoErrors();
+    }
+
+    [Fact]
+    public void A_two_byte_field_is_not_exportable()
+    {
+        // Whole bytes, so the sub-byte rule does not fire — but protobuf has no 16-bit integer, and
+        // exporting one as uint32 would quietly make it a different size than it was designed as.
         var b = new ValidationBuilder();
         var u16 = b.Prim("u16", PrimitiveKind.U16);
         b.NewMessage("M", ValidationBuilder.F("value", u16));
 
-        Gate(b).NoErrors();
+        Gate(b).Has(DiagnosticCodes.ProtoNarrowInteger);
     }
 
     [Fact]
@@ -43,9 +56,9 @@ public class ProtobufRulesTests
         // 1000..1015 sent as codes 0..15. The offset exists only to narrow the width; protobuf sends the
         // value itself, so nothing is lost and the range survives as a protovalidate constraint.
         var b = new ValidationBuilder();
-        var temperature = b.Prim("Temperature", PrimitiveKind.U16, new NumericRange(1000, 1015));
+        var temperature = b.Prim("Temperature", PrimitiveKind.U32, new NumericRange(1000, 1015));
         b.NewMessage("M", ValidationBuilder.F("temperature", temperature,
-            new FieldEncoding { BitWidth = 16, Transform = new ScalarTransform(1000, 1) }));
+            new FieldEncoding { BitWidth = 32, Transform = new ScalarTransform(1000, 1) }));
 
         var findings = Gate(b);
         findings.HasNo(DiagnosticCodes.ProtoScaledField);

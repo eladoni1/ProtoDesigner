@@ -6,10 +6,10 @@
     "14d85674-54b6-4473-8388-17287dd6120b": {
       "name": "PressureKpa",
       "kind": "parameter",
-      "primitive": "U16",
+      "primitive": "U32",
       "rangeMin": "1000",
       "rangeMax": "1015",
-      "wireBits": 16,
+      "wireBits": 32,
       "wireForm": "Unsigned",
       "wireOffset": "1000",
       "wireScale": "1"
@@ -17,7 +17,7 @@
     "14fe7d23-6fc1-4852-a719-24af69f31f20": {
       "name": "Payload",
       "kind": "array",
-      "elementTypeId": "8d5c5975-d0e9-480a-8482-064de78d994e",
+      "elementTypeId": "e04002e1-f7da-466f-bdfb-6d164cc3ee01",
       "length": {
         "kind": "countFromField",
         "countFieldId": "5a34f794-6317-488a-bb11-af80e55ad9d8",
@@ -61,10 +61,10 @@
     "74e46850-6392-4906-8c0c-f3a97f36bc0c": {
       "name": "TiltDegrees",
       "kind": "parameter",
-      "primitive": "I16",
+      "primitive": "I32",
       "rangeMin": "-90",
       "rangeMax": "90",
-      "wireBits": 16,
+      "wireBits": 32,
       "wireForm": "Signed"
     },
     "7662d2ee-1582-4465-ab29-b7b162e05a87": {
@@ -112,7 +112,7 @@
         {
           "id": "db72f78f-f7fc-47a2-b067-d851db346843",
           "name": "messageId",
-          "typeId": "8d5c5975-d0e9-480a-8482-064de78d994e",
+          "typeId": "e04002e1-f7da-466f-bdfb-6d164cc3ee01",
           "encoding": {}
         },
         {
@@ -126,7 +126,7 @@
     "b84933c5-0095-48ef-ada9-1f0c9e573cff": {
       "name": "Samples",
       "kind": "array",
-      "elementTypeId": "24345f0d-e55e-4e9a-adac-1dcc7ca99a3d",
+      "elementTypeId": "e04002e1-f7da-466f-bdfb-6d164cc3ee01",
       "length": {
         "kind": "fixed",
         "count": 4
@@ -202,7 +202,7 @@
             {
               "id": "5a34f794-6317-488a-bb11-af80e55ad9d8",
               "name": "count",
-              "typeId": "8d5c5975-d0e9-480a-8482-064de78d994e",
+              "typeId": "e04002e1-f7da-466f-bdfb-6d164cc3ee01",
               "encoding": {}
             },
             {
@@ -214,7 +214,7 @@
             {
               "id": "5f2278b8-7f7b-46f6-8db2-a96af722f20b",
               "name": "checksum",
-              "typeId": "24345f0d-e55e-4e9a-adac-1dcc7ca99a3d",
+              "typeId": "e04002e1-f7da-466f-bdfb-6d164cc3ee01",
               "encoding": {}
             }
           ]
@@ -291,6 +291,26 @@
               "id": "91c5d468-5f4b-4929-a029-5ba4eaef0e32",
               "name": "samples",
               "typeId": "b84933c5-0095-48ef-ada9-1f0c9e573cff",
+              "encoding": {}
+            }
+          ]
+        },
+        {
+          "id": "528d7382-994f-47e4-a8e5-a9ffe566534c",
+          "name": "LegacyCounter",
+          "wireId": 5,
+          "options": {},
+          "routes": [
+            {
+              "from": "55e0f9f4-467a-43bd-8c22-e068b7d96837",
+              "to": "5aee0a2a-9216-42bf-bb8f-ab6b4ef5923d"
+            }
+          ],
+          "fields": [
+            {
+              "id": "88559437-ed5f-418e-8f42-62fa5ebeb514",
+              "name": "ticks",
+              "typeId": "24345f0d-e55e-4e9a-adac-1dcc7ca99a3d",
               "encoding": {}
             }
           ]

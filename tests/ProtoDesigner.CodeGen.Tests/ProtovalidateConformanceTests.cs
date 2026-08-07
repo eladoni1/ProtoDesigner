@@ -420,13 +420,14 @@ public sealed class ProtovalidateFixture : IDisposable
     {
         var p = new Project("Protovalidate");
 
+        // Every integer here is 32 bits: protobuf's integers are 32- and 64-bit, and anything narrower is
+        // refused by the gate rather than silently widened.
         var u32 = p.Types.Add(new ParameterType(TypeId.New(), "u32", PrimitiveKind.U32));
-        var u8 = p.Types.Add(new ParameterType(TypeId.New(), "u8", PrimitiveKind.U8));
-        var ratio = p.Types.Add(new ParameterType(TypeId.New(), "Ratio", PrimitiveKind.U8,
+        var ratio = p.Types.Add(new ParameterType(TypeId.New(), "Ratio", PrimitiveKind.U32,
             new NumericRange(0, 100)));
-        var tilt = p.Types.Add(new ParameterType(TypeId.New(), "Tilt", PrimitiveKind.I16,
+        var tilt = p.Types.Add(new ParameterType(TypeId.New(), "Tilt", PrimitiveKind.I32,
             new NumericRange(-90, 90)));
-        var pressure = p.Types.Add(new ParameterType(TypeId.New(), "Pressure", PrimitiveKind.U16,
+        var pressure = p.Types.Add(new ParameterType(TypeId.New(), "Pressure", PrimitiveKind.U32,
             new NumericRange(1000, 1015)));
 
         var counter = p.Types.Add(new ParameterType(TypeId.New(), "Counter", PrimitiveKind.U64,
@@ -439,9 +440,9 @@ public sealed class ProtovalidateFixture : IDisposable
             new NumericRange(0, 1)));
         var flag = p.Types.Add(new ParameterType(TypeId.New(), "Flag", PrimitiveKind.Bool));
         var letter = p.Types.Add(new ParameterType(TypeId.New(), "Letter", PrimitiveKind.Char,
-            new NumericRange(32, 126)));
+            new NumericRange(32, 126)) { WireBits = 32 });
 
-        var mode = p.Types.Add(new EnumType(TypeId.New(), "Mode", PrimitiveKind.U8)
+        var mode = p.Types.Add(new EnumType(TypeId.New(), "Mode", PrimitiveKind.U32)
             .With("Idle", 0).With("Run", 5));
         var modes = p.Types.Add(new ArrayType(TypeId.New(), "Modes", mode.Id, new ArrayLength.Fixed(3)));
 
@@ -461,9 +462,12 @@ public sealed class ProtovalidateFixture : IDisposable
         wide.Fields.Add(new FieldBinding(FieldId.New(), "level", level.Id));
         wide.Fields.Add(new FieldBinding(FieldId.New(), "precise", precise.Id));
         wide.Fields.Add(new FieldBinding(FieldId.New(), "flag", flag.Id));
-        wide.Fields.Add(new FieldBinding(FieldId.New(), "letter", letter.Id));
+        // char is 8 bits by nature, so it needs widening explicitly to survive the gate. WireBits on
+        // the type is only the default a new binding starts from; this fixture builds bindings directly.
+        wide.Fields.Add(new FieldBinding(FieldId.New(), "letter", letter.Id,
+            new FieldEncoding { BitWidth = 32 }));
 
-        var count = new FieldBinding(FieldId.New(), "count", u8.Id);
+        var count = new FieldBinding(FieldId.New(), "count", u32.Id);
         var samples = p.Types.Add(new ArrayType(TypeId.New(), "Samples", ratio.Id,
             new ArrayLength.CountFromField(count.Id, 8)));
 
@@ -477,7 +481,7 @@ public sealed class ProtovalidateFixture : IDisposable
         // only one that proves a lower bound survives as far as a consumer. Count-driven rather than
         // length-prefixed because IrBuilder rejects the synthetic `__length` node a prefix produces, so
         // that rule has never reached a generator.
-        var readingCount = new FieldBinding(FieldId.New(), "readingCount", u8.Id);
+        var readingCount = new FieldBinding(FieldId.New(), "readingCount", u32.Id);
         var readings = p.Types.Add(new ArrayType(TypeId.New(), "Readings", ratio.Id,
             new ArrayLength.CountFromField(readingCount.Id, MaxCount: 6, MinCount: 2)));
 

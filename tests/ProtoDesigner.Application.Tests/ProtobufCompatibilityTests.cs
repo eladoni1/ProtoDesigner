@@ -17,14 +17,14 @@ public class ProtobufCompatibilityTests
     private static (Project Project, Bus Bus) Mixed()
     {
         var project = new Project("Mixed");
-        var u8 = project.Types.Add(new ParameterType(TypeId.New(), "u8", PrimitiveKind.U8));
-        var mode = project.Types.Add(new EnumType(TypeId.New(), "Mode", PrimitiveKind.U8)
+        var u32 = project.Types.Add(new ParameterType(TypeId.New(), "u32", PrimitiveKind.U32));
+        var mode = project.Types.Add(new EnumType(TypeId.New(), "Mode", PrimitiveKind.U32)
             .With("Idle", 0).With("Busy", 1));
 
         var bus = new Bus(BusId.New(), "Main", Transport.Ethernet);
 
         var plain = new Message(MessageId.New(), "Plain") { WireId = 1 };
-        plain.Fields.Add(new FieldBinding(FieldId.New(), "counter", u8.Id));
+        plain.Fields.Add(new FieldBinding(FieldId.New(), "counter", u32.Id));
 
         var packed = new Message(MessageId.New(), "Packed") { WireId = 2 };
         packed.Fields.Add(new FieldBinding(FieldId.New(), "mode", mode.Id, FieldEncoding.Packed(4)));
@@ -75,7 +75,7 @@ public class ProtobufCompatibilityTests
     public void A_bus_with_nothing_exportable_drops_out_entirely()
     {
         var project = new Project("AllPacked");
-        var mode = project.Types.Add(new EnumType(TypeId.New(), "Mode", PrimitiveKind.U8)
+        var mode = project.Types.Add(new EnumType(TypeId.New(), "Mode", PrimitiveKind.U32)
             .With("Idle", 0).With("Busy", 1));
 
         var bus = new Bus(BusId.New(), "Main", Transport.Ethernet);
@@ -178,12 +178,12 @@ public class ProtobufCompatibilityTests
         // layout of the C target by design — but a protobuf peer keyed on field 1 must still find the same
         // field afterwards, or a reorder in the editor silently breaks every deployed consumer.
         var project = new Project("Reorder");
-        var u8 = project.Types.Add(new ParameterType(TypeId.New(), "u8", PrimitiveKind.U8));
+        var u32 = project.Types.Add(new ParameterType(TypeId.New(), "u32", PrimitiveKind.U32));
 
         var bus = new Bus(BusId.New(), "Main", Transport.Ethernet);
         var message = new Message(MessageId.New(), "M") { WireId = 1 };
-        var alpha = new FieldBinding(FieldId.New(), "alpha", u8.Id);
-        var beta = new FieldBinding(FieldId.New(), "beta", u8.Id);
+        var alpha = new FieldBinding(FieldId.New(), "alpha", u32.Id);
+        var beta = new FieldBinding(FieldId.New(), "beta", u32.Id);
         message.Fields.Add(alpha);
         message.Fields.Add(beta);
         bus.Messages.Add(message);
@@ -210,12 +210,12 @@ public class ProtobufCompatibilityTests
     {
         // It must not reuse a number, and must not disturb the ones already agreed.
         var project = new Project("Grow");
-        var u8 = project.Types.Add(new ParameterType(TypeId.New(), "u8", PrimitiveKind.U8));
+        var u32 = project.Types.Add(new ParameterType(TypeId.New(), "u32", PrimitiveKind.U32));
 
         var bus = new Bus(BusId.New(), "Main", Transport.Ethernet);
         var message = new Message(MessageId.New(), "M") { WireId = 1 };
-        message.Fields.Add(new FieldBinding(FieldId.New(), "a", u8.Id));
-        message.Fields.Add(new FieldBinding(FieldId.New(), "b", u8.Id));
+        message.Fields.Add(new FieldBinding(FieldId.New(), "a", u32.Id));
+        message.Fields.Add(new FieldBinding(FieldId.New(), "b", u32.Id));
         bus.Messages.Add(message);
         project.Buses.Add(bus);
 
@@ -223,7 +223,7 @@ public class ProtobufCompatibilityTests
         var existing = message.Fields.Select(f => f.ProtoFieldNumber!.Value).ToList();
 
         // Insert at the front, which is where a naive ordinal scheme would collide hardest.
-        var inserted = new FieldBinding(FieldId.New(), "c", u8.Id);
+        var inserted = new FieldBinding(FieldId.New(), "c", u32.Id);
         message.Fields.Insert(0, inserted);
         new AssignProtoFieldNumbersCommand().Apply(project);
 
@@ -241,17 +241,17 @@ public class ProtobufCompatibilityTests
     private static (Project Project, Bus Bus) SharedStructWithClashingNumbers()
     {
         var project = new Project("Shared");
-        var u8 = project.Types.Add(new ParameterType(TypeId.New(), "u8", PrimitiveKind.U8));
+        var u32 = project.Types.Add(new ParameterType(TypeId.New(), "u32", PrimitiveKind.U32));
 
         // Two fields claiming field number 1 — a struct-level defect, so the diagnostic carries a type
         // path and no message name at all.
         var header = project.Types.Add(new StructType(TypeId.New(), "Header")
-            .With(new FieldBinding(FieldId.New(), "messageId", u8.Id) { ProtoFieldNumber = 1 },
-                  new FieldBinding(FieldId.New(), "version", u8.Id) { ProtoFieldNumber = 1 }));
+            .With(new FieldBinding(FieldId.New(), "messageId", u32.Id) { ProtoFieldNumber = 1 },
+                  new FieldBinding(FieldId.New(), "version", u32.Id) { ProtoFieldNumber = 1 }));
 
         var envelope = project.Types.Add(new StructType(TypeId.New(), "Envelope")
             .With(new FieldBinding(FieldId.New(), "head", header.Id),
-                  new FieldBinding(FieldId.New(), "sequence", u8.Id)));
+                  new FieldBinding(FieldId.New(), "sequence", u32.Id)));
 
         var bus = new Bus(BusId.New(), "Main", Transport.Ethernet);
 
@@ -262,7 +262,7 @@ public class ProtobufCompatibilityTests
         nested.Fields.Add(new FieldBinding(FieldId.New(), "envelope", envelope.Id));
 
         var unrelated = new Message(MessageId.New(), "Unrelated") { WireId = 3 };
-        unrelated.Fields.Add(new FieldBinding(FieldId.New(), "counter", u8.Id));
+        unrelated.Fields.Add(new FieldBinding(FieldId.New(), "counter", u32.Id));
 
         bus.Messages.Add(direct);
         bus.Messages.Add(nested);
@@ -294,12 +294,12 @@ public class ProtobufCompatibilityTests
         // the right message while pointing at the wrong thing, which defeats the reason this gate names
         // fields at all. A struct is perfectly representable as a nested message; only its scalars fail.
         var project = new Project("Nested");
-        var u8 = project.Types.Add(new ParameterType(TypeId.New(), "u8", PrimitiveKind.U8));
-        var narrow = project.Types.Add(new ParameterType(TypeId.New(), "Narrow", PrimitiveKind.U16,
+        var u32 = project.Types.Add(new ParameterType(TypeId.New(), "u32", PrimitiveKind.U32));
+        var narrow = project.Types.Add(new ParameterType(TypeId.New(), "Narrow", PrimitiveKind.U32,
             new NumericRange(0, 15)));
 
         var header = project.Types.Add(new StructType(TypeId.New(), "Header")
-            .With(new FieldBinding(FieldId.New(), "messageId", u8.Id),
+            .With(new FieldBinding(FieldId.New(), "messageId", u32.Id),
                   new FieldBinding(FieldId.New(), "randomType", narrow.Id, FieldEncoding.Packed(4))));
 
         var bus = new Bus(BusId.New(), "Main", Transport.Ethernet);
@@ -321,12 +321,14 @@ public class ProtobufCompatibilityTests
         // The other half. Nothing about a struct's own total width matters to protobuf — it becomes a
         // nested message, and its fields are what have to be expressible.
         var project = new Project("Wide");
-        var u8 = project.Types.Add(new ParameterType(TypeId.New(), "u8", PrimitiveKind.U8));
         var u32 = project.Types.Add(new ParameterType(TypeId.New(), "u32", PrimitiveKind.U32));
+        var u64 = project.Types.Add(new ParameterType(TypeId.New(), "u64", PrimitiveKind.U64));
 
+        // 96 bits, which is neither 32 nor 64 — the widths the narrow-integer rule cares about. The rule
+        // must not be looking at the struct at all.
         var header = project.Types.Add(new StructType(TypeId.New(), "Header")
-            .With(new FieldBinding(FieldId.New(), "messageId", u8.Id),
-                  new FieldBinding(FieldId.New(), "timestamp", u32.Id)));
+            .With(new FieldBinding(FieldId.New(), "messageId", u32.Id),
+                  new FieldBinding(FieldId.New(), "timestamp", u64.Id)));
 
         var bus = new Bus(BusId.New(), "Main", Transport.Ethernet);
         var message = new Message(MessageId.New(), "Telemetry") { WireId = 1 };

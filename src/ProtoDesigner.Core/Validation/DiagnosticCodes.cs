@@ -76,4 +76,5 @@ public static class DiagnosticCodes
     public const string ProtoScaledField          = "PD0071";
     public const string ProtoEndiannessIgnored    = "PD0072";
     public const string ProtoDuplicateFieldNumber = "PD0073";
+    public const string ProtoNarrowInteger        = "PD0074";
 }

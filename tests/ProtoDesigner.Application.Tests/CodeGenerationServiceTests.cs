@@ -15,11 +15,12 @@ public class CodeGenerationServiceTests
     private static (Project Project, Bus Bus) Valid()
     {
         var project = new Project("Sample");
-        var u8 = project.Types.Add(new ParameterType(TypeId.New(), "u8", PrimitiveKind.U8));
+        // 32-bit so every catalog target can express it, including protobuf.
+        var u32 = project.Types.Add(new ParameterType(TypeId.New(), "u32", PrimitiveKind.U32));
 
         var bus = new Bus(BusId.New(), "Main", Transport.Ethernet);
         var message = new Message(MessageId.New(), "Ping") { WireId = 1 };
-        message.Fields.Add(new FieldBinding(FieldId.New(), "counter", u8.Id));
+        message.Fields.Add(new FieldBinding(FieldId.New(), "counter", u32.Id));
         bus.Messages.Add(message);
         project.Buses.Add(bus);
 

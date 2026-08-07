@@ -181,15 +181,17 @@ public class WireSizePolicyTests
     }
 
     [Fact]
-    public void A_narrowed_integer_stays_protobuf_exportable()
+    public void An_offset_only_integer_stays_protobuf_exportable()
     {
         // Why the factor matters beyond arithmetic: the protobuf gate refuses any field whose scale is
-        // not 1. A spurious 0.4838 would silently drop this message from every .proto export.
+        // not 1. A spurious 0.4838 would silently drop this message from every .proto export. The width
+        // is 32 because the gate also refuses narrower integers — this test is about the factor, so it
+        // must not trip the other rule.
         var project = new Project("Temp");
-        var type = new ParameterType(TypeId.New(), "Temperature", PrimitiveKind.U16, Temperature)
+        var type = new ParameterType(TypeId.New(), "Temperature", PrimitiveKind.U32, Temperature)
         {
             WireForm = WireForm.Unsigned,
-            WireBits = 8,
+            WireBits = 32,
         };
         project.Types.Add(type);
 

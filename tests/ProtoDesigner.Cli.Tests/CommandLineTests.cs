@@ -40,10 +40,10 @@ public sealed class CommandLineTests : IDisposable
     private static Project CleanProject()
     {
         var p = new Project("Clean");
-        var u8 = p.Types.Add(new ParameterType(TypeId.New(), "u8", PrimitiveKind.U8));
+        var u32 = p.Types.Add(new ParameterType(TypeId.New(), "u32", PrimitiveKind.U32));
         var bus = new Bus(BusId.New(), "Main", Transport.Ethernet);
         var m = new Message(MessageId.New(), "Ping") { WireId = 1 };
-        m.Fields.Add(new FieldBinding(FieldId.New(), "id", u8.Id));
+        m.Fields.Add(new FieldBinding(FieldId.New(), "id", u32.Id));
         bus.Messages.Add(m);
         p.Buses.Add(bus);
         return p;
@@ -60,7 +60,7 @@ public sealed class CommandLineTests : IDisposable
     private static Project ConstrainedProject()
     {
         var p = new Project("Constrained");
-        var ratio = p.Types.Add(new ParameterType(TypeId.New(), "Ratio", PrimitiveKind.U8,
+        var ratio = p.Types.Add(new ParameterType(TypeId.New(), "Ratio", PrimitiveKind.U32,
             new NumericRange(0, 100)));
         var bus = new Bus(BusId.New(), "Main", Transport.Ethernet);
         var m = new Message(MessageId.New(), "Reading") { WireId = 1 };
@@ -265,18 +265,18 @@ public sealed class CommandLineTests : IDisposable
     private static Project RoutedProject()
     {
         var p = new Project("Routed");
-        var u8 = p.Types.Add(new ParameterType(TypeId.New(), "u8", PrimitiveKind.U8));
+        var u32 = p.Types.Add(new ParameterType(TypeId.New(), "u32", PrimitiveKind.U32));
 
         var main = new Bus(BusId.New(), "Main", Transport.Ethernet);
         var sensor = main.AddModule("Sensor");
         var controller = main.AddModule("Controller");
 
         var alpha = new Message(MessageId.New(), "Alpha") { WireId = 1 };
-        alpha.Fields.Add(new FieldBinding(FieldId.New(), "x", u8.Id));
+        alpha.Fields.Add(new FieldBinding(FieldId.New(), "x", u32.Id));
         alpha.Routes.Add(new MessageRoute(sensor.Id, controller.Id));
 
         var beta = new Message(MessageId.New(), "Beta") { WireId = 2 };
-        beta.Fields.Add(new FieldBinding(FieldId.New(), "y", u8.Id));
+        beta.Fields.Add(new FieldBinding(FieldId.New(), "y", u32.Id));
         beta.Routes.Add(new MessageRoute(controller.Id, controller.Id));
 
         main.Messages.Add(alpha);
@@ -287,7 +287,7 @@ public sealed class CommandLineTests : IDisposable
         var logger = aux.AddModule("Logger");
 
         var gamma = new Message(MessageId.New(), "Gamma") { WireId = 1 };
-        gamma.Fields.Add(new FieldBinding(FieldId.New(), "z", u8.Id));
+        gamma.Fields.Add(new FieldBinding(FieldId.New(), "z", u32.Id));
         gamma.Routes.Add(new MessageRoute(sensorOnAux.Id, logger.Id));
         aux.Messages.Add(gamma);
 
