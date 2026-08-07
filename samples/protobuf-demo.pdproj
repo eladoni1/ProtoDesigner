@@ -36,7 +36,7 @@
     "4397ca80-d0f0-46fc-a284-efc81a84a694": {
       "name": "Mode",
       "kind": "enum",
-      "underlying": "U8",
+      "underlying": "U32",
       "isFlags": false,
       "wireForm": "Unsigned",
       "members": [
@@ -70,7 +70,7 @@
     "7662d2ee-1582-4465-ab29-b7b162e05a87": {
       "name": "Severity",
       "kind": "enum",
-      "underlying": "U8",
+      "underlying": "U32",
       "isFlags": false,
       "wireForm": "Unsigned",
       "members": [

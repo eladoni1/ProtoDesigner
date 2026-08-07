@@ -63,15 +63,26 @@ public static class ProtobufRules
     }
 
     /// <summary>
-    /// Whether a node is a plain integer, as opposed to a float, a bool, or an enum.
+    /// Whether a node's declared width has to match a width protobuf actually has.
     /// </summary>
     /// <remarks>
-    /// The distinction matters to <see cref="ProtoNarrowIntegerRule"/>: <c>bool</c> and enums are real
-    /// protobuf types that keep their meaning, while a narrow integer is silently rebuilt as a wider one.
-    /// <c>char</c> counts as an integer — it maps to <c>uint32</c>, so it widens like any other.
+    /// <para>
+    /// True for integers and <b>enums alike</b>. An enum keeps its named members across the export, but on
+    /// the wire protobuf sends it as a varint in the <c>int32</c> domain — so a 2-byte enum is widened
+    /// exactly as a <c>u16</c> is, and exempting it left the obvious case through.
+    /// </para>
+    /// <para>
+    /// <c>char</c> counts too: it maps to <c>uint32</c>, so it widens like any other integer.
+    /// </para>
+    /// <para>
+    /// <c>bool</c> and the floats are the real exemptions. A float is 32 or 64 bits in both worlds, and
+    /// protobuf's <c>bool</c> has no width to choose — you cannot declare a 32-bit bool — so refusing one
+    /// would mean protobuf export could never carry a boolean at all.
+    /// </para>
     /// </remarks>
-    internal static bool IsIntegerParameter(ValidationContext ctx, LayoutNode node)
+    internal static bool WidthMustMatchProtobuf(ValidationContext ctx, LayoutNode node)
     {
+        if (node.Kind == LayoutNodeKind.Enum) return true;
         if (node.Kind != LayoutNodeKind.Parameter) return false;
         if (node.TypeId is not { } id) return false;
         if (!ctx.Project.Types.TryGet(id, out var type) || type is not ParameterType p) return false;
@@ -139,7 +150,7 @@ public sealed class ProtoNarrowIntegerRule : IValidationRule
             // twice in different words.
             if (node.BitWidth % 8 != 0) continue;
             if (node.BitWidth is 32 or 64) continue;
-            if (!ProtobufRules.IsIntegerParameter(ctx, node)) continue;
+            if (!ProtobufRules.WidthMustMatchProtobuf(ctx, node)) continue;
 
             yield return new Diagnostic(Code, Severity.Error,
                 $"Field '{node.Path}' is {node.BitWidth / 8} byte(s). Protobuf's integers are 32- or "

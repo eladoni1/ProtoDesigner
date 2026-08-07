@@ -117,7 +117,7 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 5b | Protobuf schema target + protovalidate | **Done** — gated per message, protoc-verified |
 | 6 | Shared storage & collaboration | Not started — see `docs/shared-storage-design.md` |
 
-**1758 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
+**1761 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
 rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
 red one. None of the toolchains is vendored.
 
@@ -728,8 +728,12 @@ overflow.
   field whose wire width is not 32 or 64 — `u8`, `u16`, `i16`, `char` at its natural width, and anything
   narrowed. Nothing is *lost* by widening a `u16` to `uint32`, and the range still survives as a
   constraint, but the field stops being the two bytes it was designed as, and wire widths meaning
-  something is the premise of this tool. `bool` and enums are exempt: they are real protobuf types that
-  keep their meaning rather than widened integers. The fix for a refused field is to set its wire size to
+  something is the premise of this tool. **Enums are not exempt** — an enum keeps its named members
+  across the export, which makes it look like a real protobuf type, but on the wire protobuf sends it as
+  a varint in the `int32` domain, so a 2-byte enum is widened exactly as a `u16` is. Exempting it let the
+  obvious case straight through. `bool` and the floats *are* exempt: a float is 32 or 64 bits in both
+  worlds, and protobuf's `bool` has no width to choose, so refusing one would mean an export could never
+  carry a boolean. The fix for a refused field is to set its wire size to
   4 or 8 bytes; otherwise the message stays on the C target.
 - **Nearly the whole `Corpus` is withheld from protobuf as a result**, because it is built from `u8`/`u16`
   to exercise wire layouts. Only `raw-floats` exports. Do not widen the corpus to change that — it is

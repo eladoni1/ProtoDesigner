@@ -39,6 +39,41 @@ public class ProtobufRulesTests
     }
 
     [Fact]
+    public void A_two_byte_enum_is_not_exportable()
+    {
+        // The case that slipped through the first time. An enum keeps its named members across the export,
+        // which made it look exempt — but protobuf sends an enum as a varint in the int32 domain, so a
+        // 2-byte enum is widened exactly as a u16 is. Found in a real project whose Mode enum was 16 bits.
+        var b = new ValidationBuilder();
+        var mode = b.Enum("Mode", PrimitiveKind.U16, ("Idle", 0), ("Busy", 1));
+        b.NewMessage("M", ValidationBuilder.F("mode", mode, new FieldEncoding { BitWidth = 16 }));
+
+        Gate(b).Has(DiagnosticCodes.ProtoNarrowInteger);
+    }
+
+    [Fact]
+    public void A_thirty_two_bit_enum_is_exportable()
+    {
+        var b = new ValidationBuilder();
+        var mode = b.Enum("Mode", PrimitiveKind.U32, ("Idle", 0), ("Busy", 1));
+        b.NewMessage("M", ValidationBuilder.F("mode", mode));
+
+        Gate(b).NoErrors();
+    }
+
+    [Fact]
+    public void A_bool_is_exportable_at_its_natural_width()
+    {
+        // The exemption that stays. protobuf's bool has no width to choose — you cannot declare a 32-bit
+        // one — so refusing 8-bit bools would mean a protobuf export could never carry a boolean.
+        var b = new ValidationBuilder();
+        var flag = b.Prim("flag", PrimitiveKind.Bool);
+        b.NewMessage("M", ValidationBuilder.F("flag", flag));
+
+        Gate(b).NoErrors();
+    }
+
+    [Fact]
     public void A_two_byte_field_is_not_exportable()
     {
         // Whole bytes, so the sub-byte rule does not fire — but protobuf has no 16-bit integer, and
