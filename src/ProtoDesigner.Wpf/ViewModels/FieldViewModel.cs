@@ -128,47 +128,9 @@ public sealed class FieldViewModel : ObservableObject
         {
             if (!SupportsWireWidth || WireBits <= 8) return "—";
 
-            var own = Field.Encoding.Endianness;
-            var resolved = own ?? _message.ResolvedEndianness;
-            var text = resolved == Endianness.Big ? "big" : "little";
-
-            return own is null ? $"{text} *" : text;
-        }
-    }
-
-    /// <summary>
-    /// The byte-order choices a field row offers, inherit first.
-    /// </summary>
-    /// <remarks>
-    /// Bit order is deliberately absent. It is modelled and laid out, and both codecs now honour it, but
-    /// nothing resolves it per field in the editor yet — offering a control before that chain works would
-    /// let a user set something that quietly does nothing.
-    /// </remarks>
-    public static IReadOnlyList<string> EndiannessChoices { get; } = ["Inherit", "Little", "Big"];
-
-    /// <summary>The row's own setting, as a choice — not the resolved value.</summary>
-    public string EndiannessChoice
-    {
-        get => Field.Encoding.Endianness switch
-        {
-            Endianness.Little => "Little",
-            Endianness.Big => "Big",
-            _ => "Inherit",
-        };
-        set
-        {
-            var chosen = value switch
-            {
-                "Little" => (Endianness?)Endianness.Little,
-                "Big" => Endianness.Big,
-                _ => null,
-            };
-            if (Field.Encoding.Endianness == chosen) return;
-
-            _message.Project.Journal.Do(new SetFieldEndiannessCommand(Field, chosen));
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(EndiannessLabel));
-            _message.RefreshFields();
+            // No star any more: byte order is a bus-level agreement, so there is nowhere else it could
+            // have come from and marking it "inherited" would imply an override exists somewhere.
+            return _message.ResolvedEndianness == Endianness.Big ? "big" : "little";
         }
     }
 

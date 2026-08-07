@@ -269,11 +269,38 @@ public sealed class TypeItemViewModel : ObservableObject
         ParameterType p => p.Range is { } r
             ? $"{p.Kind} · {p.Kind.NaturalBits() / 8} B · {Trim(r.Min)} .. {Trim(r.Max)}"
             : $"{p.Kind} · {p.Kind.NaturalBits() / 8} B · unbounded",
+        EnumType { Synthetic: not SyntheticEnum.None } e => DescribeSynthetic(e),
         EnumType e => $"{e.UnderlyingKind} · {e.Members.Count} member(s)",
         StructType s => $"{s.Fields.Count} field(s)",
         ArrayType a => $"{ElementName(a)} × {DescribeLength(a.Length)}",
         _ => string.Empty,
     };
+
+    /// <summary>
+    /// What a bus-filled enum actually resolves to, per bus.
+    /// </summary>
+    /// <remarks>
+    /// The model's <c>Members</c> list is genuinely empty for these — the bus supplies them at generation
+    /// — so reporting the count honestly said "0 member(s)", which reads as broken to anyone who has just
+    /// added a message. Deriving the real answer for display fixes that without storing anything: this is
+    /// recomputed on every refresh, and naming the bus is what makes an enum that differs between them
+    /// legible.
+    /// </remarks>
+    private string DescribeSynthetic(EnumType e)
+    {
+        var buses = _project.Project.Buses;
+        if (buses.Count == 0) return "filled from the bus · no bus yet";
+
+        var perBus = buses.Select(b =>
+        {
+            // NotAssigned is always there and is not one of the user's, so it is not worth counting.
+            var count = SyntheticEnumMembers.For(b, e.Synthetic).Count - 1;
+            return $"{b.Name}: {count}";
+        });
+
+        var what = e.Synthetic == SyntheticEnum.MessageId ? "message ids" : "module ids";
+        return $"{what} from the bus · {string.Join(", ", perBus)}";
+    }
 
     private string ElementName(ArrayType a) => _project.TypeName(a.ElementTypeId);
 

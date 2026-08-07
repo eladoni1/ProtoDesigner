@@ -15,40 +15,13 @@ public sealed class MessageViewModel : ObservableObject
     /// The byte order this message serialises with once the chain has been walked.
     /// </summary>
     /// <remarks>
-    /// Message → bus → project → built-in default, which is what <c>EffectiveLayoutOptions.Resolve</c>
-    /// does for the layout engine. Reusing it means the grid cannot drift from what actually gets
-    /// generated, which a second copy of the fallback order eventually would.
+    /// Set on the bus and nowhere else: one bus is one agreement about wire format, and two modules on it
+    /// disagreeing is a broken link rather than a configuration. The resolve call still walks the whole
+    /// chain, because the model allows a message or field override that the editor no longer offers —
+    /// reusing it means the grid cannot drift from what actually gets generated.
     /// </remarks>
     public Endianness ResolvedEndianness =>
         Project.Project.OptionsFor(_bus.Bus, Message).Endianness;
-
-    public static IReadOnlyList<string> EndiannessChoices { get; } = ["Inherit", "Little", "Big"];
-
-    /// <summary>The message's own byte order, or "Inherit" when the bus answers for it.</summary>
-    public string EndiannessChoice
-    {
-        get => Message.Options.Endianness switch
-        {
-            Endianness.Little => "Little",
-            Endianness.Big => "Big",
-            _ => "Inherit",
-        };
-        set
-        {
-            var chosen = value switch
-            {
-                "Little" => (Endianness?)Endianness.Little,
-                "Big" => Endianness.Big,
-                _ => null,
-            };
-            if (Message.Options.Endianness == chosen) return;
-
-            Project.Journal.Do(new SetMessageEndiannessCommand(Message, chosen));
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(ResolvedEndianness));
-            RefreshFields();
-        }
-    }
 
     public MessageViewModel(BusViewModel bus, Message message)
     {
@@ -88,8 +61,38 @@ public sealed class MessageViewModel : ObservableObject
             if (Message.WireId == value) return;
             Project.Journal.Do(new SetWireIdCommand(Message, value));
             OnPropertyChanged();
+            OnPropertyChanged(nameof(WireIdClash));
+            OnPropertyChanged(nameof(HasWireIdClash));
         }
     }
+
+    /// <summary>
+    /// The other message already using this id on this bus, or null.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Reported, not blocked, and that is deliberate. Every other invalid state in this tool is allowed to
+    /// exist while being named — a width too small for its range, an out-of-range default — because
+    /// half-finished work is normal and an editor that refuses keystrokes fights the user mid-thought.
+    /// Reverting a typed id would also be the first place the editor silently discards input.
+    /// </para>
+    /// <para>
+    /// What was missing was not a block but proximity: the clash was only visible in the diagnostics list,
+    /// away from the box being typed into. Saying it next to the field is what makes reporting enough.
+    /// </para>
+    /// </remarks>
+    public string? WireIdClash
+    {
+        get
+        {
+            if (Message.WireId is not { } id) return null;
+
+            var other = _bus.Bus.Messages.FirstOrDefault(m => m.Id != Message.Id && m.WireId == id);
+            return other is null ? null : $"'{other.Name}' already uses id {id}";
+        }
+    }
+
+    public bool HasWireIdClash => WireIdClash is not null;
 
     // ---- routes ----------------------------------------------------------------------------------
 
