@@ -14,7 +14,25 @@ public sealed record ProtocolIr(
     IReadOnlyList<IrPrimitive> Primitives,
     IReadOnlyList<IrEnum> Enums,
     IReadOnlyList<IrStruct> Structs,
-    IReadOnlyList<IrMessage> Messages);
+    IReadOnlyList<IrMessage> Messages,
+    // Every module on the bus, in declaration order. Carried so a generator can emit a stable id for
+    // each one: a module is a participant on the bus, not a type, so nothing else in the IR names them.
+    IReadOnlyList<IrModule> Modules);
+
+/// <summary>A module on the bus, with the id a generator gives it.</summary>
+/// <remarks>
+/// <para>
+/// <see cref="Value"/> is assigned here rather than stored on the model, in the same spirit as a layout
+/// offset: it is derived from declaration order, so adding a module appends and never renumbers the ones
+/// before it. A module removed from the middle *does* shift the ones after it — module ids are for code
+/// on both ends of one generated header, not a value anybody puts on the wire.
+/// </para>
+/// <para>
+/// If a module id ever needs to survive a reorder the way <c>Message.WireId</c> does, it has to become
+/// declared state on <c>Module</c>, and this becomes its fallback.
+/// </para>
+/// </remarks>
+public sealed record IrModule(string Name, int Value);
 
 /// <summary>
 /// A named primitive type the protocol declares — a <c>Temperature</c> that is a <c>double</c> on the

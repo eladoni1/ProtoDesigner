@@ -188,6 +188,7 @@ public sealed class CGenerator : IProtocolGenerator
         OpenExternC(sb, options);
 
         EmitMessageIdEnum(sb, prefix, ir);
+        EmitModuleIdEnum(sb, prefix, ir);
 
         foreach (var m in ir.Messages) EmitMessage(sb, prefix, ir, m);
 
@@ -255,6 +256,48 @@ public sealed class CGenerator : IProtocolGenerator
     /// message can collide with it. Read the id off the frame yourself, ask what it is, then call the
     /// matching <c>_ConvertToHost</c>.
     /// </remarks>
+    /// <summary>
+    /// Names every module on the bus, so code can say which end it is without a magic number.
+    /// </summary>
+    /// <remarks>
+    /// Bus-scoped like the message-id enum, because two buses generated into one project would otherwise
+    /// collide on a module called <c>Sensor</c>. Zero is <c>NotAssigned</c> for the same reason it is
+    /// there: a caller needs a value meaning "nobody" that no real module can hold.
+    ///
+    /// The values come from declaration order and are **not** a wire format. Nothing puts a module id in
+    /// a frame — <c>MessageRoute</c> is a design-time statement about who talks to whom. Removing a
+    /// module from the middle renumbers the ones after it, which is harmless between two ends built from
+    /// the same header and would not be if these ever reached the wire.
+    /// </remarks>
+    private static void EmitModuleIdEnum(StringBuilder sb, string prefix, ProtocolIr ir)
+    {
+        if (ir.Modules.Count == 0) return;
+
+        var busType = CNaming.TypeName(prefix, ir.BusName + "ModuleId");
+        var enumScope = ir.BusName + "ModuleId";
+
+        sb.AppendLine($"/* Every module on bus '{ir.BusName}'. Design-time identities, not a wire value: */");
+        sb.AppendLine("/* nothing puts a module id in a frame, so these are only for code on both ends. */");
+        sb.AppendLine($"typedef enum {busType} {{");
+        sb.AppendLine($"    {CNaming.EnumMemberName(prefix, enumScope, "NotAssigned")} = 0,");
+        foreach (var m in ir.Modules)
+            sb.AppendLine($"    {CNaming.EnumMemberName(prefix, enumScope, m.Name)} = {m.Value},");
+        sb.AppendLine($"}} {busType};");
+        sb.AppendLine();
+
+        var fn = CNaming.FunctionName(prefix, ir.BusName, "ModuleName");
+        sb.AppendLine("/* The module's declared name, or \"\" when the id names no module on this bus. */");
+        sb.AppendLine($"PD_INLINE const char *{fn}({busType} id) {{");
+        sb.AppendLine("    switch (id) {");
+        foreach (var m in ir.Modules)
+            sb.AppendLine($"        case {CNaming.EnumMemberName(prefix, enumScope, m.Name)}: return \"{m.Name}\";");
+        sb.AppendLine("        default: break;");
+        sb.AppendLine("    }");
+        sb.AppendLine("    return \"\";");
+        sb.AppendLine("}");
+        sb.AppendLine();
+    }
+
     private static void EmitMessageIdEnum(StringBuilder sb, string prefix, ProtocolIr ir)
     {
         var busType = CNaming.TypeName(prefix, ir.BusName + "MessageId");

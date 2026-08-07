@@ -167,6 +167,7 @@ public sealed class CSharpGenerator : IProtocolGenerator
         sb.AppendLine();
 
         EmitMessageIdEnum(sb, ir);
+        EmitModuleIdEnum(sb, ir);
         foreach (var m in ir.Messages) EmitMessage(sb, ir, m);
 
         return sb.ToString();
@@ -189,6 +190,32 @@ public sealed class CSharpGenerator : IProtocolGenerator
         sb.AppendLine("    NotAssigned = 0,");
         foreach (var m in identified)
             sb.AppendLine($"    {CSharpNaming.EnumMemberName(m.Name)} = {m.WireId!.Value},");
+        sb.AppendLine("}");
+        sb.AppendLine();
+    }
+
+    /// <summary>
+    /// The bus's module-id enum: design-time identities for the participants, not a wire value.
+    /// </summary>
+    /// <remarks>
+    /// C# has namespaces, so this needs no bus prefix on the members the way the C target does — but the
+    /// type is still named per bus, since two buses can both have a <c>Sensor</c>.
+    /// </remarks>
+    private static void EmitModuleIdEnum(StringBuilder sb, ProtocolIr ir)
+    {
+        if (ir.Modules.Count == 0) return;
+
+        var bus = CSharpNaming.TypeName(ir.BusName);
+
+        sb.AppendLine("/// <summary>");
+        sb.AppendLine($"/// Every module on bus '{Escape(ir.BusName)}'. Nothing puts a module id in a frame;");
+        sb.AppendLine("/// these exist so code can name an end of the link without a magic number.");
+        sb.AppendLine("/// </summary>");
+        sb.AppendLine($"public enum {bus}ModuleId : uint");
+        sb.AppendLine("{");
+        sb.AppendLine("    NotAssigned = 0,");
+        foreach (var m in ir.Modules)
+            sb.AppendLine($"    {CSharpNaming.EnumMemberName(m.Name)} = {m.Value},");
         sb.AppendLine("}");
         sb.AppendLine();
     }

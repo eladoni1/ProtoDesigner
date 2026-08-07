@@ -117,7 +117,7 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 5b | Protobuf schema target + protovalidate | **Done** — gated per message, protoc-verified |
 | 6 | Shared storage & collaboration | Not started — see `docs/shared-storage-design.md` |
 
-**1761 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
+**1767 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
 rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
 red one. None of the toolchains is vendored.
 
@@ -202,6 +202,19 @@ dialog render them without knowing which target is selected. A generator reads i
 the rest. This exists because widening the shared record per language is exactly what the "no language
 bias" boundary forbids. `IProtocolGenerator.CoversEveryMessage` is the other declaration: false means
 the target borrows a foreign wire format and the caller must narrow the scope.
+
+**Two identity enums are synthesized per bus, and neither is stored.** `<ns>_<Bus>MessageId` lists every
+message carrying a `WireId`, with a `_NotAssigned = 0` sentinel and a `<Bus>_MessageIdFromWire()` lookup;
+`<ns>_<Bus>ModuleId` does the same for the bus's modules, plus a `<Bus>_ModuleName()` lookup. Both are
+derived at generation, so renaming the bus, a message or a module — or changing a wire id — updates them
+with nothing left to go stale. Both are **bus-scoped on purpose**: one C project may include headers from
+several buses, and a `Sensor` on each would otherwise be the same identifier twice.
+
+The two differ in one way that matters. A message id is `Message.WireId` — declared state a deployed peer
+reads off the wire. A **module id is declaration order**, because nothing ever puts one in a frame:
+`MessageRoute` is a design-time statement about who talks to whom. So removing a module renumbers the
+ones after it, which is harmless between two ends built from the same header. If a module id ever needs
+to survive a reorder, it has to become declared state on `Module` — that is a new decision, not a bug.
 
 **Checksums and CRCs are not modelled — do not add them back.** They were removed deliberately in
 schema v2. Width, polynomial and technique vary per message, teams already have vetted routines or a
@@ -309,7 +322,12 @@ something and watching it go red — do the same before trusting a change here.
 4. **C# encode/decode.** Declarations and `OnWireLength` exist; the codec does not.
 5. **`FillRemaining` / `Terminated` decode** — scan for the sentinel or consume the remainder instead of
    asking the caller for a count.
-6. **Wire-compatibility diffing** — compare two versions' `MessageLayout`s and report which changes
+6. **Match the ID enums to the requested spelling, or decide not to.** The shape asked for was
+   `<BUS_NAME>_MESSAGE_ID_NA` / `<BUS_NAME>_<MODULE_NAME>`; what is emitted is
+   `<ns>_<Bus>MessageId_NotAssigned` / `<ns>_<Bus>ModuleId_<Module>`, which is the C target's own naming
+   convention and already carries the bus scope the request was after. Renaming would churn every golden
+   and break any deployed code that switches on these. Worth a decision, not an assumption.
+7. **Wire-compatibility diffing** — compare two versions' `MessageLayout`s and report which changes
    break a deployed decoder (reorder, narrow, widen, endianness, `WireId` change) versus which are safe
    (rename anything — identity is an ID). This needs no database, works against the last git commit, and
    is the thing git structurally cannot do for a binary protocol. Recommended before any of Phase 6.

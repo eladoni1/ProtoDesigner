@@ -59,8 +59,14 @@ public sealed class IrBuilder
             messages.Add(BuildMessage(project, message, layout, enumTable, structTable));
         }
 
+        // Modules are numbered from 1 so 0 stays free to mean "not assigned", matching the message-id
+        // enum. Declaration order is the order the user sees in the editor.
+        var modules = bus.Modules
+            .Select((m, i) => new IrModule(m.Name, i + 1))
+            .ToList();
+
         return new ProtocolIr(project.Name, bus.Name, bus.Transport,
-            CollectPrimitives(project, selected), enums, structs, messages);
+            CollectPrimitives(project, selected), enums, structs, messages, modules);
     }
 
     // ---- primitive collection ---------------------------------------------------------------
