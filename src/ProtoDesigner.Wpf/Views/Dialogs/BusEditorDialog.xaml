@@ -19,6 +19,12 @@
       <ComboBox x:Name="TransportBox" Margin="0,4,0,4" SelectionChanged="OnTransportChanged"/>
       <TextBlock x:Name="TransportHint" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,14"/>
 
+      <TextBlock Style="{StaticResource SectionLabel}" Text="Byte order"
+                 ToolTip="Which end of a multi-byte value goes first on the wire. This is the bus default; a message or a single field can override it."/>
+      <ComboBox x:Name="EndiannessBox" Margin="0,4,0,4"/>
+      <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,14"
+                 Text="A property of the protocol, not of your CPU: the generated code assembles bytes with shifts, so the same header produces identical bytes on a big- or little-endian machine."/>
+
       <TextBlock Style="{StaticResource SectionLabel}" Text="Modules"/>
       <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,2,0,6"
                  Text="The participants on this bus — an ECU, a service, a board. Renaming one later never breaks a route."/>

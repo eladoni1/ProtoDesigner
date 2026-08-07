@@ -11,6 +11,17 @@ public sealed class MessageViewModel : ObservableObject
 {
     private readonly BusViewModel _bus;
 
+    /// <summary>
+    /// The byte order this message serialises with once the chain has been walked.
+    /// </summary>
+    /// <remarks>
+    /// Message → bus → project → built-in default, which is what <c>EffectiveLayoutOptions.Resolve</c>
+    /// does for the layout engine. Reusing it means the grid cannot drift from what actually gets
+    /// generated, which a second copy of the fallback order eventually would.
+    /// </remarks>
+    public Endianness ResolvedEndianness =>
+        Project.Project.OptionsFor(_bus.Bus, Message).Endianness;
+
     public MessageViewModel(BusViewModel bus, Message message)
     {
         _bus = bus;

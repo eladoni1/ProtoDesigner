@@ -47,6 +47,24 @@ public partial class BusEditorDialog : Window
         new("UART", Transport.Uart, "A byte stream. Keep messages small; there is no framing budget to spend."),
     };
 
+    /// <summary>A byte-order choice, including "inherit" so a bus need not state one.</summary>
+    /// <remarks>
+    /// Null means the project default rather than a value, which is what keeps the whole chain
+    /// field → message → bus → project meaningful. Offering only Little and Big would force every bus to
+    /// answer a question most protocols answer once.
+    /// </remarks>
+    private sealed record EndiannessOption(string Label, Endianness? Value)
+    {
+        public override string ToString() => Label;
+    }
+
+    private static readonly EndiannessOption[] Endiannesses =
+    [
+        new("Inherit from project", null),
+        new("Little-endian (least significant byte first)", Endianness.Little),
+        new("Big-endian (network order, most significant byte first)", Endianness.Big),
+    ];
+
     private BusEditorDialog(ProjectViewModel project, BusViewModel? existing)
     {
         InitializeComponent();
@@ -55,12 +73,14 @@ public partial class BusEditorDialog : Window
 
         ModulesList.ItemsSource = _rows;
         TransportBox.ItemsSource = Transports;
+        EndiannessBox.ItemsSource = Endiannesses;
 
         if (existing is null)
         {
             HeadingText.Text = "Create bus";
             NameBox.Text = "NewBus";
             TransportBox.SelectedItem = Transports[0];
+            EndiannessBox.SelectedItem = Endiannesses[0];
 
             // Two modules is the smallest set that can carry a route, so seeding them means the routes
             // editor is usable the moment the first message is created.
@@ -72,6 +92,8 @@ public partial class BusEditorDialog : Window
             HeadingText.Text = $"Edit '{existing.Name}'";
             NameBox.Text = existing.Name;
             TransportBox.SelectedItem = Transports.FirstOrDefault(t => t.Value == existing.Transport) ?? Transports[0];
+            EndiannessBox.SelectedItem =
+                Endiannesses.FirstOrDefault(e => e.Value == existing.Bus.Options.Endianness) ?? Endiannesses[0];
             foreach (var m in existing.Bus.Modules) _rows.Add(new ModuleRow(m, m.Name));
         }
 
@@ -163,10 +185,12 @@ public partial class BusEditorDialog : Window
         }
 
         var transport = (TransportBox.SelectedItem as TransportOption)?.Value ?? Transport.Ethernet;
+        var endianness = (EndiannessBox.SelectedItem as EndiannessOption)?.Value;
 
         if (_existing is null)
         {
             var bus = _project.AddBus(name!, transport);
+            bus.Bus.Options.Endianness = endianness;
             foreach (var row in _rows)
                 bus.AddModule(row.Name.Trim());
             Result = bus;
@@ -175,6 +199,7 @@ public partial class BusEditorDialog : Window
         {
             _existing.Name = name!;
             _existing.Transport = transport;
+            _existing.Bus.Options.Endianness = endianness;
             ApplyModuleEdits(_existing);
             Result = _existing;
         }

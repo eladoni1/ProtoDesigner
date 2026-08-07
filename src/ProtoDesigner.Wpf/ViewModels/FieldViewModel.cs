@@ -111,6 +111,31 @@ public sealed class FieldViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// The byte order this field will actually serialise with, and where that answer came from.
+    /// </summary>
+    /// <remarks>
+    /// Endianness inherits field → message → bus → project, so the value that matters is almost never
+    /// written on the field itself. Showing the resolved answer — and marking an inherited one — is what
+    /// makes the chain legible without opening three dialogs to work out what a byte will look like.
+    ///
+    /// A field narrower than a byte has no byte order to have, so it shows "—" rather than a value that
+    /// would be true but meaningless.
+    /// </remarks>
+    public string EndiannessLabel
+    {
+        get
+        {
+            if (!SupportsWireWidth || WireBits <= 8) return "—";
+
+            var own = Field.Encoding.Endianness;
+            var resolved = own ?? _message.ResolvedEndianness;
+            var text = resolved == Endianness.Big ? "big" : "little";
+
+            return own is null ? $"{text} *" : text;
+        }
+    }
+
     // ---- factor ---------------------------------------------------------------------------------
 
     /// <summary>Value represented by one wire step. Derived from the type's range and wire size.</summary>
@@ -152,6 +177,7 @@ public sealed class FieldViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(WireBits));
         OnPropertyChanged(nameof(WireLabel));
+        OnPropertyChanged(nameof(EndiannessLabel));
         OnPropertyChanged(nameof(Factor));
         OnPropertyChanged(nameof(FactorLabel));
         OnPropertyChanged(nameof(IsCompressed));

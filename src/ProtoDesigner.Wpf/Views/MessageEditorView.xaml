@@ -12,6 +12,7 @@
     <GridLength x:Key="ColHost">86</GridLength>
     <GridLength x:Key="ColWire">86</GridLength>
     <GridLength x:Key="ColFactor">86</GridLength>
+    <GridLength x:Key="ColBytes">74</GridLength>
     <GridLength x:Key="ColRange">116</GridLength>
 
     <DataTemplate x:Key="EmptyState">
@@ -135,6 +136,7 @@
               <ColumnDefinition Width="{StaticResource ColName}"/>
               <ColumnDefinition Width="{StaticResource ColHost}"/>
               <ColumnDefinition Width="{StaticResource ColWire}"/>
+              <ColumnDefinition Width="{StaticResource ColBytes}"/>
               <ColumnDefinition Width="{StaticResource ColRange}"/>
               <ColumnDefinition Width="*" MinWidth="0"/>
               <ColumnDefinition Width="30"/>
@@ -147,7 +149,9 @@
                        ToolTip="Serialised size. Type a number, or a value like '5 bits'."/>
             <TextBlock Grid.Column="5" Style="{StaticResource SectionLabel}" Text="Factor"
                        ToolTip="Value represented by one wire step. Auto-set to the finest the width allows."/>
-            <TextBlock Grid.Column="6" Style="{StaticResource SectionLabel}" Text="Range"/>
+            <TextBlock Grid.Column="6" Style="{StaticResource SectionLabel}" Text="Byte order"
+                       ToolTip="Which end of a multi-byte value goes first. A star means it is inherited from the message, the bus or the project rather than set on this field."/>
+            <TextBlock Grid.Column="7" Style="{StaticResource SectionLabel}" Text="Range"/>
           </Grid>
         </Border>
 
@@ -173,6 +177,7 @@
                       <ColumnDefinition Width="{StaticResource ColName}"/>
                       <ColumnDefinition Width="{StaticResource ColHost}"/>
                       <ColumnDefinition Width="{StaticResource ColWire}"/>
+                      <ColumnDefinition Width="{StaticResource ColBytes}"/>
                       <ColumnDefinition Width="{StaticResource ColRange}"/>
                       <ColumnDefinition Width="*"/>
                       <ColumnDefinition Width="30"/>
@@ -207,7 +212,9 @@
                                Foreground="{StaticResource InkMuted}"
                                ToolTip="Value represented by one wire step. Derived from the type's range and wire size."/>
 
-                    <TextBlock Grid.Column="6" Text="{Binding RangeLabel}" Style="{StaticResource CaptionText}"
+                    <TextBlock Grid.Column="6" Text="{Binding EndiannessLabel}" Style="{StaticResource CaptionText}"
+                               VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBlock Grid.Column="7" Text="{Binding RangeLabel}" Style="{StaticResource CaptionText}"
                                FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis"
                                VerticalAlignment="Center" Margin="4,0,6,0"
                                ToolTip="{Binding RangeLabel}"/>
