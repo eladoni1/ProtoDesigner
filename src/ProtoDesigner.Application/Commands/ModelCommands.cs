@@ -342,6 +342,53 @@ public sealed class RenameFieldCommand : IEditCommand
     public void Undo(Project _)  { _field.Name = _oldName; }
 }
 
+/// <summary>Sets, or clears, a message's own byte order — the default every field inherits.</summary>
+public sealed class SetMessageEndiannessCommand : IEditCommand
+{
+    private readonly Message _message;
+    private readonly Endianness? _value;
+    private Endianness? _previous;
+
+    public SetMessageEndiannessCommand(Message message, Endianness? value)
+    {
+        _message = message;
+        _value = value;
+    }
+
+    public string Describe() =>
+        _value is null ? $"Inherit byte order for '{_message.Name}'" : $"Set '{_message.Name}' to {_value}";
+
+    public void Apply(Project _) { _previous = _message.Options.Endianness; _message.Options.Endianness = _value; }
+    public void Undo(Project _) { _message.Options.Endianness = _previous; }
+}
+
+/// <summary>
+/// Sets, or clears, a field's own byte order.
+/// </summary>
+/// <remarks>
+/// Null means "inherit", which is a real state rather than a missing one: it is what lets a message or
+/// bus keep answering for the field. So the undo restores the previous nullable value rather than
+/// clearing it.
+/// </remarks>
+public sealed class SetFieldEndiannessCommand : IEditCommand
+{
+    private readonly FieldBinding _field;
+    private readonly Endianness? _value;
+    private Endianness? _previous;
+
+    public SetFieldEndiannessCommand(FieldBinding field, Endianness? value)
+    {
+        _field = field;
+        _value = value;
+    }
+
+    public string Describe() =>
+        _value is null ? $"Inherit byte order for '{_field.Name}'" : $"Set '{_field.Name}' to {_value}";
+
+    public void Apply(Project _) { _previous = _field.Encoding.Endianness; _field.Encoding.Endianness = _value; }
+    public void Undo(Project _) { _field.Encoding.Endianness = _previous; }
+}
+
 /// <summary>
 /// Replaces the encoding wholesale. The undo restores the previous instance — cheaper and simpler
 /// than tracking individual property changes, and encoding edits are already coarse-grained in the UI.

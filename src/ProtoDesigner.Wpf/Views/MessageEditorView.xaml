@@ -51,6 +51,7 @@
               <ColumnDefinition Width="*"/>
               <ColumnDefinition Width="Auto"/>
               <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
             <StackPanel Grid.Column="0" Margin="0,0,16,0">
@@ -68,7 +69,14 @@
                        ToolTip="How a receiver identifies this message on the wire"/>
             </StackPanel>
 
-            <StackPanel Grid.Column="2" VerticalAlignment="Center">
+            <StackPanel Grid.Column="2" Margin="0,0,16,0" VerticalAlignment="Center">
+              <TextBlock Style="{StaticResource SectionLabel}" Text="Byte order"
+                         ToolTip="The default for every field in this message. Inherit takes the bus's answer, which takes the project's."/>
+              <ComboBox ItemsSource="{Binding EndiannessChoices}" MinWidth="80" Margin="0,4,0,0"
+                        SelectedItem="{Binding EndiannessChoice, Mode=TwoWay}"/>
+            </StackPanel>
+
+            <StackPanel Grid.Column="3" VerticalAlignment="Center">
               <TextBlock Style="{StaticResource SectionLabel}" Text="Total size"/>
               <Border Style="{StaticResource Chip}" Background="{StaticResource AccentSoft}" Margin="0,4,0,0">
                 <TextBlock Text="{Binding SizeLabel}" Foreground="{StaticResource Accent}"
@@ -212,8 +220,12 @@
                                Foreground="{StaticResource InkMuted}"
                                ToolTip="Value represented by one wire step. Derived from the type's range and wire size."/>
 
-                    <TextBlock Grid.Column="6" Text="{Binding EndiannessLabel}" Style="{StaticResource CaptionText}"
-                               VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <ComboBox Grid.Column="6" Margin="0,0,8,0" FontSize="11" Padding="4,2"
+                              VerticalAlignment="Center"
+                              ItemsSource="{Binding EndiannessChoices}"
+                              SelectedItem="{Binding EndiannessChoice, Mode=TwoWay}"
+                              IsEnabled="{Binding SupportsWireWidth}"
+                              ToolTip="{Binding EndiannessLabel}"/>
                     <TextBlock Grid.Column="7" Text="{Binding RangeLabel}" Style="{StaticResource CaptionText}"
                                FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis"
                                VerticalAlignment="Center" Margin="4,0,6,0"

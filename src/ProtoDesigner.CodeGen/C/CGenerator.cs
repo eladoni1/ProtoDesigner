@@ -502,7 +502,7 @@ public sealed class CGenerator : IProtocolGenerator
     private static void EmitEncodeField(StringBuilder sb, string prefix, ProtocolIr ir, IrMessage m, IrField f)
     {
         var member = CNaming.MemberPath(f.Path);
-        var endian = EndianExpr(f.Endianness);
+        var endian = EndianExpr(f.Endianness, f.BitOrder);
 
         if (f.Kind == IrFieldKind.Array && f.Array is { } arr)
         {
@@ -516,7 +516,7 @@ public sealed class CGenerator : IProtocolGenerator
             };
 
             if (arr.Kind == IrArrayKind.LengthPrefixed)
-                sb.AppendLine($"    pd_bw_write_unsigned(&w, (uint64_t)({countExpr}), {arr.PrefixBits}, PD_ENDIAN_LITTLE);");
+                sb.AppendLine($"    pd_bw_write_unsigned(&w, (uint64_t)({countExpr}), {arr.PrefixBits}, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);");
 
             sb.AppendLine($"    for (size_t i = 0; i < (size_t)({countExpr}) && i < {arr.MaxElements}; ++i) {{");
             var elemAccess = arr.ElementEnumIndex is not null
@@ -608,7 +608,7 @@ public sealed class CGenerator : IProtocolGenerator
     private static void EmitDecodeField(StringBuilder sb, string prefix, ProtocolIr ir, IrMessage m, IrField f)
     {
         var member = CNaming.MemberPath(f.Path);
-        var endian = EndianExpr(f.Endianness);
+        var endian = EndianExpr(f.Endianness, f.BitOrder);
 
         if (f.Kind == IrFieldKind.Array && f.Array is { } arr)
         {
@@ -623,7 +623,7 @@ public sealed class CGenerator : IProtocolGenerator
                     countExpr = $"msg->{CNaming.MemberPath(m.Fields[ci].Path)}";
                     break;
                 case IrArrayKind.LengthPrefixed:
-                    sb.AppendLine($"    msg->{member}_count = (uint32_t)pd_br_read_unsigned(&r, {arr.PrefixBits}, PD_ENDIAN_LITTLE);");
+                    sb.AppendLine($"    msg->{member}_count = (uint32_t)pd_br_read_unsigned(&r, {arr.PrefixBits}, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);");
                     countExpr = $"msg->{member}_count";
                     break;
                 default:
@@ -681,8 +681,17 @@ public sealed class CGenerator : IProtocolGenerator
 
     // ---- transform helpers ---------------------------------------------------------------------
 
-    private static string EndianExpr(Endianness e) =>
-        e == Endianness.Big ? "PD_ENDIAN_BIG" : "PD_ENDIAN_LITTLE";
+    /// <summary>
+    /// The byte order and bit order arguments, as one comma-separated pair.
+    /// </summary>
+    /// <remarks>
+    /// They travel together because every read and write takes both, and splitting them into two helpers
+    /// only created two places for a call site to forget one.
+    /// </remarks>
+    private static string EndianExpr(Endianness e, BitOrder order) =>
+        (e == Endianness.Big ? "PD_ENDIAN_BIG" : "PD_ENDIAN_LITTLE")
+        + ", "
+        + (order == BitOrder.LsbFirst ? "PD_BITS_LSB_FIRST" : "PD_BITS_MSB_FIRST");
 
     /// <summary>
     /// <c>wire = (value - offset) / scale</c>, wrapped in a round-to-nearest when the maths is

@@ -54,13 +54,13 @@ PD_INLINE size_t proto_Reading_ConvertToWire(const proto_Reading* msg, uint8_t* 
     { const size_t r0 = pd_bw_bit_length(&w);
     /* id */
     if (pd_bw_bit_length(&w) < r0 + 0) pd_bw_skip(&w, r0 + 0 - pd_bw_bit_length(&w));
-    pd_bw_write_unsigned(&w, (uint64_t)(msg->id), 8, PD_ENDIAN_LITTLE);
+    pd_bw_write_unsigned(&w, (uint64_t)(msg->id), 8, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);
     /* sequence */
     if (pd_bw_bit_length(&w) < r0 + 8) pd_bw_skip(&w, r0 + 8 - pd_bw_bit_length(&w));
-    pd_bw_write_unsigned(&w, (uint64_t)(msg->sequence), 16, PD_ENDIAN_BIG);
+    pd_bw_write_unsigned(&w, (uint64_t)(msg->sequence), 16, PD_ENDIAN_BIG, PD_BITS_MSB_FIRST);
     /* delta */
     if (pd_bw_bit_length(&w) < r0 + 24) pd_bw_skip(&w, r0 + 24 - pd_bw_bit_length(&w));
-    pd_bw_write_signed(&w, (int64_t)(msg->delta), 32, PD_ENDIAN_LITTLE);
+    pd_bw_write_signed(&w, (int64_t)(msg->delta), 32, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);
     pd_bw_pad_to(&w, 8);
     }
 
@@ -78,13 +78,13 @@ PD_INLINE pd_decode_result_t proto_Reading_ConvertToHost(const uint8_t* wire, si
     { const size_t r0 = pd_br_bit_offset(&r);
     /* id */
     if (pd_br_bit_offset(&r) < r0 + 0) pd_br_skip(&r, r0 + 0 - pd_br_bit_offset(&r));
-    msg->id = (uint8_t)(pd_br_read_unsigned(&r, 8, PD_ENDIAN_LITTLE));
+    msg->id = (uint8_t)(pd_br_read_unsigned(&r, 8, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST));
     /* sequence */
     if (pd_br_bit_offset(&r) < r0 + 8) pd_br_skip(&r, r0 + 8 - pd_br_bit_offset(&r));
-    msg->sequence = (uint16_t)(pd_br_read_unsigned(&r, 16, PD_ENDIAN_BIG));
+    msg->sequence = (uint16_t)(pd_br_read_unsigned(&r, 16, PD_ENDIAN_BIG, PD_BITS_MSB_FIRST));
     /* delta */
     if (pd_br_bit_offset(&r) < r0 + 24) pd_br_skip(&r, r0 + 24 - pd_br_bit_offset(&r));
-    msg->delta = (int32_t)(pd_br_read_signed(&r, 32, PD_ENDIAN_LITTLE));
+    msg->delta = (int32_t)(pd_br_read_signed(&r, 32, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST));
     pd_br_align_to(&r, 8);
     }
 

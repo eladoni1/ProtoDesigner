@@ -137,13 +137,19 @@ PD_INLINE void pd_bw_pad_to(pd_bit_writer_t* w, size_t alignment_bits) {
     if (mod) w->cursor += (alignment_bits - mod);
 }
 
-PD_INLINE void pd_bw_write_unsigned(pd_bit_writer_t* w, uint64_t value, int width, pd_endian_t endian) {
+/* Order in which a value's bits are laid into the stream. MSB-first is the default and what every
+   byte-aligned protocol means; LSB-first shows up on UART links that shift the low bit out first. */
+typedef enum pd_bit_order { PD_BITS_MSB_FIRST = 0, PD_BITS_LSB_FIRST = 1 } pd_bit_order_t;
+
+PD_INLINE void pd_bw_write_unsigned(pd_bit_writer_t* w, uint64_t value, int width,
+                                    pd_endian_t endian, pd_bit_order_t order) {
     int i;
     if (width <= 0 || width > 64) { w->overflow = true; return; }
     if (w->cursor + (size_t)width > w->capacity_bits) { w->overflow = true; return; }
 
-    /* Fast path: byte-aligned cursor and whole-byte width. */
-    if ((w->cursor % 8) == 0 && (width % 8) == 0) {
+    /* Fast path: byte-aligned cursor and whole-byte width. Only for MSB-first — LSB-first reverses the
+       bits inside every byte, so copying bytes across would be wrong rather than merely slower. */
+    if (order == PD_BITS_MSB_FIRST && (w->cursor % 8) == 0 && (width % 8) == 0) {
         const int bytes = width / 8;
         uint8_t* p = w->data + (w->cursor / 8);
         if (endian == PD_ENDIAN_BIG) {
@@ -157,9 +163,11 @@ PD_INLINE void pd_bw_write_unsigned(pd_bit_writer_t* w, uint64_t value, int widt
         return;
     }
 
-    /* Slow path: bit by bit, MSB-first inside each byte. */
-    for (i = width - 1; i >= 0; --i) {
-        const uint64_t bit = (value >> i) & 1u;
+    /* Slow path: one bit at a time. The stream always fills from the top of each byte downwards; what
+       the bit order changes is which end of the *value* is consumed first. */
+    for (i = 0; i < width; ++i) {
+        const int source = (order == PD_BITS_LSB_FIRST) ? i : (width - 1 - i);
+        const uint64_t bit = (value >> source) & 1u;
         if (bit) {
             const size_t byte_index = w->cursor / 8;
             const int bit_index = 7 - (int)(w->cursor % 8);
@@ -169,9 +177,10 @@ PD_INLINE void pd_bw_write_unsigned(pd_bit_writer_t* w, uint64_t value, int widt
     }
 }
 
-PD_INLINE void pd_bw_write_signed(pd_bit_writer_t* w, int64_t value, int width, pd_endian_t endian) {
+PD_INLINE void pd_bw_write_signed(pd_bit_writer_t* w, int64_t value, int width,
+                                  pd_endian_t endian, pd_bit_order_t order) {
     const uint64_t mask = (width == 64) ? ~(uint64_t)0 : (((uint64_t)1 << width) - 1);
-    pd_bw_write_unsigned(w, (uint64_t)value & mask, width, endian);
+    pd_bw_write_unsigned(w, (uint64_t)value & mask, width, endian, order);
 }
 
 PD_INLINE void pd_bw_write_bytes(pd_bit_writer_t* w, const uint8_t* src, size_t len) {
@@ -209,13 +218,14 @@ PD_INLINE void pd_br_align_to(pd_bit_reader_t* r, size_t alignment_bits) {
     if (mod) r->cursor += (alignment_bits - mod);
 }
 
-PD_INLINE uint64_t pd_br_read_unsigned(pd_bit_reader_t* r, int width, pd_endian_t endian) {
+PD_INLINE uint64_t pd_br_read_unsigned(pd_bit_reader_t* r, int width,
+                                       pd_endian_t endian, pd_bit_order_t order) {
     int i;
     uint64_t value = 0;
     if (width <= 0 || width > 64) { r->underflow = true; return 0; }
     if (r->cursor + (size_t)width > r->size_bits) { r->underflow = true; return 0; }
 
-    if ((r->cursor % 8) == 0 && (width % 8) == 0) {
+    if (order == PD_BITS_MSB_FIRST && (r->cursor % 8) == 0 && (width % 8) == 0) {
         const int bytes = width / 8;
         const uint8_t* p = r->data + (r->cursor / 8);
         uint64_t result = 0;
@@ -232,14 +242,16 @@ PD_INLINE uint64_t pd_br_read_unsigned(pd_bit_reader_t* r, int width, pd_endian_
         const size_t byte_index = r->cursor / 8;
         const int bit_index = 7 - (int)(r->cursor % 8);
         const uint64_t bit = (r->data[byte_index] >> bit_index) & 1u;
-        value = (value << 1) | bit;
+        if (order == PD_BITS_LSB_FIRST) value |= bit << i;
+        else value = (value << 1) | bit;
         ++r->cursor;
     }
     return value;
 }
 
-PD_INLINE int64_t pd_br_read_signed(pd_bit_reader_t* r, int width, pd_endian_t endian) {
-    const uint64_t raw = pd_br_read_unsigned(r, width, endian);
+PD_INLINE int64_t pd_br_read_signed(pd_bit_reader_t* r, int width,
+                                    pd_endian_t endian, pd_bit_order_t order) {
+    const uint64_t raw = pd_br_read_unsigned(r, width, endian, order);
     uint64_t sign_bit;
     uint64_t upper;
     if (width == 64) return (int64_t)raw;

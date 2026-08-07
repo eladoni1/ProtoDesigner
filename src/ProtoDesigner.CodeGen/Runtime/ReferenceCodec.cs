@@ -98,7 +98,7 @@ public sealed class ReferenceCodec
         // A float host with no transform puts its IEEE bit pattern on the wire verbatim.
         if (IsRawFloat(field.Primitive, field.Transform))
         {
-            buf.WriteUnsigned(FloatBits(field.Primitive, raw), field.BitWidth, field.Endianness);
+            buf.WriteUnsigned(FloatBits(field.Primitive, raw), field.BitWidth, field.Endianness, field.BitOrder);
             return;
         }
 
@@ -106,9 +106,9 @@ public sealed class ReferenceCodec
         // The wire code must fit the width. Signed vs unsigned is decided by whether the transform
         // (or an inherently signed primitive) can produce negative codes.
         if (field.WireIsSigned)
-            buf.WriteSigned(code, field.BitWidth, field.Endianness);
+            buf.WriteSigned(code, field.BitWidth, field.Endianness, field.BitOrder);
         else
-            buf.WriteUnsigned((ulong)code, field.BitWidth, field.Endianness);
+            buf.WriteUnsigned((ulong)code, field.BitWidth, field.Endianness, field.BitOrder);
     }
 
     private static void WriteArray(BitBuffer buf, IrMessage message, IrField field, IrArrayInfo arr,
@@ -132,15 +132,15 @@ public sealed class ReferenceCodec
 
             if (IsRawFloat(arr.ElementPrimitive, field.Transform))
             {
-                buf.WriteUnsigned(FloatBits(arr.ElementPrimitive, element), arr.ElementBits, field.Endianness);
+                buf.WriteUnsigned(FloatBits(arr.ElementPrimitive, element), arr.ElementBits, field.Endianness, field.BitOrder);
                 continue;
             }
 
             var code = ToWireCode(arr.ElementPrimitive, field.Transform, element);
             if (field.WireIsSigned)
-                buf.WriteSigned(code, arr.ElementBits, field.Endianness);
+                buf.WriteSigned(code, arr.ElementBits, field.Endianness, field.BitOrder);
             else
-                buf.WriteUnsigned((ulong)code, arr.ElementBits, field.Endianness);
+                buf.WriteUnsigned((ulong)code, arr.ElementBits, field.Endianness, field.BitOrder);
         }
 
         if (arr.Kind == IrArrayKind.Terminated)
@@ -169,11 +169,11 @@ public sealed class ReferenceCodec
     private static object ReadScalar(BitBuffer buf, IrField field)
     {
         if (IsRawFloat(field.Primitive, field.Transform))
-            return BitsToFloat(field.Primitive, buf.ReadUnsigned(field.BitWidth, field.Endianness));
+            return BitsToFloat(field.Primitive, buf.ReadUnsigned(field.BitWidth, field.Endianness, field.BitOrder));
 
         long wire = field.WireIsSigned
-            ? buf.ReadSigned(field.BitWidth, field.Endianness)
-            : (long)buf.ReadUnsigned(field.BitWidth, field.Endianness);
+            ? buf.ReadSigned(field.BitWidth, field.Endianness, field.BitOrder)
+            : (long)buf.ReadUnsigned(field.BitWidth, field.Endianness, field.BitOrder);
         return FromWireCode(field.Primitive, field.Transform, wire);
     }
 
@@ -195,13 +195,13 @@ public sealed class ReferenceCodec
         {
             if (IsRawFloat(arr.ElementPrimitive, field.Transform))
             {
-                list.Add(BitsToFloat(arr.ElementPrimitive, buf.ReadUnsigned(arr.ElementBits, field.Endianness)));
+                list.Add(BitsToFloat(arr.ElementPrimitive, buf.ReadUnsigned(arr.ElementBits, field.Endianness, field.BitOrder)));
                 continue;
             }
 
             long wire = field.WireIsSigned
-                ? buf.ReadSigned(arr.ElementBits, field.Endianness)
-                : (long)buf.ReadUnsigned(arr.ElementBits, field.Endianness);
+                ? buf.ReadSigned(arr.ElementBits, field.Endianness, field.BitOrder)
+                : (long)buf.ReadUnsigned(arr.ElementBits, field.Endianness, field.BitOrder);
             list.Add(FromWireCode(arr.ElementPrimitive, field.Transform, wire));
         }
         return list;

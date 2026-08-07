@@ -52,7 +52,7 @@ PD_INLINE size_t proto_Angles_ConvertToWire(const proto_Angles* msg, uint8_t* wi
     { const size_t r0 = pd_bw_bit_length(&w);
     /* tilt */
     if (pd_bw_bit_length(&w) < r0 + 0) pd_bw_skip(&w, r0 + 0 - pd_bw_bit_length(&w));
-    pd_bw_write_unsigned(&w, (uint64_t)(pd_quantize(((((msg->tilt) + 100)) / 0.784313725490196))), 8, PD_ENDIAN_LITTLE);
+    pd_bw_write_unsigned(&w, (uint64_t)(pd_quantize(((((msg->tilt) + 100)) / 0.784313725490196))), 8, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);
     pd_bw_pad_to(&w, 8);
     }
 
@@ -70,7 +70,7 @@ PD_INLINE pd_decode_result_t proto_Angles_ConvertToHost(const uint8_t* wire, siz
     { const size_t r0 = pd_br_bit_offset(&r);
     /* tilt */
     if (pd_br_bit_offset(&r) < r0 + 0) pd_br_skip(&r, r0 + 0 - pd_br_bit_offset(&r));
-    msg->tilt = (int16_t)(pd_quantize(((((pd_br_read_unsigned(&r, 8, PD_ENDIAN_LITTLE)) * 0.784313725490196)) - 100)));
+    msg->tilt = (int16_t)(pd_quantize(((((pd_br_read_unsigned(&r, 8, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST)) * 0.784313725490196)) - 100)));
     pd_br_align_to(&r, 8);
     }
 

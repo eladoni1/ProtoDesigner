@@ -22,6 +22,34 @@ public sealed class MessageViewModel : ObservableObject
     public Endianness ResolvedEndianness =>
         Project.Project.OptionsFor(_bus.Bus, Message).Endianness;
 
+    public static IReadOnlyList<string> EndiannessChoices { get; } = ["Inherit", "Little", "Big"];
+
+    /// <summary>The message's own byte order, or "Inherit" when the bus answers for it.</summary>
+    public string EndiannessChoice
+    {
+        get => Message.Options.Endianness switch
+        {
+            Endianness.Little => "Little",
+            Endianness.Big => "Big",
+            _ => "Inherit",
+        };
+        set
+        {
+            var chosen = value switch
+            {
+                "Little" => (Endianness?)Endianness.Little,
+                "Big" => Endianness.Big,
+                _ => null,
+            };
+            if (Message.Options.Endianness == chosen) return;
+
+            Project.Journal.Do(new SetMessageEndiannessCommand(Message, chosen));
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ResolvedEndianness));
+            RefreshFields();
+        }
+    }
+
     public MessageViewModel(BusViewModel bus, Message message)
     {
         _bus = bus;

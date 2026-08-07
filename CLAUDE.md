@@ -117,7 +117,7 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 5b | Protobuf schema target + protovalidate | **Done** — gated per message, protoc-verified |
 | 6 | Shared storage & collaboration | Not started — see `docs/shared-storage-design.md` |
 
-**1772 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
+**1784 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
 rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
 red one. None of the toolchains is vendored.
 
@@ -326,13 +326,12 @@ something and watching it go red — do the same before trusting a change here.
 
 ### Open work, in the order I would take it
 
-1. **Endianness + bit order in the UI.** The model resolves both (field → message → bus → project) and
-   the layout engine honours them, but nothing in the editor sets either. Surface a bus default with
-   per-message and per-field overrides, and show the resolved value on each field row. **Bit order is
-   not just a picker**: `BitOrder.LsbFirst` is modelled and laid out but the generated runtime only ever
-   packs MSB-first (`pd_bw_write_unsigned` takes an endianness and no bit order), so LSB-first needs
-   implementing in the generated read/write paths *and* in `ReferenceCodec`, with round-trip tests. UART
-   commonly transmits LSB-first, so this is real, not theoretical.
+1. **Bit order has no UI control yet, though it now works everywhere below one.** `pd_bw_write_unsigned`
+   and `BitBuffer` both take a `BitOrder`, LSB-first round-trips in both, and the cross-check compiles and
+   diffes it — but nothing in the editor sets it. Endianness is done at all three levels (bus dialog,
+   message header, per-field picker, resolved value shown with a `*` when inherited); bit order needs the
+   same three controls plus a decision about whether it belongs on a field at all, since a byte-aligned
+   protocol never varies it.
 2. **Right-click a field to edit its type**, offering what right-clicking the type in the library does.
 3. **Per-message export checklist** in the Generate dialog. It currently reports what a target left out;
    it does not let you tick individual messages.

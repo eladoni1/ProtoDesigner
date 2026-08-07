@@ -54,13 +54,13 @@ PD_INLINE size_t proto_Status_ConvertToWire(const proto_Status* msg, uint8_t* wi
     { const size_t r0 = pd_bw_bit_length(&w);
     /* mode */
     if (pd_bw_bit_length(&w) < r0 + 0) pd_bw_skip(&w, r0 + 0 - pd_bw_bit_length(&w));
-    pd_bw_write_unsigned(&w, (uint64_t)((int64_t)(msg->mode)), 4, PD_ENDIAN_LITTLE);
+    pd_bw_write_unsigned(&w, (uint64_t)((int64_t)(msg->mode)), 4, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);
     /* temperature */
     if (pd_bw_bit_length(&w) < r0 + 4) pd_bw_skip(&w, r0 + 4 - pd_bw_bit_length(&w));
-    pd_bw_write_unsigned(&w, (uint64_t)(((msg->temperature) - 1000)), 4, PD_ENDIAN_LITTLE);
+    pd_bw_write_unsigned(&w, (uint64_t)(((msg->temperature) - 1000)), 4, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);
     /* checksum */
     if (pd_bw_bit_length(&w) < r0 + 8) pd_bw_skip(&w, r0 + 8 - pd_bw_bit_length(&w));
-    pd_bw_write_unsigned(&w, (uint64_t)(msg->checksum), 16, PD_ENDIAN_LITTLE);
+    pd_bw_write_unsigned(&w, (uint64_t)(msg->checksum), 16, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);
     pd_bw_pad_to(&w, 8);
     }
 
@@ -78,13 +78,13 @@ PD_INLINE pd_decode_result_t proto_Status_ConvertToHost(const uint8_t* wire, siz
     { const size_t r0 = pd_br_bit_offset(&r);
     /* mode */
     if (pd_br_bit_offset(&r) < r0 + 0) pd_br_skip(&r, r0 + 0 - pd_br_bit_offset(&r));
-    msg->mode = (proto_Mode)(pd_br_read_unsigned(&r, 4, PD_ENDIAN_LITTLE));
+    msg->mode = (proto_Mode)(pd_br_read_unsigned(&r, 4, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST));
     /* temperature */
     if (pd_br_bit_offset(&r) < r0 + 4) pd_br_skip(&r, r0 + 4 - pd_br_bit_offset(&r));
-    msg->temperature = (uint16_t)(((pd_br_read_unsigned(&r, 4, PD_ENDIAN_LITTLE)) + 1000));
+    msg->temperature = (uint16_t)(((pd_br_read_unsigned(&r, 4, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST)) + 1000));
     /* checksum */
     if (pd_br_bit_offset(&r) < r0 + 8) pd_br_skip(&r, r0 + 8 - pd_br_bit_offset(&r));
-    msg->checksum = (uint16_t)(pd_br_read_unsigned(&r, 16, PD_ENDIAN_LITTLE));
+    msg->checksum = (uint16_t)(pd_br_read_unsigned(&r, 16, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST));
     pd_br_align_to(&r, 8);
     }
 

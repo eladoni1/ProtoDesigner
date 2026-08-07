@@ -61,13 +61,15 @@ public sealed class BitBuffer
     /// Writes an unsigned value at the current cursor. For widths &lt; 8, packs MSB-first within the
     /// storage byte. For 8/16/24/…/64-bit widths on byte-aligned cursors, honours <paramref name="endianness"/>.
     /// </summary>
-    public void WriteUnsigned(ulong value, int width, Endianness endianness)
+    public void WriteUnsigned(ulong value, int width, Endianness endianness,
+        BitOrder order = BitOrder.MsbFirst)
     {
         if (width is <= 0 or > 64)
             throw new ArgumentOutOfRangeException(nameof(width), width, "Width must be 1..64.");
 
-        // Byte-aligned whole-byte writes honour endianness on the fast path.
-        if ((_bitCursor % 8) == 0 && (width % 8) == 0)
+        // Byte-aligned whole-byte writes honour endianness on the fast path — but only MSB-first, since
+        // LSB-first reverses the bits inside every byte and a byte copy would be wrong, not just slower.
+        if (order == BitOrder.MsbFirst && (_bitCursor % 8) == 0 && (width % 8) == 0)
         {
             var byteCount = width / 8;
             EnsureCapacity(byteCount);
@@ -86,10 +88,12 @@ public sealed class BitBuffer
             return;
         }
 
-        // Slow path: bit-by-bit, MSB-first inside the current byte.
-        for (var i = width - 1; i >= 0; i--)
+        // Slow path: one bit at a time. The stream always fills from the top of each byte downwards; the
+        // bit order decides which end of the *value* is consumed first.
+        for (var i = 0; i < width; i++)
         {
-            var bit = (int)((value >> i) & 1UL);
+            var source = order == BitOrder.LsbFirst ? i : width - 1 - i;
+            var bit = (int)((value >> source) & 1UL);
             EnsureCapacityBits(_bitCursor + 1);
             var byteIndex = _bitCursor / 8;
             var bitIndex = 7 - (_bitCursor % 8);
@@ -98,12 +102,13 @@ public sealed class BitBuffer
         }
     }
 
-    public void WriteSigned(long value, int width, Endianness endianness)
+    public void WriteSigned(long value, int width, Endianness endianness,
+        BitOrder order = BitOrder.MsbFirst)
     {
         // Encode as two's complement in the given width, then defer to the unsigned writer.
         ulong mask = width == 64 ? ulong.MaxValue : ((1UL << width) - 1);
         var encoded = unchecked((ulong)value) & mask;
-        WriteUnsigned(encoded, width, endianness);
+        WriteUnsigned(encoded, width, endianness, order);
     }
 
     /// <summary>Write raw bytes at a byte-aligned cursor. Used for sentinels and string data.</summary>
@@ -130,12 +135,13 @@ public sealed class BitBuffer
 
     // ---- read ---------------------------------------------------------------------------------
 
-    public ulong ReadUnsigned(int width, Endianness endianness)
+    public ulong ReadUnsigned(int width, Endianness endianness,
+        BitOrder order = BitOrder.MsbFirst)
     {
         if (width is <= 0 or > 64)
             throw new ArgumentOutOfRangeException(nameof(width), width, "Width must be 1..64.");
 
-        if ((_bitCursor % 8) == 0 && (width % 8) == 0)
+        if (order == BitOrder.MsbFirst && (_bitCursor % 8) == 0 && (width % 8) == 0)
         {
             var byteCount = width / 8;
             if (_bitCursor + width > _bytes.Count * 8)
@@ -164,15 +170,16 @@ public sealed class BitBuffer
             var byteIndex = _bitCursor / 8;
             var bitIndex = 7 - (_bitCursor % 8);
             var bit = (_bytes[byteIndex] >> bitIndex) & 1;
-            value = (value << 1) | (uint)bit;
+            if (order == BitOrder.LsbFirst) value |= (ulong)bit << i;
+            else value = (value << 1) | (uint)bit;
             _bitCursor++;
         }
         return value;
     }
 
-    public long ReadSigned(int width, Endianness endianness)
+    public long ReadSigned(int width, Endianness endianness, BitOrder order = BitOrder.MsbFirst)
     {
-        var raw = ReadUnsigned(width, endianness);
+        var raw = ReadUnsigned(width, endianness, order);
         if (width == 64) return unchecked((long)raw);
 
         // Sign-extend from `width` to 64.

@@ -64,7 +64,7 @@ PD_INLINE size_t proto_Batch_ConvertToWire(const proto_Batch* msg, uint8_t* wire
     { const size_t r0 = pd_bw_bit_length(&w);
     /* count */
     if (pd_bw_bit_length(&w) < r0 + 0) pd_bw_skip(&w, r0 + 0 - pd_bw_bit_length(&w));
-    pd_bw_write_unsigned(&w, (uint64_t)(msg->count), 8, PD_ENDIAN_LITTLE);
+    pd_bw_write_unsigned(&w, (uint64_t)(msg->count), 8, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);
     pd_bw_pad_to(&w, 8);
     }
 
@@ -73,7 +73,7 @@ PD_INLINE size_t proto_Batch_ConvertToWire(const proto_Batch* msg, uint8_t* wire
     /* payload */
     if (pd_bw_bit_length(&w) < r1 + 0) pd_bw_skip(&w, r1 + 0 - pd_bw_bit_length(&w));
     for (size_t i = 0; i < (size_t)(msg->count) && i < 32; ++i) {
-        pd_bw_write_unsigned(&w, (uint64_t)(msg->payload[i]), 8, PD_ENDIAN_LITTLE);
+        pd_bw_write_unsigned(&w, (uint64_t)(msg->payload[i]), 8, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);
     }
     }
 
@@ -81,7 +81,7 @@ PD_INLINE size_t proto_Batch_ConvertToWire(const proto_Batch* msg, uint8_t* wire
     { const size_t r2 = pd_bw_bit_length(&w);
     /* crc */
     if (pd_bw_bit_length(&w) < r2 + 0) pd_bw_skip(&w, r2 + 0 - pd_bw_bit_length(&w));
-    pd_bw_write_unsigned(&w, (uint64_t)(msg->crc), 16, PD_ENDIAN_LITTLE);
+    pd_bw_write_unsigned(&w, (uint64_t)(msg->crc), 16, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);
     pd_bw_pad_to(&w, 8);
     }
 
@@ -99,7 +99,7 @@ PD_INLINE pd_decode_result_t proto_Batch_ConvertToHost(const uint8_t* wire, size
     { const size_t r0 = pd_br_bit_offset(&r);
     /* count */
     if (pd_br_bit_offset(&r) < r0 + 0) pd_br_skip(&r, r0 + 0 - pd_br_bit_offset(&r));
-    msg->count = (uint8_t)(pd_br_read_unsigned(&r, 8, PD_ENDIAN_LITTLE));
+    msg->count = (uint8_t)(pd_br_read_unsigned(&r, 8, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST));
     pd_br_align_to(&r, 8);
     }
 
@@ -108,7 +108,7 @@ PD_INLINE pd_decode_result_t proto_Batch_ConvertToHost(const uint8_t* wire, size
     /* payload */
     if (pd_br_bit_offset(&r) < r1 + 0) pd_br_skip(&r, r1 + 0 - pd_br_bit_offset(&r));
     for (size_t i = 0; i < (size_t)(msg->count) && i < 32; ++i) {
-        msg->payload[i] = (uint8_t)(pd_br_read_unsigned(&r, 8, PD_ENDIAN_LITTLE));
+        msg->payload[i] = (uint8_t)(pd_br_read_unsigned(&r, 8, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST));
     }
     }
 
@@ -116,7 +116,7 @@ PD_INLINE pd_decode_result_t proto_Batch_ConvertToHost(const uint8_t* wire, size
     { const size_t r2 = pd_br_bit_offset(&r);
     /* crc */
     if (pd_br_bit_offset(&r) < r2 + 0) pd_br_skip(&r, r2 + 0 - pd_br_bit_offset(&r));
-    msg->crc = (uint16_t)(pd_br_read_unsigned(&r, 16, PD_ENDIAN_LITTLE));
+    msg->crc = (uint16_t)(pd_br_read_unsigned(&r, 16, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST));
     pd_br_align_to(&r, 8);
     }
 

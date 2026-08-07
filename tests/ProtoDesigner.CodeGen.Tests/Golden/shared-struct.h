@@ -55,13 +55,13 @@ PD_INLINE size_t proto_Alpha_ConvertToWire(const proto_Alpha* msg, uint8_t* wire
     { const size_t r0 = pd_bw_bit_length(&w);
     /* header.messageId */
     if (pd_bw_bit_length(&w) < r0 + 0) pd_bw_skip(&w, r0 + 0 - pd_bw_bit_length(&w));
-    pd_bw_write_unsigned(&w, (uint64_t)(msg->header.messageId), 8, PD_ENDIAN_LITTLE);
+    pd_bw_write_unsigned(&w, (uint64_t)(msg->header.messageId), 8, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);
     /* header.timestamp */
     if (pd_bw_bit_length(&w) < r0 + 8) pd_bw_skip(&w, r0 + 8 - pd_bw_bit_length(&w));
-    pd_bw_write_unsigned(&w, (uint64_t)(msg->header.timestamp), 32, PD_ENDIAN_LITTLE);
+    pd_bw_write_unsigned(&w, (uint64_t)(msg->header.timestamp), 32, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);
     /* value */
     if (pd_bw_bit_length(&w) < r0 + 40) pd_bw_skip(&w, r0 + 40 - pd_bw_bit_length(&w));
-    pd_bw_write_unsigned(&w, (uint64_t)(msg->value), 16, PD_ENDIAN_LITTLE);
+    pd_bw_write_unsigned(&w, (uint64_t)(msg->value), 16, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);
     pd_bw_pad_to(&w, 8);
     }
 
@@ -79,13 +79,13 @@ PD_INLINE pd_decode_result_t proto_Alpha_ConvertToHost(const uint8_t* wire, size
     { const size_t r0 = pd_br_bit_offset(&r);
     /* header.messageId */
     if (pd_br_bit_offset(&r) < r0 + 0) pd_br_skip(&r, r0 + 0 - pd_br_bit_offset(&r));
-    msg->header.messageId = (uint8_t)(pd_br_read_unsigned(&r, 8, PD_ENDIAN_LITTLE));
+    msg->header.messageId = (uint8_t)(pd_br_read_unsigned(&r, 8, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST));
     /* header.timestamp */
     if (pd_br_bit_offset(&r) < r0 + 8) pd_br_skip(&r, r0 + 8 - pd_br_bit_offset(&r));
-    msg->header.timestamp = (uint32_t)(pd_br_read_unsigned(&r, 32, PD_ENDIAN_LITTLE));
+    msg->header.timestamp = (uint32_t)(pd_br_read_unsigned(&r, 32, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST));
     /* value */
     if (pd_br_bit_offset(&r) < r0 + 40) pd_br_skip(&r, r0 + 40 - pd_br_bit_offset(&r));
-    msg->value = (uint16_t)(pd_br_read_unsigned(&r, 16, PD_ENDIAN_LITTLE));
+    msg->value = (uint16_t)(pd_br_read_unsigned(&r, 16, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST));
     pd_br_align_to(&r, 8);
     }
 
@@ -119,19 +119,19 @@ PD_INLINE size_t proto_Beta_ConvertToWire(const proto_Beta* msg, uint8_t* wire, 
     { const size_t r0 = pd_bw_bit_length(&w);
     /* header.messageId */
     if (pd_bw_bit_length(&w) < r0 + 0) pd_bw_skip(&w, r0 + 0 - pd_bw_bit_length(&w));
-    pd_bw_write_unsigned(&w, (uint64_t)(msg->header.messageId), 8, PD_ENDIAN_LITTLE);
+    pd_bw_write_unsigned(&w, (uint64_t)(msg->header.messageId), 8, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);
     /* header.timestamp */
     if (pd_bw_bit_length(&w) < r0 + 8) pd_bw_skip(&w, r0 + 8 - pd_bw_bit_length(&w));
-    pd_bw_write_unsigned(&w, (uint64_t)(msg->header.timestamp), 32, PD_ENDIAN_LITTLE);
+    pd_bw_write_unsigned(&w, (uint64_t)(msg->header.timestamp), 32, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);
     /* envelope.head.messageId */
     if (pd_bw_bit_length(&w) < r0 + 40) pd_bw_skip(&w, r0 + 40 - pd_bw_bit_length(&w));
-    pd_bw_write_unsigned(&w, (uint64_t)(msg->envelope.head.messageId), 8, PD_ENDIAN_LITTLE);
+    pd_bw_write_unsigned(&w, (uint64_t)(msg->envelope.head.messageId), 8, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);
     /* envelope.head.timestamp */
     if (pd_bw_bit_length(&w) < r0 + 48) pd_bw_skip(&w, r0 + 48 - pd_bw_bit_length(&w));
-    pd_bw_write_unsigned(&w, (uint64_t)(msg->envelope.head.timestamp), 32, PD_ENDIAN_LITTLE);
+    pd_bw_write_unsigned(&w, (uint64_t)(msg->envelope.head.timestamp), 32, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);
     /* envelope.sequence */
     if (pd_bw_bit_length(&w) < r0 + 80) pd_bw_skip(&w, r0 + 80 - pd_bw_bit_length(&w));
-    pd_bw_write_unsigned(&w, (uint64_t)(msg->envelope.sequence), 16, PD_ENDIAN_LITTLE);
+    pd_bw_write_unsigned(&w, (uint64_t)(msg->envelope.sequence), 16, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);
     pd_bw_pad_to(&w, 8);
     }
 
@@ -149,19 +149,19 @@ PD_INLINE pd_decode_result_t proto_Beta_ConvertToHost(const uint8_t* wire, size_
     { const size_t r0 = pd_br_bit_offset(&r);
     /* header.messageId */
     if (pd_br_bit_offset(&r) < r0 + 0) pd_br_skip(&r, r0 + 0 - pd_br_bit_offset(&r));
-    msg->header.messageId = (uint8_t)(pd_br_read_unsigned(&r, 8, PD_ENDIAN_LITTLE));
+    msg->header.messageId = (uint8_t)(pd_br_read_unsigned(&r, 8, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST));
     /* header.timestamp */
     if (pd_br_bit_offset(&r) < r0 + 8) pd_br_skip(&r, r0 + 8 - pd_br_bit_offset(&r));
-    msg->header.timestamp = (uint32_t)(pd_br_read_unsigned(&r, 32, PD_ENDIAN_LITTLE));
+    msg->header.timestamp = (uint32_t)(pd_br_read_unsigned(&r, 32, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST));
     /* envelope.head.messageId */
     if (pd_br_bit_offset(&r) < r0 + 40) pd_br_skip(&r, r0 + 40 - pd_br_bit_offset(&r));
-    msg->envelope.head.messageId = (uint8_t)(pd_br_read_unsigned(&r, 8, PD_ENDIAN_LITTLE));
+    msg->envelope.head.messageId = (uint8_t)(pd_br_read_unsigned(&r, 8, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST));
     /* envelope.head.timestamp */
     if (pd_br_bit_offset(&r) < r0 + 48) pd_br_skip(&r, r0 + 48 - pd_br_bit_offset(&r));
-    msg->envelope.head.timestamp = (uint32_t)(pd_br_read_unsigned(&r, 32, PD_ENDIAN_LITTLE));
+    msg->envelope.head.timestamp = (uint32_t)(pd_br_read_unsigned(&r, 32, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST));
     /* envelope.sequence */
     if (pd_br_bit_offset(&r) < r0 + 80) pd_br_skip(&r, r0 + 80 - pd_br_bit_offset(&r));
-    msg->envelope.sequence = (uint16_t)(pd_br_read_unsigned(&r, 16, PD_ENDIAN_LITTLE));
+    msg->envelope.sequence = (uint16_t)(pd_br_read_unsigned(&r, 16, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST));
     pd_br_align_to(&r, 8);
     }
 

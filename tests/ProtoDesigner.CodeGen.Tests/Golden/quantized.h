@@ -53,10 +53,10 @@ PD_INLINE size_t proto_Ambient_ConvertToWire(const proto_Ambient* msg, uint8_t* 
     { const size_t r0 = pd_bw_bit_length(&w);
     /* temperature */
     if (pd_bw_bit_length(&w) < r0 + 0) pd_bw_skip(&w, r0 + 0 - pd_bw_bit_length(&w));
-    pd_bw_write_unsigned(&w, (uint64_t)(pd_quantize(((((msg->temperature) + 40)) / 0.43137254901960786))), 8, PD_ENDIAN_LITTLE);
+    pd_bw_write_unsigned(&w, (uint64_t)(pd_quantize(((((msg->temperature) + 40)) / 0.43137254901960786))), 8, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);
     /* battery */
     if (pd_bw_bit_length(&w) < r0 + 8) pd_bw_skip(&w, r0 + 8 - pd_bw_bit_length(&w));
-    pd_bw_write_unsigned(&w, (uint64_t)(pd_quantize(((msg->battery) / 0.3921568627450981))), 8, PD_ENDIAN_LITTLE);
+    pd_bw_write_unsigned(&w, (uint64_t)(pd_quantize(((msg->battery) / 0.3921568627450981))), 8, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);
     pd_bw_pad_to(&w, 8);
     }
 
@@ -74,10 +74,10 @@ PD_INLINE pd_decode_result_t proto_Ambient_ConvertToHost(const uint8_t* wire, si
     { const size_t r0 = pd_br_bit_offset(&r);
     /* temperature */
     if (pd_br_bit_offset(&r) < r0 + 0) pd_br_skip(&r, r0 + 0 - pd_br_bit_offset(&r));
-    msg->temperature = (double)(((((pd_br_read_unsigned(&r, 8, PD_ENDIAN_LITTLE)) * 0.43137254901960786)) - 40));
+    msg->temperature = (double)(((((pd_br_read_unsigned(&r, 8, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST)) * 0.43137254901960786)) - 40));
     /* battery */
     if (pd_br_bit_offset(&r) < r0 + 8) pd_br_skip(&r, r0 + 8 - pd_br_bit_offset(&r));
-    msg->battery = (float)(((pd_br_read_unsigned(&r, 8, PD_ENDIAN_LITTLE)) * 0.3921568627450981));
+    msg->battery = (float)(((pd_br_read_unsigned(&r, 8, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST)) * 0.3921568627450981));
     pd_br_align_to(&r, 8);
     }
 
