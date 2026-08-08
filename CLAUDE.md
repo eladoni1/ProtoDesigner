@@ -344,8 +344,11 @@ something and watching it go red — do the same before trusting a change here.
 - **Byte order and bit order are both bus-level, and nowhere else.** One bus is one agreement about wire
   format; two modules on it disagreeing is a broken link, not a configuration. `LayoutOptions` still
   carries a message- and field-level override and `EffectiveLayoutOptions.Resolve` still walks the whole
-  chain — the editor simply does not offer them, and the view models read the resolved answer so the grid
-  cannot drift from what is generated. If per-link byte order is ever wanted, the modelling answer is two
+  chain — the editor simply does not offer them. The resolved pair is stated **once**, as a chip in the
+  message header, not per field: every row carried the same answer and only differed in which half applied,
+  which the width column already says. A hand-edited file *can* still set an override, so the chip marks
+  itself with a red `*` and names the offenders in its tooltip rather than quietly showing the bus's answer
+  while the generator uses another. If per-link byte order is ever wanted, the modelling answer is two
   buses with the shared module as a gateway, not an override: a receiver identifies a frame by its message
   id and cannot know which sender produced it, so an edge-scoped format is undecodable.
 - **A duplicate message `WireId` is reported, not refused.** The edit stands and an inline red note appears

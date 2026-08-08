@@ -111,35 +111,6 @@ public sealed class FieldViewModel : ObservableObject
         }
     }
 
-    /// <summary>
-    /// The byte and bit order this field will actually serialise with — "little · MSB".
-    /// </summary>
-    /// <remarks>
-    /// Both come from the bus, so every row shows the same answer; they are here rather than stated once
-    /// in the header because <em>which of them applies</em> varies per row, and that is the part a reader
-    /// cannot work out at a glance:
-    /// <list type="bullet">
-    /// <item>1 bit — neither applies. There is one bit; no ordering of it exists.</item>
-    /// <item>2..8 bits — bit order only. A byte has no byte order, but its bits can still be reversed.</item>
-    /// <item>over 8 bits — both.</item>
-    /// </list>
-    /// No star marking inheritance any more: both are bus-level agreements, so there is nowhere else the
-    /// answer could have come from and marking it "inherited" would imply an override exists somewhere.
-    /// </remarks>
-    public string WireOrderLabel
-    {
-        get
-        {
-            if (!SupportsWireWidth || WireBits < 2) return "—";
-
-            var bits = _message.ResolvedBitOrder == BitOrder.LsbFirst ? "LSB" : "MSB";
-            if (WireBits <= 8) return bits;
-
-            var bytes = _message.ResolvedEndianness == Endianness.Big ? "big" : "little";
-            return $"{bytes} · {bits}";
-        }
-    }
-
     // ---- factor ---------------------------------------------------------------------------------
 
     /// <summary>Value represented by one wire step. Derived from the type's range and wire size.</summary>
@@ -181,7 +152,6 @@ public sealed class FieldViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(WireBits));
         OnPropertyChanged(nameof(WireLabel));
-        OnPropertyChanged(nameof(WireOrderLabel));
         OnPropertyChanged(nameof(Factor));
         OnPropertyChanged(nameof(FactorLabel));
         OnPropertyChanged(nameof(IsCompressed));

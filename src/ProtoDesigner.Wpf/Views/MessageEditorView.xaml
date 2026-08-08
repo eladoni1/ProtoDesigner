@@ -13,7 +13,6 @@
     <GridLength x:Key="ColWire">86</GridLength>
     <GridLength x:Key="ColFactor">86</GridLength>
     <GridLength x:Key="ColBytes">74</GridLength>
-    <GridLength x:Key="ColRange">116</GridLength>
 
     <DataTemplate x:Key="EmptyState">
       <Border Padding="24">
@@ -51,6 +50,7 @@
               <ColumnDefinition Width="*"/>
               <ColumnDefinition Width="Auto"/>
               <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
             <StackPanel Grid.Column="0" Margin="0,0,16,0">
@@ -72,7 +72,23 @@
                          ToolTip="Two messages on one bus cannot share an id — a receiver would have no way to tell them apart. The edit is kept; it is reported rather than refused."/>
             </StackPanel>
 
-            <StackPanel Grid.Column="2" VerticalAlignment="Center">
+            <!-- Wire order is a bus-wide fact, so it belongs beside the message's own totals rather than
+                 repeated on every field row. -->
+            <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="0,0,16,0"
+                        ToolTip="{Binding WireOrderDetail}">
+              <TextBlock Style="{StaticResource SectionLabel}" Text="Wire order"/>
+              <Border Style="{StaticResource Chip}" Background="{StaticResource Surface3}" Margin="0,4,0,0">
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Text="{Binding WireOrderLabel}" Foreground="{StaticResource InkMuted}"
+                             FontWeight="SemiBold" FontFamily="{StaticResource MonoFont}" FontSize="12"/>
+                  <TextBlock Text="*" Foreground="{StaticResource ErrorBrush}" FontWeight="Bold"
+                             Margin="4,0,0,0" FontSize="12"
+                             Visibility="{Binding HasWireOrderOverrides, Converter={StaticResource BoolToVis}}"/>
+                </StackPanel>
+              </Border>
+            </StackPanel>
+
+            <StackPanel Grid.Column="3" VerticalAlignment="Center">
               <TextBlock Style="{StaticResource SectionLabel}" Text="Total size"/>
               <Border Style="{StaticResource Chip}" Background="{StaticResource AccentSoft}" Margin="0,4,0,0">
                 <TextBlock Text="{Binding SizeLabel}" Foreground="{StaticResource Accent}"
@@ -141,7 +157,6 @@
               <ColumnDefinition Width="{StaticResource ColHost}"/>
               <ColumnDefinition Width="{StaticResource ColWire}"/>
               <ColumnDefinition Width="{StaticResource ColBytes}"/>
-              <ColumnDefinition Width="{StaticResource ColRange}"/>
               <ColumnDefinition Width="*" MinWidth="0"/>
               <ColumnDefinition Width="30"/>
             </Grid.ColumnDefinitions>
@@ -153,9 +168,7 @@
                        ToolTip="Serialised size. Type a number, or a value like '5 bits'."/>
             <TextBlock Grid.Column="5" Style="{StaticResource SectionLabel}" Text="Factor"
                        ToolTip="Value represented by one wire step. Auto-set to the finest the width allows."/>
-            <TextBlock Grid.Column="6" Style="{StaticResource SectionLabel}" Text="Wire order"
-                       ToolTip="Byte order · bit order. Both are set on the bus — one bus is one agreement about wire format, so every message on it shares them. Byte order only applies above 8 bits; bit order applies from 2 bits up."/>
-            <TextBlock Grid.Column="7" Style="{StaticResource SectionLabel}" Text="Range"/>
+            <TextBlock Grid.Column="6" Style="{StaticResource SectionLabel}" Text="Range"/>
           </Grid>
         </Border>
 
@@ -199,7 +212,6 @@
                       <ColumnDefinition Width="{StaticResource ColHost}"/>
                       <ColumnDefinition Width="{StaticResource ColWire}"/>
                       <ColumnDefinition Width="{StaticResource ColBytes}"/>
-                      <ColumnDefinition Width="{StaticResource ColRange}"/>
                       <ColumnDefinition Width="*"/>
                       <ColumnDefinition Width="30"/>
                     </Grid.ColumnDefinitions>
@@ -238,21 +250,17 @@
                                Foreground="{StaticResource InkMuted}"
                                ToolTip="Value represented by one wire step. Derived from the type's range and wire size."/>
 
-                    <TextBlock Grid.Column="6" Text="{Binding WireOrderLabel}" Style="{StaticResource CaptionText}"
-                               FontFamily="{StaticResource MonoFont}"
-                               VerticalAlignment="Center" Margin="0,0,8,0"
-                               ToolTip="Byte order · bit order, both from the bus. A 1-bit field shows nothing because neither applies to it; a field of 8 bits or fewer shows bit order alone, since a single byte has no byte order."/>
-                    <TextBlock Grid.Column="7" Text="{Binding RangeLabel}" Style="{StaticResource CaptionText}"
+                    <TextBlock Grid.Column="6" Text="{Binding RangeLabel}" Style="{StaticResource CaptionText}"
                                FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis"
                                VerticalAlignment="Center" Margin="4,0,6,0"
                                ToolTip="{Binding RangeLabel}"/>
 
-                    <TextBlock Grid.Column="7" Text="{Binding FactorProblem}" Foreground="{StaticResource ErrorBrush}"
+                    <TextBlock Grid.Column="6" Text="{Binding FactorProblem}" Foreground="{StaticResource ErrorBrush}"
                                FontSize="11" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
                                ToolTip="{Binding FactorProblem}"
                                Visibility="{Binding HasFactorProblem, Converter={StaticResource BoolToVis}}"/>
 
-                    <Button Grid.Column="8" Style="{StaticResource IconButton}" Content="✕" Width="26" Height="26"
+                    <Button Grid.Column="7" Style="{StaticResource IconButton}" Content="✕" Width="26" Height="26"
                             ToolTip="Remove field" Click="OnRemoveField" Tag="{Binding}"/>
                   </Grid>
                 </Border>

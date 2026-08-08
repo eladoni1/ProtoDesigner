@@ -35,6 +35,69 @@ public sealed class MessageViewModel : ObservableObject
     public BitOrder ResolvedBitOrder =>
         Project.Project.OptionsFor(_bus.Bus, Message).BitOrder;
 
+    /// <summary>Byte and bit order as one short label — "little · MSB".</summary>
+    /// <remarks>
+    /// Stated once for the message rather than repeated down the field grid. Both come from the bus, so
+    /// every row carried the same answer; the only thing that varied was <em>which half applied</em>, and
+    /// that is already legible from the width beside it — a one-byte field has no byte order, a one-bit
+    /// field has neither. A column of near-identical text is worse than a fact stated once.
+    /// </remarks>
+    public string WireOrderLabel =>
+        $"{(ResolvedEndianness == Endianness.Big ? "big" : "little")} · " +
+        $"{(ResolvedBitOrder == BitOrder.LsbFirst ? "LSB" : "MSB")}";
+
+    /// <summary>
+    /// Fields whose own encoding overrides the bus's wire order, or empty when none do.
+    /// </summary>
+    /// <remarks>
+    /// The editor does not offer a per-field override, but the model still carries one and a hand-edited
+    /// project file can set it. Without this the header would state the bus's answer while the generated
+    /// code used a different one for some field — exactly the drift that showing the resolved value was
+    /// meant to prevent. So the chip reports divergence rather than quietly averaging it.
+    /// </remarks>
+    public IReadOnlyList<string> WireOrderOverrides
+    {
+        get
+        {
+            var names = new List<string>();
+
+            if (Message.Options.Endianness is not null || Message.Options.BitOrder is not null)
+                names.Add("the message itself");
+
+            foreach (var field in Message.Fields)
+            {
+                if (field.Encoding.Endianness is not null || field.Encoding.BitOrder is not null)
+                    names.Add(field.Name);
+
+                // A struct's members carry their own encodings, and the engine honours them.
+                if (Project.Project.Types.TryGet(field.TypeId, out var t) && t is StructType s)
+                    names.AddRange(s.Fields
+                        .Where(m => m.Encoding.Endianness is not null || m.Encoding.BitOrder is not null)
+                        .Select(m => $"{field.Name}.{m.Name}"));
+            }
+
+            return names;
+        }
+    }
+
+    public bool HasWireOrderOverrides => WireOrderOverrides.Count > 0;
+
+    public string WireOrderDetail
+    {
+        get
+        {
+            var overrides = WireOrderOverrides;
+            var basis =
+                $"Byte order and bit order, both set on bus '{_bus.Name}'. Every message on it shares them, "
+                + "so they are not per-message or per-field settings.";
+
+            return overrides.Count == 0
+                ? basis
+                : basis + $"\n\nOverridden in this project file by: {string.Join(", ", overrides)}. "
+                  + "The editor cannot set these; the generated code will honour them.";
+        }
+    }
+
     public MessageViewModel(BusViewModel bus, Message message)
     {
         _bus = bus;
@@ -321,5 +384,12 @@ public sealed class MessageViewModel : ObservableObject
     public void RefreshFields()
     {
         foreach (var f in Fields) f.RefreshComputed();
+
+        // Wire order is derived from the bus, so editing the bus has to repaint the header chip. It used
+        // to ride along on the field rows, which repainted for other reasons anyway.
+        OnPropertyChanged(nameof(WireOrderLabel));
+        OnPropertyChanged(nameof(WireOrderDetail));
+        OnPropertyChanged(nameof(WireOrderOverrides));
+        OnPropertyChanged(nameof(HasWireOrderOverrides));
     }
 }
