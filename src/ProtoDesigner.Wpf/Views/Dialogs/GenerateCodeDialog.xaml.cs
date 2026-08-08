@@ -6,6 +6,7 @@ using Microsoft.Win32;
 using ProtoDesigner.Application;
 using ProtoDesigner.Application.Commands;
 using ProtoDesigner.CodeGen;
+using ProtoDesigner.Core.Model;
 using ProtoDesigner.Wpf.Mvvm;
 using ProtoDesigner.Wpf.ViewModels;
 
@@ -101,12 +102,60 @@ public partial class GenerateCodeDialog : Window
 
     private readonly ObservableCollection<ProtocLanguageRow> _protocLanguages = new();
 
+    /// <summary>One message the current scope covers, with whether the user and the target both want it.</summary>
+    /// <remarks>
+    /// The two reasons a message can be left out are kept apart on purpose. <see cref="IsIncluded"/> is the
+    /// user's choice; <see cref="IsEligible"/> is the target's answer, and when it is false the tick is
+    /// disabled rather than merely cleared — otherwise a user would tick it, watch it come back unticked,
+    /// and have no idea why. <see cref="Explanation"/> is the why, which nothing in this dialog showed
+    /// per-message before.
+    /// </remarks>
+    private sealed class MessageRow : ObservableObject
+    {
+        public MessageRow(Bus bus, Message message, string label)
+        {
+            Bus = bus;
+            Message = message;
+            Label = label;
+        }
+
+        public Bus Bus { get; }
+
+        public Message Message { get; }
+
+        public string Label { get; }
+
+        private bool _isIncluded = true;
+        public bool IsIncluded { get => _isIncluded; set => SetProperty(ref _isIncluded, value); }
+
+        private bool _isEligible = true;
+        public bool IsEligible { get => _isEligible; set => SetProperty(ref _isEligible, value); }
+
+        private string? _blocker;
+        public string? Blocker
+        {
+            get => _blocker;
+            set { if (SetProperty(ref _blocker, value)) OnPropertyChanged(nameof(Explanation)); }
+        }
+
+        public string Explanation => Blocker ?? $"Include '{Message.Name}' in the generated output.";
+    }
+
+    private readonly ObservableCollection<MessageRow> _messages = new();
+
+    /// <summary>
+    /// Ticks the user has cleared, remembered by id so switching target or scope does not silently
+    /// re-enable something they deliberately turned off.
+    /// </summary>
+    private readonly HashSet<MessageId> _unticked = new();
+
     private GenerateCodeDialog(ProjectViewModel project)
     {
         InitializeComponent();
         _project = project;
 
         FileList.ItemsSource = _files;
+        MessageList.ItemsSource = _messages;
 
         TargetOptionsList.ItemsSource = _targetOptions;
 
@@ -122,6 +171,9 @@ public partial class GenerateCodeDialog : Window
 
         NamespaceBox.Text = project.Project.Name;
         OutputBox.Text = DefaultOutputFolder(project);
+
+        RebuildTargetOptions();
+        RebuildMessageList();
 
         _ready = true;
         Refresh();
@@ -185,10 +237,120 @@ public partial class GenerateCodeDialog : Window
     {
         // Changing the target changes which settings exist, so the panel is rebuilt before regenerating.
         if (ReferenceEquals(sender, TargetBox)) RebuildTargetOptions();
+        RebuildMessageList();
         Refresh();
     }
 
     private void OnTargetOptionToggled(object sender, RoutedEventArgs e) => Refresh();
+
+    // ---- message checklist ----------------------------------------------------------------------
+
+    /// <summary>
+    /// Rebuilds the checklist for the current scope and target, keeping the user's own exclusions.
+    /// </summary>
+    /// <remarks>
+    /// Eligibility comes from <see cref="ProtobufCompatibility"/> — the same gate
+    /// <see cref="CodeGenerationService"/> applies — rather than from a second copy of the rules. That is
+    /// what stops the list offering a message the generator would then drop.
+    /// </remarks>
+    private void RebuildMessageList()
+    {
+        _messages.Clear();
+
+        if (ScopeBox.SelectedItem is not ScopeOption scope ||
+            TargetBox.SelectedItem is not TargetOption target)
+        {
+            MessagePanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var scopes = scope.Resolve();
+        var manyBuses = scopes.Count > 1;
+
+        foreach (var s in scopes)
+        {
+            // Only ask about eligibility for a target that has something to refuse. For the C target every
+            // message is expressible, and running the protobuf rules would be wasted work.
+            var blockers = target.Generator.CoversEveryMessage
+                ? new Dictionary<MessageId, string>()
+                : ProtobufCompatibility.ForBus(_project.Project, s.Bus)
+                    .Where(el => !el.IsEligible)
+                    .ToDictionary(el => el.Message.Id, el => el.Reason!);
+
+            foreach (var message in s.Messages)
+            {
+                var label = manyBuses ? $"{s.Bus.Name} · {message.Name}" : message.Name;
+                var row = new MessageRow(s.Bus, message, label);
+
+                if (blockers.TryGetValue(message.Id, out var reason))
+                {
+                    row.IsEligible = false;
+                    row.IsIncluded = false;
+                    row.Blocker = $"{target.Generator.DisplayName} cannot express this message. {reason}";
+                }
+                else
+                {
+                    row.IsIncluded = !_unticked.Contains(message.Id);
+                }
+
+                _messages.Add(row);
+            }
+        }
+
+        MessagePanel.Visibility = _messages.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        UpdateMessageSummary();
+    }
+
+    private void UpdateMessageSummary()
+    {
+        var included = _messages.Count(m => m.IsIncluded);
+        var refused = _messages.Count(m => !m.IsEligible);
+
+        MessageSummary.Text = refused > 0
+            ? $"{included} of {_messages.Count} selected · {refused} this target cannot express"
+            : $"{included} of {_messages.Count} selected";
+    }
+
+    private void OnMessageToggled(object sender, RoutedEventArgs e)
+    {
+        if (!_ready) return;
+        if (sender is not CheckBox { DataContext: MessageRow row }) return;
+
+        if (row.IsIncluded) _unticked.Remove(row.Message.Id);
+        else _unticked.Add(row.Message.Id);
+
+        UpdateMessageSummary();
+        Refresh();
+    }
+
+    private void OnSelectAllMessages(object sender, RoutedEventArgs e) => SetAllMessages(true);
+
+    private void OnSelectNoMessages(object sender, RoutedEventArgs e) => SetAllMessages(false);
+
+    private void SetAllMessages(bool included)
+    {
+        foreach (var row in _messages)
+        {
+            // An ineligible message stays off either way: "All" means "everything that can be generated",
+            // and ticking one the target refuses would promise output that never arrives.
+            if (!row.IsEligible) continue;
+
+            row.IsIncluded = included;
+            if (included) _unticked.Remove(row.Message.Id);
+            else _unticked.Add(row.Message.Id);
+        }
+
+        UpdateMessageSummary();
+        Refresh();
+    }
+
+    /// <summary>The ticked messages, as scopes, preserving each bus's own message order.</summary>
+    private IReadOnlyList<GenerationScope> SelectedScopes() =>
+        _messages
+            .Where(m => m.IsIncluded)
+            .GroupBy(m => m.Bus)
+            .SelectMany(g => GenerationScopes.ForMessages(g.Key, g.Select(m => m.Message.Id)))
+            .ToList();
 
     /// <summary>Shows the settings the selected generator declares, and nothing else.</summary>
     private void RebuildTargetOptions()
@@ -250,6 +412,9 @@ public partial class GenerateCodeDialog : Window
         _project.Journal.Do(new AssignProtoFieldNumbersCommand());
 
         RefreshAssignButton();
+        // Assigning can change eligibility: PD0073 refuses a message whose fields share a number, and
+        // giving every field its own clears it.
+        RebuildMessageList();
         Refresh();
     }
 
@@ -274,17 +439,22 @@ public partial class GenerateCodeDialog : Window
         _files.Clear();
 
         if (TargetBox.SelectedItem is not TargetOption target ||
-            ScopeBox.SelectedItem is not ScopeOption scope)
+            ScopeBox.SelectedItem is not ScopeOption)
         {
             ShowStatus("Pick a language and a scope.", Array.Empty<string>(), blocking: true);
             return;
         }
 
+        // The checklist is the scope now: it starts as everything the picker chose, minus what the target
+        // refuses and what the user unticked. Reading it here rather than re-resolving the picker is what
+        // makes the preview agree with the ticks.
+        var selected = SelectedScopes();
+
         CodeGenerationResult result;
         try
         {
             result = CodeGenerationService.Generate(
-                _project.Project, target.Generator, scope.Resolve(), BuildOptions());
+                _project.Project, target.Generator, selected, BuildOptions());
         }
         catch (Exception ex)
         {
@@ -309,25 +479,44 @@ public partial class GenerateCodeDialog : Window
         // What a target cannot express is stated with the blocking field named. A message that vanishes
         // from the output without explanation is the failure this whole gate exists to prevent — the user
         // should never have to work out why their message is missing.
-        var skipped = result.Excluded
-            .Select(e => $"{e.Message.Name}: {e.Reason}")
+        //
+        // Read off the checklist rather than result.Excluded: the ineligible messages were already dropped
+        // before the service saw them, so its own excluded list is empty by the time it returns. The
+        // service still narrows independently, and must — the CLI has no checklist.
+        var skipped = _messages
+            .Where(m => !m.IsEligible)
+            .Select(m => $"{m.Message.Name}: {m.Blocker}")
             .ToArray();
+
+        var unticked = _messages.Count(m => m.IsEligible && !m.IsIncluded);
 
         if (_files.Count == 0)
         {
-            ShowStatus(
-                skipped.Length > 0
-                    ? $"Nothing to generate: none of the {skipped.Length} selected message(s) can be "
+            // Three different reasons for an empty result, and saying the wrong one sends the user looking
+            // in the wrong place: an empty scope, a target that refuses everything in it, or ticks the user
+            // cleared themselves. Only the middle one is about the target.
+            var headline =
+                _messages.Count == 0 ? "Nothing to generate for this selection."
+                : skipped.Length == _messages.Count
+                    ? $"Nothing to generate: none of the {_messages.Count} message(s) in this scope can be "
                       + $"expressed by {target.Generator.DisplayName}."
-                    : "Nothing to generate for this selection.",
-                skipped.Length > 0 ? skipped : new[] { "That scope covers no messages." },
-                blocking: true);
+                    : "Nothing to generate: no messages are ticked.";
+
+            var detail = _messages.Count == 0
+                ? new[] { "That scope covers no messages." }
+                : skipped;
+
+            ShowStatus(headline, detail, blocking: true);
             return;
         }
 
+        // Unticking is a choice, not a surprise, so it is counted rather than listed field by field.
         if (skipped.Length > 0)
             ShowStatus($"{skipped.Length} message(s) left out — this target cannot express them.",
                 skipped, blocking: false);
+        else if (unticked > 0)
+            ShowStatus($"{unticked} message(s) unticked and not generated.",
+                Array.Empty<string>(), blocking: false);
         else
             HideStatus();
 

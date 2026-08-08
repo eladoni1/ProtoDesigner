@@ -15,6 +15,8 @@
         <RowDefinition Height="Auto"/>
         <!-- protoc languages, for the schema target only. Same deal: no target, no space. -->
         <RowDefinition Height="Auto"/>
+        <!-- Per-message checklist. Auto-sized and capped, so a two-message project costs two rows. -->
+        <RowDefinition Height="Auto"/>
         <RowDefinition Height="Auto"/>
         <RowDefinition Height="*"/>
         <RowDefinition Height="Auto"/>
@@ -104,8 +106,47 @@
                  Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,12"
                  Text="protoc was not found, so the schema can only be written, not compiled. Put it in protobuf/bin/ next to the solution, set PROTODESIGNER_PROTOC, or add it to PATH — it is not bundled, because it is a large platform-specific binary."/>
 
+      <!-- Per-message checklist. The scope picker chooses a set; this narrows it to individual messages,
+           and is the only place a user can see *why* a target refused one rather than just that it did. -->
+      <Border Grid.Row="4" x:Name="MessagePanel" Margin="0,0,0,12"
+              Background="{StaticResource Surface0}" CornerRadius="6"
+              BorderBrush="{StaticResource SurfaceStroke}" BorderThickness="1" Padding="12,8">
+        <StackPanel>
+          <Grid>
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Style="{StaticResource SectionLabel}" Text="Messages"/>
+              <TextBlock x:Name="MessageSummary" Style="{StaticResource CaptionText}"
+                         Margin="10,0,0,0" VerticalAlignment="Center"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+              <Button Content="All" Style="{StaticResource GhostButton}" Padding="10,2" FontSize="11"
+                      Click="OnSelectAllMessages"
+                      ToolTip="Tick every message this target can express."/>
+              <Button Content="None" Style="{StaticResource GhostButton}" Padding="10,2" FontSize="11"
+                      Margin="6,0,0,0" Click="OnSelectNoMessages"/>
+            </StackPanel>
+          </Grid>
+
+          <ScrollViewer MaxHeight="132" VerticalScrollBarVisibility="Auto" Margin="0,6,0,0">
+            <ItemsControl x:Name="MessageList">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <CheckBox Content="{Binding Label}" IsChecked="{Binding IsIncluded}"
+                            IsEnabled="{Binding IsEligible}" ToolTip="{Binding Explanation}"
+                            Margin="0,3,18,0" Width="230"
+                            Checked="OnMessageToggled" Unchecked="OnMessageToggled"/>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+            </ItemsControl>
+          </ScrollViewer>
+        </StackPanel>
+      </Border>
+
       <!-- Refusal / status banner -->
-      <Border Grid.Row="4" x:Name="StatusBanner" Background="{StaticResource Surface3}" CornerRadius="6"
+      <Border Grid.Row="5" x:Name="StatusBanner" Background="{StaticResource Surface3}" CornerRadius="6"
               Padding="12,9" Margin="0,0,0,12" Visibility="Collapsed">
         <StackPanel>
           <TextBlock x:Name="StatusText" TextWrapping="Wrap" FontWeight="SemiBold"/>
@@ -121,7 +162,7 @@
       </Border>
 
       <!-- File list + preview -->
-      <Grid Grid.Row="5">
+      <Grid Grid.Row="6">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="260" MinWidth="180"/>
           <ColumnDefinition Width="10"/>
@@ -182,7 +223,7 @@
       </Grid>
 
       <!-- Output folder + actions -->
-      <Grid Grid.Row="6" Margin="0,16,0,0">
+      <Grid Grid.Row="7" Margin="0,16,0,0">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto"/>
           <ColumnDefinition Width="*"/>

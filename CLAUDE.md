@@ -269,8 +269,6 @@ every emitted function name must be unique.
 - The WPF layer has no automated tests. Everything below it does. Dialog logic that is really *policy*
   should be extracted so it can be — `WireSizePolicy` was pulled out of the primitive editor for exactly
   this reason, after a defect that was untestable where it lived.
-- The Generate dialog reports which messages a target left out, but does not yet let you tick individual
-  messages for export.
 - Nothing consumes a generated `.proto` end to end (`protoc --csharp_out`, populate, serialize,
   deserialize). The schema is proven valid and its constraints proven to fire; it is not proven *usable*
   by a generated stub. See the note under "Open work" before spending time on it.
@@ -323,22 +321,20 @@ something and watching it go red — do the same before trusting a change here.
 
 ### Open work, in the order I would take it
 
-1. **Per-message export checklist** in the Generate dialog. It currently reports what a target left out;
-   it does not let you tick individual messages.
-2. **C# encode/decode.** Declarations and `OnWireLength` exist; the codec does not.
-3. **`FillRemaining` / `Terminated` decode** — scan for the sentinel or consume the remainder instead of
+1. **C# encode/decode.** Declarations and `OnWireLength` exist; the codec does not.
+2. **`FillRemaining` / `Terminated` decode** — scan for the sentinel or consume the remainder instead of
    asking the caller for a count. This is the *only* remaining gap in those two: they reach the IR and the
    C generator correctly, which `DynamicArrayKindTests` now pins.
-4. **Test the built-in ID enums.** Deferred deliberately, not forgotten: `MessageId`/`ModuleId` are seeded
+3. **Test the built-in ID enums.** Deferred deliberately, not forgotten: `MessageId`/`ModuleId` are seeded
    into every project and their members are derived per bus, so the cases to cover are a renamed bus, a
    renamed message, a changed `WireId`, a renamed module, and a project saved before they existed loading
    without them. None of that is covered yet.
-5. **Match the ID enums to the requested spelling, or decide not to.** The shape asked for was
+4. **Match the ID enums to the requested spelling, or decide not to.** The shape asked for was
    `<BUS_NAME>_MESSAGE_ID_NA` / `<BUS_NAME>_<MODULE_NAME>`; what is emitted is
    `<ns>_<Bus>MessageId_NotAssigned` / `<ns>_<Bus>ModuleId_<Module>`, which is the C target's own naming
    convention and already carries the bus scope the request was after. Renaming would churn every golden
    and break any deployed code that switches on these. Worth a decision, not an assumption.
-6. **Wire-compatibility diffing** — compare two versions' `MessageLayout`s and report which changes
+5. **Wire-compatibility diffing** — compare two versions' `MessageLayout`s and report which changes
    break a deployed decoder (reorder, narrow, widen, endianness, `WireId` change) versus which are safe
    (rename anything — identity is an ID). This needs no database, works against the last git commit, and
    is the thing git structurally cannot do for a binary protocol. Recommended before any of Phase 6.
