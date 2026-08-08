@@ -93,10 +93,19 @@ public sealed class LayoutRowViewModel
             }
             else
             {
+                // The floor comes from the region, not from zero. A dynamic array with a declared minimum
+                // is not "0.." anything, and printing it that way contradicted the message size right next
+                // to it — a 4..4 array kept the message fixed while this row claimed it could be empty.
                 var region = message.Layout?.Regions.FirstOrDefault(r => r.Index == node.RegionIndex);
                 var max = region?.MaxElements ?? 0;
-                Size = $"0–{FormatSize(stride * max)}";
-                Detail = $"{FormatSize(stride)} × 0..{max}";
+                var min = region?.MinElements ?? 0;
+
+                Size = min == max
+                    ? FormatSize(stride * max)
+                    : $"{FormatSize(stride * min)}–{FormatSize(stride * max)}";
+                Detail = min == max
+                    ? $"{FormatSize(stride)} × {max}"
+                    : $"{FormatSize(stride)} × {min}..{max}";
             }
         }
         else

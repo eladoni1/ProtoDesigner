@@ -44,7 +44,24 @@
         </StackPanel>
       </Grid>
 
-      <TextBlock x:Name="SizeHint" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+      <!-- How a variable array's length reaches the wire. Hidden for a fixed array, which has no length
+           to carry. -->
+      <StackPanel x:Name="SourcePanel" Margin="0,14,0,0">
+        <TextBlock Style="{StaticResource SectionLabel}" Text="Where the element count comes from"
+                   ToolTip="Either another field in the same message holds the count, or the array writes its own count immediately before its elements."/>
+        <ComboBox x:Name="SourceBox" Margin="0,4,0,0" SelectionChanged="OnLengthSourceChanged"/>
+
+        <StackPanel x:Name="CountFieldPanel" Margin="0,10,0,0">
+          <TextBlock Style="{StaticResource SectionLabel}" Text="Count field"/>
+          <ComboBox x:Name="CountFieldBox" Margin="0,4,0,0" SelectionChanged="OnCountFieldChanged"/>
+          <TextBlock x:Name="CountFieldHint" Style="{StaticResource CaptionText}" TextWrapping="Wrap"
+                     Margin="0,4,0,0"/>
+          <TextBlock x:Name="SharedWarning" Foreground="{StaticResource ErrorBrush}" FontSize="11"
+                     TextWrapping="Wrap" Margin="0,4,0,0" Visibility="Collapsed"/>
+        </StackPanel>
+      </StackPanel>
+
+      <TextBlock x:Name="SizeHint" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,10,0,0"/>
 
       <Border x:Name="ErrorBanner" Background="{StaticResource Surface3}" CornerRadius="6"
               Padding="10,7" Margin="0,14,0,0" Visibility="Collapsed">

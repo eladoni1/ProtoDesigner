@@ -117,7 +117,7 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 5b | Protobuf schema target + protovalidate | **Done** — gated per message, protoc-verified |
 | 6 | Shared storage & collaboration | Not started — see `docs/shared-storage-design.md` |
 
-**1816 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
+**1828 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
 rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
 red one. None of the toolchains is vendored.
 
@@ -757,6 +757,14 @@ overflow.
   `StringFormat` silently when the target is not a string — you get the bare value, no error. Use
   `HeaderStringFormat` (and `ContentStringFormat` on a `ContentControl`). This bit the "Edit {0}..." item
   on the field row's context menu, which rendered as just the type name.
+- **The count field is chosen in the array editor, and it lives on the *type*.** Picking "Variable" offers
+  either a count field earlier in the same message or an inline prefix, and `CountFieldCandidates`
+  (Application, tested) decides what is eligible so the list cannot offer something `LayoutEngine` then
+  throws on. The wrinkle is that `ArrayLength.CountFromField` holds one `FieldId` while an `ArrayType` is
+  project-wide: an array used by two messages can only point into one of them, and the other reports
+  PD0030. The dialog warns and names the messages rather than refusing — same line the editor takes on a
+  duplicate message id. The clean fix, if it ever matters, is to move the choice onto `FieldBinding`, which
+  is where a per-occurrence decision belongs.
 - **A count field must be laid out *before* its dynamic array** (earlier in the same message,
   including inside an earlier struct). The engine enforces this via a "seen fields" set;
   forward references throw. The validator should catch it first with a friendly message.
