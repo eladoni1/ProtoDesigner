@@ -525,6 +525,37 @@ public sealed class CGenerator : IProtocolGenerator
                 sb.AppendLine($"      pd_bw_write_unsigned(&w, n, {arr.PrefixBits}, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST); }}");
             }
 
+            // A struct element is written member by member, each positioned from the element's own
+            // start. The stride is re-established at the end of every iteration so that padding
+            // inside the element cannot accumulate into a drift across the array.
+            if (arr.HasCompositeElement)
+            {
+                sb.AppendLine($"    for (size_t i = 0; i < (size_t)({countExpr}) && i < {arr.MaxElements}; ++i) {{");
+                sb.AppendLine("        const size_t e = pd_bw_bit_length(&w);");
+                foreach (var em in arr.ElementFields!)
+                {
+                    var emEndian = EndianExpr(em.Endianness, em.BitOrder);
+                    var emName = CNaming.MemberName(em.Name);
+                    sb.AppendLine($"        /* {member}[].{em.Name} */");
+                    sb.AppendLine($"        if (pd_bw_bit_length(&w) < e + {em.BitOffset}) pd_bw_skip(&w, e + {em.BitOffset} - pd_bw_bit_length(&w));");
+
+                    var open = "        ";
+                    var memberAccess = $"msg->{member}[i].{emName}";
+                    if (em.FixedArrayCount is { } n)
+                    {
+                        sb.AppendLine($"        for (size_t j = 0; j < {n}; ++j) {{");
+                        open = "            ";
+                        memberAccess = $"msg->{member}[i].{emName}[j]";
+                    }
+                    EmitWriteValue(sb, open, memberAccess, em.Primitive, em.EnumIndex is not null,
+                                   em.Transform, em.BitWidth, emEndian, em.WireIsSigned);
+                    if (em.FixedArrayCount is not null) sb.AppendLine("        }");
+                }
+                sb.AppendLine($"        if (pd_bw_bit_length(&w) < e + {arr.ElementBits}) pd_bw_skip(&w, e + {arr.ElementBits} - pd_bw_bit_length(&w));");
+                sb.AppendLine("    }");
+                return;
+            }
+
             sb.AppendLine($"    for (size_t i = 0; i < (size_t)({countExpr}) && i < {arr.MaxElements}; ++i) {{");
             var elemAccess = arr.ElementEnumIndex is not null
                 ? $"(int64_t)(msg->{member}[i])"
@@ -639,6 +670,40 @@ public sealed class CGenerator : IProtocolGenerator
                     break;
             }
 
+            // Mirror of the encode side: member by member, each from the element's own start, with the
+            // stride re-established per iteration so element padding cannot drift across the array.
+            if (arr.HasCompositeElement)
+            {
+                sb.AppendLine($"    for (size_t i = 0; i < (size_t)({countExpr}) && i < {arr.MaxElements}; ++i) {{");
+                sb.AppendLine("        const size_t e = pd_br_bit_offset(&r);");
+                foreach (var em in arr.ElementFields!)
+                {
+                    var emEndian = EndianExpr(em.Endianness, em.BitOrder);
+                    var emName = CNaming.MemberName(em.Name);
+                    var emType = em.EnumIndex is { } eei
+                        ? CNaming.TypeName(prefix, ir.Enums[eei].Name)
+                        : CNaming.StorageType(em.Primitive);
+
+                    sb.AppendLine($"        /* {member}[].{em.Name} */");
+                    sb.AppendLine($"        if (pd_br_bit_offset(&r) < e + {em.BitOffset}) pd_br_skip(&r, e + {em.BitOffset} - pd_br_bit_offset(&r));");
+
+                    var open = "        ";
+                    var target = $"msg->{member}[i].{emName}";
+                    if (em.FixedArrayCount is { } n)
+                    {
+                        sb.AppendLine($"        for (size_t j = 0; j < {n}; ++j) {{");
+                        open = "            ";
+                        target = $"msg->{member}[i].{emName}[j]";
+                    }
+                    EmitReadValue(sb, open, target, emType, em.Primitive, em.Transform,
+                                  em.BitWidth, emEndian, em.WireIsSigned);
+                    if (em.FixedArrayCount is not null) sb.AppendLine("        }");
+                }
+                sb.AppendLine($"        if (pd_br_bit_offset(&r) < e + {arr.ElementBits}) pd_br_skip(&r, e + {arr.ElementBits} - pd_br_bit_offset(&r));");
+                sb.AppendLine("    }");
+                return;
+            }
+
             sb.AppendLine($"    for (size_t i = 0; i < (size_t)({countExpr}) && i < {arr.MaxElements}; ++i) {{");
             var elemType = arr.ElementEnumIndex is { } ei
                 ? CNaming.TypeName(prefix, ir.Enums[ei].Name)
@@ -684,6 +749,50 @@ public sealed class CGenerator : IProtocolGenerator
             : CNaming.StorageType(f.Primitive);
 
         sb.AppendLine($"    msg->{member} = ({type})({value});");
+    }
+
+    // ---- one value, shared by whole fields and by members of a composite array element -----------
+
+    /// <summary>Writes one value at the writer's current position.</summary>
+    private static void EmitWriteValue(StringBuilder sb, string indent, string access,
+        PrimitiveKind primitive, bool isEnum, ScalarTransform transform, int bits, string endian,
+        bool wireIsSigned)
+    {
+        // A float host with no transform puts its IEEE bit pattern on the wire verbatim; casting to an
+        // integer would keep 3 of 3.14159 and discard the rest.
+        if (IsRawFloat(primitive, transform))
+        {
+            var bitsCall = primitive == PrimitiveKind.F32
+                ? $"pd_float_bits({access})"
+                : $"pd_double_bits({access})";
+            sb.AppendLine($"{indent}pd_bw_write_unsigned(&w, (uint64_t)({bitsCall}), {bits}, {endian});");
+            return;
+        }
+
+        var expr = ToWireCode(isEnum ? $"(int64_t)({access})" : access, transform, primitive);
+        if (wireIsSigned)
+            sb.AppendLine($"{indent}pd_bw_write_signed(&w, (int64_t)({expr}), {bits}, {endian});");
+        else
+            sb.AppendLine($"{indent}pd_bw_write_unsigned(&w, (uint64_t)({expr}), {bits}, {endian});");
+    }
+
+    /// <summary>Reads one value at the reader's current position into <paramref name="target"/>.</summary>
+    private static void EmitReadValue(StringBuilder sb, string indent, string target, string cType,
+        PrimitiveKind primitive, ScalarTransform transform, int bits, string endian, bool wireIsSigned)
+    {
+        if (IsRawFloat(primitive, transform))
+        {
+            var fromBits = primitive == PrimitiveKind.F32
+                ? $"pd_bits_to_float((uint32_t)pd_br_read_unsigned(&r, {bits}, {endian}))"
+                : $"pd_bits_to_double((uint64_t)pd_br_read_unsigned(&r, {bits}, {endian}))";
+            sb.AppendLine($"{indent}{target} = {fromBits};");
+            return;
+        }
+
+        var call = wireIsSigned
+            ? $"pd_br_read_signed(&r, {bits}, {endian})"
+            : $"pd_br_read_unsigned(&r, {bits}, {endian})";
+        sb.AppendLine($"{indent}{target} = ({cType})({FromWireCode(call, transform, primitive)});");
     }
 
     // ---- transform helpers ---------------------------------------------------------------------

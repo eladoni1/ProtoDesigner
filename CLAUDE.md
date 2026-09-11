@@ -117,7 +117,7 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 5b | Protobuf schema target + protovalidate | **Done** — gated per message, protoc-verified |
 | 6 | Shared storage & collaboration | Not started — see `docs/shared-storage-design.md` |
 
-**1828 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
+**1847 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
 rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
 red one. None of the toolchains is vendored.
 
@@ -768,6 +768,28 @@ overflow.
   PD0030. The dialog warns and names the messages rather than refusing — same line the editor takes on a
   duplicate message id. The clean fix, if it ever matters, is to move the choice onto `FieldBinding`, which
   is where a per-occurrence decision belongs.
+- **An array element may be a struct, and PD0036 now refuses a much narrower set than it used to.** The
+  element is described by `IrArrayInfo.ElementFields` — one entry per value inside one element, offset from
+  that element's own start — because `ElementPrimitive` can name only one scalar kind. Check
+  `IrArrayInfo.HasCompositeElement` before reading `ElementPrimitive`, `ElementEnumIndex`, or treating
+  `ElementBits` as one value's width: for a struct element those are a placeholder, null, and the whole
+  stride. Reading the kind of an element that has none is exactly how an array of structs silently became
+  an array of `uint8_t` the first time round.
+- **Removing that blanket refusal exposed three shapes for the first time, and all three are PD0036's job,
+  not the builder's.** An array of arrays, a *dynamic* array inside an element, and a fixed array *of
+  composites* inside an element. The layout engine lays the last one out perfectly well, so it is
+  wrong-but-computable and belongs to the validator under rule 5 — left to `IrBuilder` it surfaced as an
+  `InvalidOperationException` at generate time instead of a diagnostic naming the member. The rule recurses
+  through nested structs, since a nested struct otherwise hides the offender.
+- **The reference codec deliberately refuses composite elements rather than implementing them.** Its array
+  path describes an element by one `ElementPrimitive`, so it would have to grow the feature before it could
+  disagree with the C generator about it — and writing it by mirroring `CGenerator` would destroy the
+  independence that makes the cross-check worth anything, the same mistake as a C# reimplementation of
+  protovalidate. Ground truth for this shape is `CStructArrayCrossCheck`, whose expected bytes are derived
+  from the declared layout **by hand** and cannot be made to pass by changing both implementations the same
+  wrong way. It pins three counts — two elements, zero, and full — because a stride added once too often
+  still produces the right bytes in the middle and the wrong ones at the ends, and what moves is the
+  trailing field nobody touched.
 - **A count field must be laid out *before* its dynamic array** (earlier in the same message,
   including inside an earlier struct). The engine enforces this via a "seen fields" set;
   forward references throw. The validator should catch it first with a friendly message.

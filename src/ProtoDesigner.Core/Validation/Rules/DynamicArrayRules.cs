@@ -105,13 +105,38 @@ public sealed class DynamicArrayRule : IValidationRule
 }
 
 /// <summary>
-/// An array whose elements are themselves a struct or another array.
+/// An array element that code generation cannot describe: another array, or a struct carrying one.
 /// </summary>
 /// <remarks>
-/// The layout engine handles these — it flattens the element into <c>items[].x</c> nodes and computes a
-/// stride — but code generation writes one scalar per element, so it has no way to emit them. Until it
-/// does, saying so here beats emitting an array of the wrong type: the previous behaviour fell back to
-/// <c>uint8_t</c> elements, which compiled cleanly and encoded nothing like the declared model.
+/// <para>
+/// Struct elements <em>are</em> supported. The layout engine flattens the element into
+/// <c>items[].x</c> nodes and computes a stride, <see cref="Core.Ir.IrArrayInfo.ElementFields"/>
+/// carries that through, and the C generator emits a member-by-member inner loop. This rule used to
+/// refuse them outright, back when <c>IrArrayInfo</c> could describe an element only as a single scalar
+/// kind and the fallback emitted <c>uint8_t</c> elements that compiled cleanly and encoded nothing like
+/// the declared model.
+/// </para>
+/// <para>
+/// What it refuses now is everything that still has no shape in the IR, and the blanket refusal used to
+/// hide all of it. An element must have <b>one constant stride</b>, so:
+/// </para>
+/// <list type="bullet">
+/// <item>an array <em>of</em> arrays has no single stride at all;</item>
+/// <item>a <em>dynamic</em> array inside an element makes the stride depend on data, so every offset
+/// after it would too;</item>
+/// <item>a fixed array <em>of composites</em> inside an element has a constant stride, but describing it
+/// would need a second level of nesting that <c>IrElementField</c> does not have — it names one value,
+/// optionally repeated.</item>
+/// </list>
+/// <para>
+/// A fixed array of primitives or enums inside an element is fine, and is the common case — a payload
+/// buffer inside a channel record. So is a nested struct, at any depth.
+/// </para>
+/// <para>
+/// All three are reported here rather than left to the builder, which is rule 5: the layout engine lays
+/// every one of them out perfectly well, so they are wrong-but-computable, and a user meets them as a
+/// diagnostic naming the member rather than an <see cref="InvalidOperationException"/> at generate time.
+/// </para>
 /// </remarks>
 public sealed class ArrayOfCompositeElementRule : IValidationRule
 {
@@ -122,14 +147,71 @@ public sealed class ArrayOfCompositeElementRule : IValidationRule
         foreach (var array in ctx.Project.Types.All.OfType<ArrayType>())
         {
             if (!ctx.Project.Types.TryGet(array.ElementTypeId, out var element) || element is null) continue;
-            if (element is not (StructType or ArrayType)) continue;
 
-            var what = element is StructType ? "struct" : "array";
-            yield return new Diagnostic(Code, Severity.Error,
-                $"Array '{array.Name}' has elements of type '{element.Name}', which is a {what}. "
-                + "Code generation supports arrays of primitives and enums only.",
-                EntityPath.ForType(array));
+            if (element is ArrayType)
+            {
+                yield return new Diagnostic(Code, Severity.Error,
+                    $"Array '{array.Name}' has elements of type '{element.Name}', which is itself an array. "
+                    + "An array element must have one fixed stride; put the inner array inside a struct "
+                    + "and use that as the element instead.",
+                    EntityPath.ForType(array));
+                continue;
+            }
+
+            if (element is not StructType structElement) continue;
+
+            foreach (var finding in Inspect(ctx, array, structElement, prefix: "", new HashSet<TypeId>()))
+                yield return finding;
         }
+    }
+
+    /// <summary>
+    /// Walks one element's members, reporting any that would give the element a stride the IR cannot
+    /// describe. Recurses through nested structs, which are supported and may hide an offender.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="seen"/> guards a recursive struct. That is already <c>PD0010</c>'s job and the
+    /// engine rejects it too, but a validator must not hang on a model that is merely wrong.
+    /// </remarks>
+    private IEnumerable<Diagnostic> Inspect(
+        ValidationContext ctx, ArrayType array, StructType element, string prefix, HashSet<TypeId> seen)
+    {
+        if (!seen.Add(element.Id)) yield break;
+
+        foreach (var member in element.Fields)
+        {
+            if (!ctx.Project.Types.TryGet(member.TypeId, out var type) || type is null) continue;
+            var path = prefix.Length == 0 ? member.Name : $"{prefix}.{member.Name}";
+
+            switch (type)
+            {
+                case StructType nested:
+                    foreach (var finding in Inspect(ctx, array, nested, path, seen)) yield return finding;
+                    break;
+
+                case ArrayType inner when inner.Length is not ArrayLength.Fixed:
+                    yield return new Diagnostic(Code, Severity.Error,
+                        $"Array '{array.Name}' has elements of type '{element.Name}', whose member "
+                        + $"'{path}' is a variable-length array. Every element of '{array.Name}' has to "
+                        + "be the same size, so a length that changes per element cannot be placed. Give "
+                        + $"'{path}' a fixed count.",
+                        EntityPath.ForType(array));
+                    break;
+
+                case ArrayType inner
+                    when ctx.Project.Types.TryGet(inner.ElementTypeId, out var item)
+                         && item is StructType or ArrayType:
+                    yield return new Diagnostic(Code, Severity.Error,
+                        $"Array '{array.Name}' has elements of type '{element.Name}', whose member "
+                        + $"'{path}' is an array of '{item!.Name}'. Code generation can repeat a "
+                        + "primitive or an enum inside an element, but not a composite. Flatten "
+                        + $"'{item.Name}' into '{element.Name}', or drop one level of nesting.",
+                        EntityPath.ForType(array));
+                    break;
+            }
+        }
+
+        seen.Remove(element.Id);
     }
 }
 

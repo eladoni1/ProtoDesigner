@@ -364,7 +364,7 @@ public sealed class IrBuilder
             if (node.Path.Contains("[]"))
                 continue;
 
-            var field = ResolveField(project, node, enumTable);
+            var field = ResolveField(project, node, enumTable, structTable);
             if (node.FieldId is { } id) indexByFieldId.TryAdd(id, raw.Count);
             raw.Add(field);
         }
@@ -401,7 +401,7 @@ public sealed class IrBuilder
     // ---- per-node build ---------------------------------------------------------------------
 
     private static IrField ResolveField(Project project, LayoutNode node,
-        Dictionary<TypeId, int> enumTable)
+        Dictionary<TypeId, int> enumTable, Dictionary<TypeId, int> structTable)
     {
         var typeId = node.TypeId ?? throw new InvalidOperationException(
             $"Layout node '{node.Path}' has no TypeId; the IR requires every value node to be typed.");
@@ -422,7 +422,7 @@ public sealed class IrBuilder
                 node.Endianness, node.BitOrder, node.Transform, Array: null,
                 WireIsSigned: WireIsSigned(e.UnderlyingKind, e.MemberRange, node.Transform)),
 
-            ArrayType a => BuildArrayField(project, node, a, enumTable),
+            ArrayType a => BuildArrayField(project, node, a, enumTable, structTable),
 
             _ => throw new InvalidOperationException($"Layout node '{node.Path}' has unsupported type kind {type.GetType().Name}."),
         };
@@ -452,7 +452,7 @@ public sealed class IrBuilder
     }
 
     private static IrField BuildArrayField(Project project, LayoutNode node, ArrayType type,
-        Dictionary<TypeId, int> enumTable)
+        Dictionary<TypeId, int> enumTable, Dictionary<TypeId, int> structTable)
     {
         var elementNode = node.Children.FirstOrDefault()
             ?? throw new InvalidOperationException($"Array '{node.Path}' has no element node.");
@@ -460,14 +460,19 @@ public sealed class IrBuilder
 
         var elemType = project.Types.TryGet(type.ElementTypeId, out var t) ? t : null;
 
-        // An array of structs has no single element primitive, and the conversion loop below writes one
-        // scalar per element. Falling through to a default here produced an array of u8 that silently
-        // encoded nothing like the declared type, so it is refused instead. PD0064 reports it in the
-        // editor first; this is the backstop for anything that reaches the builder anyway.
-        if (elemType is StructType or ArrayType)
+        // An array whose element is itself an array has a variable or nested stride the region model
+        // cannot express, so it stays refused. PD0036 reports it in the editor; this is the backstop.
+        if (elemType is ArrayType)
             throw new InvalidOperationException(
                 $"Array '{node.Path}' has elements of type '{elemType.Name}'. Code generation supports "
-                + "arrays of primitives and enums only; wrap the element in a message field, or flatten it.");
+                + "arrays of primitives, enums and structs; an array of arrays has no single stride.");
+
+        // A struct element has no single primitive kind, so it is described by its members instead.
+        // The layout engine has already positioned each of them within one element; all that is needed
+        // is to carry that through rather than drop it.
+        if (elemType is StructType structElem)
+            return BuildCompositeArrayField(project, node, type, elementNode, elementBits,
+                                            structElem, enumTable, structTable);
 
         var (elemKind, elemEnumIdx) = elemType switch
         {
@@ -483,19 +488,7 @@ public sealed class IrBuilder
             _ => null,
         };
 
-        // CountFieldIndex uses the original binding's FieldId here; the second pass in BuildMessage
-        // maps that id to the flattened index. We stash the id in ElementEnumIndex? No â€” instead we
-        // resolve it at second-pass time via the layout region's CountFieldId. To keep BuildArrayField
-        // self-contained we leave CountFieldIndex null here.
-        var (irKind, count, maxCount, prefixBits, sentinel) = type.Length switch
-        {
-            ArrayLength.Fixed f => (IrArrayKind.Fixed, (int?)f.Count, f.Count, 0, (IReadOnlyList<byte>)Array.Empty<byte>()),
-            ArrayLength.CountFromField c => (IrArrayKind.CountFromField, (int?)null, c.MaxCount, 0, (IReadOnlyList<byte>)Array.Empty<byte>()),
-            ArrayLength.LengthPrefixed l => (IrArrayKind.LengthPrefixed, (int?)null, l.MaxCount, l.PrefixBits, (IReadOnlyList<byte>)Array.Empty<byte>()),
-            ArrayLength.Terminated s => (IrArrayKind.Terminated, (int?)null, s.MaxCount, 0, (IReadOnlyList<byte>)s.Sentinel.ToArray()),
-            ArrayLength.FillRemaining r => (IrArrayKind.FillRemaining, (int?)null, r.MaxCount, 0, (IReadOnlyList<byte>)Array.Empty<byte>()),
-            _ => throw new InvalidOperationException($"Array '{node.Path}' has unknown length kind {type.Length.GetType().Name}."),
-        };
+        var (irKind, count, maxCount, prefixBits, sentinel) = ResolveLength(type, node.Path);
 
         var info = new IrArrayInfo(irKind, count, maxCount, elementBits, elemKind, elemEnumIdx,
             CountFieldIndex: null, prefixBits, sentinel);
@@ -505,4 +498,129 @@ public sealed class IrBuilder
             node.Endianness, node.BitOrder, node.Transform, info,
             WireIsSigned: WireIsSigned(elemKind, elemRange, node.Transform));
     }
+
+    /// <summary>
+    /// The length rule, shared by scalar and composite element arrays.
+    /// </summary>
+    /// <remarks>
+    /// CountFieldIndex is deliberately left null by both callers. The second pass in BuildMessage
+    /// resolves it from the layout region's CountFieldId, so that the array field and its region can
+    /// never disagree about which field carries the count.
+    /// </remarks>
+    private static (IrArrayKind Kind, int? Count, int MaxCount, int PrefixBits, IReadOnlyList<byte> Sentinel)
+        ResolveLength(ArrayType type, string path) => type.Length switch
+    {
+        ArrayLength.Fixed f => (IrArrayKind.Fixed, (int?)f.Count, f.Count, 0, (IReadOnlyList<byte>)Array.Empty<byte>()),
+        ArrayLength.CountFromField c => (IrArrayKind.CountFromField, (int?)null, c.MaxCount, 0, (IReadOnlyList<byte>)Array.Empty<byte>()),
+        ArrayLength.LengthPrefixed l => (IrArrayKind.LengthPrefixed, (int?)null, l.MaxCount, l.PrefixBits, (IReadOnlyList<byte>)Array.Empty<byte>()),
+        ArrayLength.Terminated s => (IrArrayKind.Terminated, (int?)null, s.MaxCount, 0, (IReadOnlyList<byte>)s.Sentinel.ToArray()),
+        ArrayLength.FillRemaining r => (IrArrayKind.FillRemaining, (int?)null, r.MaxCount, 0, (IReadOnlyList<byte>)Array.Empty<byte>()),
+        _ => throw new InvalidOperationException($"Array '{path}' has unknown length kind {type.Length.GetType().Name}."),
+    };
+
+    /// <summary>
+    /// An array whose element is a struct: described by its members rather than by one primitive kind.
+    /// </summary>
+    private static IrField BuildCompositeArrayField(Project project, LayoutNode node, ArrayType type,
+        LayoutNode elementNode, int elementBits, StructType structElem,
+        Dictionary<TypeId, int> enumTable, Dictionary<TypeId, int> structTable)
+    {
+        var members = new List<IrElementField>();
+        CollectElementFields(project, elementNode, prefix: "", enumTable, members, node.Path);
+
+        if (members.Count == 0)
+            throw new InvalidOperationException(
+                $"Array '{node.Path}' has struct elements of type '{structElem.Name}' with no value members.");
+
+        var (irKind, count, maxCount, prefixBits, sentinel) = ResolveLength(type, node.Path);
+
+        var info = new IrArrayInfo(irKind, count, maxCount, elementBits,
+            // A placeholder: a struct element has no single kind, and PrimitiveKind has no "none".
+            // IrArrayInfo.HasCompositeElement is what a consumer checks before reading it.
+            ElementPrimitive: PrimitiveKind.U8,
+            ElementEnumIndex: null,
+            CountFieldIndex: null, prefixBits, sentinel,
+            ElementFields: members);
+
+        return new IrField(node.Path, IrFieldKind.Array, PrimitiveKind.U8, EnumIndex: null,
+            node.RegionIndex, node.BitOffset, elementBits,
+            node.Endianness, node.BitOrder, node.Transform, info,
+            WireIsSigned: false);
+    }
+
+    /// <summary>
+    /// Flattens one array element's value nodes, keeping each offset relative to the element start.
+    /// </summary>
+    /// <remarks>
+    /// Nested structs recurse and contribute a dotted access path, which is what a generator needs to
+    /// write <c>msg-&gt;items[i].inner.x</c>. A fixed-size array member stays a single entry carrying
+    /// its item count, so the generator emits one inner loop rather than N unrolled writes.
+    /// </remarks>
+    private static void CollectElementFields(Project project, LayoutNode container, string prefix,
+        Dictionary<TypeId, int> enumTable, List<IrElementField> sink, string arrayPath)
+    {
+        foreach (var child in container.Children)
+        {
+            if (child.Kind is LayoutNodeKind.Padding or LayoutNodeKind.LengthPrefix) continue;
+
+            var leaf = child.Path.Contains('.')
+                ? child.Path[(child.Path.LastIndexOf('.') + 1)..]
+                : child.Path;
+            var name = prefix.Length == 0 ? leaf : $"{prefix}.{leaf}";
+
+            if (child.Kind == LayoutNodeKind.Struct)
+            {
+                CollectElementFields(project, child, name, enumTable, sink, arrayPath);
+                continue;
+            }
+
+            var childType = child.TypeId is { } tid && project.Types.TryGet(tid, out var ct) ? ct : null;
+
+            if (childType is ArrayType inner)
+            {
+                // Only a fixed count is expressible here: a dynamic array inside an array element would
+                // make the element stride vary from one element to the next, and every offset after it
+                // would depend on data rather than on the layout.
+                if (inner.Length is not ArrayLength.Fixed fixedLen)
+                    throw new InvalidOperationException(
+                        $"Array '{arrayPath}' has a struct element containing dynamic array '{name}'. "
+                        + "Only fixed-size arrays may appear inside an array element.");
+
+                var itemNode = child.Children.FirstOrDefault();
+                var itemType = itemNode?.TypeId is { } iid && project.Types.TryGet(iid, out var it) ? it : null;
+                if (itemType is StructType or ArrayType)
+                    throw new InvalidOperationException(
+                        $"Array '{arrayPath}' has a struct element containing '{name}', an array of "
+                        + "composites. Only arrays of primitives or enums may appear inside an element.");
+
+                var (itemKind, itemEnum, itemRange) = Describe(itemType, enumTable);
+                var itemBits = child.ElementBits > 0 ? child.ElementBits : (itemNode?.BitWidth ?? child.BitWidth);
+
+                sink.Add(new IrElementField(name, itemKind, itemEnum, child.BitOffset, itemBits,
+                    child.Endianness, child.BitOrder, child.Transform,
+                    WireIsSigned(itemKind, itemRange, child.Transform),
+                    FixedArrayCount: fixedLen.Count));
+                continue;
+            }
+
+            if (childType is StructType)
+            {
+                CollectElementFields(project, child, name, enumTable, sink, arrayPath);
+                continue;
+            }
+
+            var (kind, enumIdx, range) = Describe(childType, enumTable);
+            sink.Add(new IrElementField(name, kind, enumIdx, child.BitOffset, child.BitWidth,
+                child.Endianness, child.BitOrder, child.Transform,
+                WireIsSigned(kind, range, child.Transform)));
+        }
+    }
+
+    private static (PrimitiveKind Kind, int? EnumIndex, NumericRange? Range) Describe(
+        TypeDefinition? type, Dictionary<TypeId, int> enumTable) => type switch
+    {
+        ParameterType p => (p.Kind, (int?)null, p.Range),
+        EnumType e => (e.UnderlyingKind, enumTable.TryGetValue(e.Id, out var i) ? i : (int?)null, e.MemberRange),
+        _ => (PrimitiveKind.U8, (int?)null, (NumericRange?)null),
+    };
 }

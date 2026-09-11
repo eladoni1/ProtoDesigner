@@ -126,6 +126,8 @@ public sealed class ReferenceCodec
             throw new InvalidOperationException(
                 $"Array '{field.Path}' has {count} elements but the maximum is {maxCount}.");
 
+        RefuseCompositeElements(field, arr, count);
+
         for (var i = 0; i < count; i++)
         {
             var element = list.Count > i ? list[i] : 0;
@@ -190,6 +192,8 @@ public sealed class ReferenceCodec
             _ => throw new NotSupportedException($"Array kind {arr.Kind} not yet supported by the reference codec."),
         };
 
+        RefuseCompositeElements(field, arr, count);
+
         var list = new List<object>(count);
         for (var i = 0; i < count; i++)
         {
@@ -208,6 +212,37 @@ public sealed class ReferenceCodec
     }
 
     // ---- helpers -----------------------------------------------------------------------------
+
+    /// <summary>
+    /// Refuses an array whose elements are structs, loudly rather than silently.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The C generator gained composite elements (<see cref="IrArrayInfo.ElementFields"/>); this codec
+    /// has not. Its array path describes an element by one <see cref="IrArrayInfo.ElementPrimitive"/>,
+    /// which for a struct element is a placeholder <c>U8</c> while <c>ElementBits</c> is the whole
+    /// element stride — so falling through would write one wrongly-typed value per element and produce
+    /// bytes that look plausible and match nothing.
+    /// </para>
+    /// <para>
+    /// Refusing keeps this codec honest as the independent implementation the cross-checks compare
+    /// against: it is better for it to say it cannot do something than to appear to agree. Coverage for
+    /// composite elements lives in <c>CStructArrayCrossCheck</c>, which checks the generated C against a
+    /// layout worked out by hand rather than against this codec.
+    /// </para>
+    /// <para>
+    /// Only fires when there is an element to write, so a message carrying an empty struct array still
+    /// round-trips — that case reads and writes nothing, and nothing can be wrong about it.
+    /// </para>
+    /// </remarks>
+    private static void RefuseCompositeElements(IrField field, IrArrayInfo arr, int count)
+    {
+        if (count <= 0 || !arr.HasCompositeElement) return;
+
+        throw new NotSupportedException(
+            $"Array '{field.Path}' has struct elements, which the reference codec does not implement. "
+            + "Use CStructArrayCrossCheck for composite-element coverage.");
+    }
 
     private static bool IsSigned(PrimitiveKind kind) =>
         kind is PrimitiveKind.I8 or PrimitiveKind.I16 or PrimitiveKind.I32 or PrimitiveKind.I64;

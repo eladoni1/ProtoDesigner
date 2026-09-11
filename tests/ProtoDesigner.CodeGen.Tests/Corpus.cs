@@ -68,6 +68,55 @@ internal static class Corpus
         return (p, bus);
     }
 
+    /// <summary>
+    /// Arrays whose elements are structs — the shape a device protocol reaches for constantly:
+    /// "N readings, each a (channel, value) pair".
+    /// </summary>
+    /// <remarks>
+    /// Three things in one message, because each needs different emission. <c>readings</c> is the
+    /// minimal composite element, two bytes wide. <c>blocks</c> has a wider element carrying a raw
+    /// float and a fixed array, so the generator has to run an inner loop inside the element loop.
+    /// The trailing <c>crc</c> proves the region after the last variable one still gets constant
+    /// offsets.
+    /// </remarks>
+    public static (Project Project, Bus Bus) StructArray()
+    {
+        var p = new Project("StructArraySample");
+        var u8 = p.Types.Add(new ParameterType(TypeId.New(), "u8", PrimitiveKind.U8));
+        var u32 = p.Types.Add(new ParameterType(TypeId.New(), "u32", PrimitiveKind.U32));
+        var f32 = p.Types.Add(new ParameterType(TypeId.New(), "f32", PrimitiveKind.F32));
+
+        var reading = p.Types.Add(new StructType(TypeId.New(), "Reading")
+            .With(new FieldBinding(FieldId.New(), "channel", u8.Id),
+                  new FieldBinding(FieldId.New(), "value", u8.Id)));
+
+        var samples = p.Types.Add(new ArrayType(TypeId.New(), "Samples", u8.Id,
+            new ArrayLength.Fixed(4)));
+        var block = p.Types.Add(new StructType(TypeId.New(), "ChannelBlock")
+            .With(new FieldBinding(FieldId.New(), "channelId", u32.Id),
+                  new FieldBinding(FieldId.New(), "scale", f32.Id),
+                  new FieldBinding(FieldId.New(), "samples", samples.Id)));
+
+        var readingCount = new FieldBinding(FieldId.New(), "readingCount", u8.Id);
+        var readings = p.Types.Add(new ArrayType(TypeId.New(), "Readings", reading.Id,
+            new ArrayLength.CountFromField(readingCount.Id, 8)));
+
+        var blockCount = new FieldBinding(FieldId.New(), "blockCount", u8.Id);
+        var blocks = p.Types.Add(new ArrayType(TypeId.New(), "Blocks", block.Id,
+            new ArrayLength.CountFromField(blockCount.Id, 2)));
+
+        var bus = new Bus(BusId.New(), "Sensors", Transport.Ethernet);
+        var m = new Message(MessageId.New(), "Bundle") { WireId = 31 };
+        m.Fields.Add(readingCount);
+        m.Fields.Add(new FieldBinding(FieldId.New(), "readings", readings.Id));
+        m.Fields.Add(blockCount);
+        m.Fields.Add(new FieldBinding(FieldId.New(), "blocks", blocks.Id));
+        m.Fields.Add(new FieldBinding(FieldId.New(), "crc", u32.Id));
+        bus.Messages.Add(m);
+        p.Buses.Add(bus);
+        return (p, bus);
+    }
+
     /// <summary>A dynamic array driven by a count field, with a fixed field after it — the region-split case.</summary>
     public static (Project Project, Bus Bus) DynamicArray()
     {
@@ -286,6 +335,7 @@ internal static class Corpus
         yield return ("scalars", Scalars);
         yield return ("packed-bits", PackedBits);
         yield return ("struct-and-array", StructAndArray);
+        yield return ("struct-array", StructArray);
         yield return ("dynamic-array", DynamicArray);
         yield return ("length-prefixed-array", LengthPrefixedArray);
         yield return ("quantized", Quantized);

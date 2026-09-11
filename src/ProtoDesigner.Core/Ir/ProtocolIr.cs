@@ -226,7 +226,8 @@ public sealed record IrArrayInfo(
     int MaxElements,
     // Bit stride of a single element.
     int ElementBits,
-    // The element's primitive kind (integral / float / char).
+    // The element's primitive kind (integral / float / char). Meaningless when HasCompositeElement —
+    // a struct element has no single kind, and nothing but a placeholder can be put here.
     PrimitiveKind ElementPrimitive,
     // Element enum index into ProtocolIr.Enums, if the element is an enum.
     int? ElementEnumIndex,
@@ -235,4 +236,48 @@ public sealed record IrArrayInfo(
     // For LengthPrefixed: width of the length prefix in bits.
     int PrefixBits,
     // For Terminated: sentinel bytes.
-    IReadOnlyList<byte> Sentinel);
+    IReadOnlyList<byte> Sentinel,
+    // Null when the element is a single scalar or enum — the common case, which every field above
+    // already describes. Non-null when the element is a struct: one entry per value inside one
+    // element, each positioned from that element's own start. A generator loops over elements and,
+    // inside that, over these.
+    //
+    // This exists because ElementPrimitive can only name one scalar kind, so before it there was no
+    // shape in which "the element is a struct with four fields" could be said at all — which is why
+    // arrays of structs were refused rather than merely unimplemented.
+    IReadOnlyList<IrElementField>? ElementFields = null)
+{
+    /// <summary>True when the element is a struct, described by <see cref="ElementFields"/>.</summary>
+    /// <remarks>
+    /// Check this before reading <see cref="ElementPrimitive"/>, <see cref="ElementEnumIndex"/> or
+    /// treating <see cref="ElementBits"/> as one value's width — for a struct element they are a
+    /// placeholder, null, and the whole element stride respectively. <see cref="PrimitiveKind"/> has no
+    /// "none" member to put there instead, so this property is the discriminator: reading the kind of an
+    /// element that has none is how an array of structs silently became an array of <c>uint8_t</c> the
+    /// first time round.
+    /// </remarks>
+    public bool HasCompositeElement => ElementFields is { Count: > 0 };
+}
+
+/// <summary>One value inside a composite array element.</summary>
+/// <remarks>
+/// <see cref="BitOffset"/> is measured from the start of a single element, not from the region — so a
+/// generator positions it at <c>arrayBase + i * ElementBits + BitOffset</c>. That is exactly what the
+/// layout engine already computes for nodes beneath an array; this record is how it reaches a
+/// generator instead of being dropped.
+/// </remarks>
+public sealed record IrElementField(
+    // Access path within one element, e.g. "discId". Nested struct members are dotted, e.g. "inner.x".
+    string Name,
+    PrimitiveKind Primitive,
+    int? EnumIndex,
+    int BitOffset,
+    // Width of one value. For a fixed array member this is the width of a single item, not the whole.
+    int BitWidth,
+    Endianness Endianness,
+    BitOrder BitOrder,
+    ScalarTransform Transform,
+    bool WireIsSigned,
+    // Non-null when this member is itself a fixed-size array inside the element, e.g. a 64-byte
+    // payload inside a serial-channel struct. Items are contiguous at BitWidth each.
+    int? FixedArrayCount = null);
