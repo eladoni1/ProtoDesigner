@@ -167,6 +167,7 @@ samples/telemetry.pdproj         a worked example exercising most features
 samples/protobuf-demo.pdproj     aimed at the protobuf target: two exportable messages covering every
                                  constraint shape, plus one bit-packed and one quantized message that
                                  the gate must refuse by name
+docs/pdproj-format.md            the on-disk format, for anything writing a .pdproj without the editor
 docs/shared-storage-design.md    Phase 6 design note — read before building any of it
 protobuf/                        gitignored toolchain: bin/protoc, include/, validate.proto
 ```
