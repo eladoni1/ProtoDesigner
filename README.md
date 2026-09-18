@@ -1,5 +1,7 @@
 # ProtoDesigner
 
+[![CI](https://github.com/eladoni1/ProtoDesigner/actions/workflows/ci.yml/badge.svg)](https://github.com/eladoni1/ProtoDesigner/actions/workflows/ci.yml)
+
 A desktop tool for designing **binary communication protocols** over Ethernet/UART — think "database
 schema designer, but for compressed message layouts on the wire." Define reusable types, compose them
 into messages on a bus, control exactly how each field is serialized down to the bit, then generate
@@ -27,7 +29,7 @@ so resizing or reordering a field is just an edit followed by a recompute.
 | 5b | Protobuf schema target + protovalidate | **Done** — gated per message, protoc- and runtime-verified |
 | 6 | Shared storage & collaboration | Not started — [design note](docs/shared-storage-design.md) |
 
-**1752 automated tests, all passing.** That includes a cross-language check that compiles the generated
+**1847 automated tests, all passing.** That includes a cross-language check that compiles the generated
 code under MSVC — once as C, once as C++ — and asserts it produces byte-identical output to the C#
 reference codec over the whole wire matrix. Two independent implementations: wherever they disagree, one
 of them is wrong. The protobuf target gets the same treatment: its schema is compiled by real `protoc`,
@@ -55,8 +57,13 @@ variable one.
   than scanning for the sentinel or consuming the remainder. Encoding both is correct.
 - **The C# target emits declarations only** — classes, enums and each message's wire layout as a
   comment. Encode/decode is C-only today.
-- **Endianness and bit order have no UI.** Both are modelled and both are honoured by the layout engine,
-  but nothing in the editor sets either, and the generated runtime only ever packs MSB-first.
+
+Settled rather than missing: **endianness and bit order are set per bus, and only per bus.** The model
+carries message- and field-level overrides and the layout engine resolves the whole chain, but the
+editor deliberately does not offer them — one bus is one agreement about wire format, and two modules
+on it disagreeing is a broken link rather than a setting. A hand-edited file can still set an override,
+and the message header flags that rather than quietly showing the bus's answer while the generator
+uses another.
 
 ---
 

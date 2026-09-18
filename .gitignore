@@ -46,3 +46,8 @@ samples/*/
 # tests/ProtoDesigner.CodeGen.Tests/Protovalidate/, and its dependencies come from Go's global module
 # cache — so this whole directory can be deleted and rebuilt from downloads at any time.
 protobuf/
+
+# Per-machine Claude Code state: approved tool permissions and the like. Tracked CLAUDE.md is the
+# shared project guide and stays in git; this file is local preference and differs per checkout. It
+# was only ever ignored here by a global ignore file on one machine, which no clone would inherit.
+.claude/settings.local.json

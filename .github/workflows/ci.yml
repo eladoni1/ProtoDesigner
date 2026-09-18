@@ -1,0 +1,96 @@
+# Build and test on every push and pull request.
+#
+# The runner is Windows and cannot be anything else: ProtoDesigner.Wpf targets net8.0-windows, and the
+# C cross-check compiles the generated header with MSVC. windows-latest ships Visual Studio with the
+# VC tools, which CCrossCheck locates through vswhere on its own — no vcvars step belongs here.
+#
+# THE CONFORMANCE CHECKS MUST RUN. Three suites compile or execute generated output against a real
+# toolchain, and every one of them fails rather than skips when its toolchain is missing. That policy
+# only means something if CI supplies the toolchains instead of setting the skip variables:
+#
+#   CCrossCheck / CCompositeCrossCheck  the generated C compiles as C *and* C++ and matches the
+#                                       C# reference codec byte for byte            (MSVC, preinstalled)
+#   ProtocConformanceTests              the emitted .proto and its buf.validate options compile
+#                                                                      (protoc + Buf's validate.proto)
+#   ProtovalidateConformanceTests       those constraints actually reject what they forbid   (+ Go)
+#
+# So PROTODESIGNER_SKIP_CPP_CROSSCHECK, PROTODESIGNER_SKIP_PROTOC and PROTODESIGNER_SKIP_PROTOVALIDATE
+# are deliberately never set below. A green run here compiled something.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # protoc's release version and libprotoc's reported version are the same number.
+  PROTOC_VERSION: "35.1"
+  # Matches buf.build/go/protovalidate in the harness go.mod, so the schema is compiled against the
+  # same definition the runtime then enforces.
+  PROTOVALIDATE_VERSION: "v1.2.0"
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      # The Go version comes from the harness's own go.mod rather than being restated here, so the
+      # runtime check and CI can never disagree about it.
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: tests/ProtoDesigner.CodeGen.Tests/Protovalidate/go.mod
+          cache-dependency-path: tests/ProtoDesigner.CodeGen.Tests/Protovalidate/go.sum
+
+      # Laid out exactly as the gitignored local toolchain is: protobuf/{bin,include,validate.proto}.
+      # ProtocCompiler walks up from the test binary looking for a protobuf/ directory, so the repo
+      # root is where it has to land. The zip already contains bin/ and include/.
+      - name: Stage the protobuf toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force protobuf | Out-Null
+          $zip = Join-Path $env:RUNNER_TEMP "protoc.zip"
+          Invoke-WebRequest -Uri "https://github.com/protocolbuffers/protobuf/releases/download/v$env:PROTOC_VERSION/protoc-$env:PROTOC_VERSION-win64.zip" -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath protobuf -Force
+          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/bufbuild/protovalidate/$env:PROTOVALIDATE_VERSION/proto/protovalidate/buf/validate/validate.proto" -OutFile protobuf/validate.proto
+
+      # A failed download would otherwise surface as a wall of red conformance cases. Fail here, where
+      # the cause is legible.
+      - name: Verify the toolchains
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          ./protobuf/bin/protoc.exe --version
+          if (-not (Test-Path protobuf/include/google/protobuf/descriptor.proto)) { throw "protoc include/ is missing the well-known types" }
+          if (-not (Test-Path protobuf/validate.proto)) { throw "validate.proto was not downloaded" }
+          go version
+          & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release -warnaserror
+
+      # No --no-build: the test run needs the Release output built above.
+      - name: Test
+        run: dotnet test --no-build --configuration Release --verbosity normal
