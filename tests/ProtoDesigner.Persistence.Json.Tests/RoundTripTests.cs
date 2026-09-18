@@ -243,6 +243,52 @@ public class RoundTripTests
     }
 
 
+    /// <summary>
+    /// An alignment policy set at the bus or project level survives a round trip.
+    /// </summary>
+    /// <remarks>
+    /// Both levels are written only when set, like every other nullable option, so the risk is not a
+    /// mangled value but a silently dropped one: a project that came back byte-aligned would lay every
+    /// message out differently from the one that was saved, and nothing would say so.
+    /// </remarks>
+    [Fact]
+    public void An_alignment_policy_survives_a_round_trip_at_every_level()
+    {
+        var project = new Project("Align") { Options = { DefaultAlignmentBits = 64 } };
+        var u8 = project.Types.Add(new ParameterType(TypeId.New(), "u8", PrimitiveKind.U8));
+
+        var message = new Message(MessageId.New(), "M") { WireId = 1 };
+        message.Options.DefaultAlignmentBits = 16;
+        message.Fields.Add(new FieldBinding(FieldId.New(), "a", u8.Id,
+            new FieldEncoding { AlignmentBits = 32 }));
+
+        var bus = new Bus(BusId.New(), "Main", Transport.Ethernet);
+        bus.Options.DefaultAlignmentBits = 32;
+        bus.Messages.Add(message);
+        project.Buses.Add(bus);
+
+        var reloaded = JsonProjectRepository.LoadFromString(JsonProjectRepository.SaveToString(project));
+        var loadedBus = reloaded.Buses.Single();
+        var loadedMessage = loadedBus.Messages.Single();
+
+        Assert.Equal(64, reloaded.Options.DefaultAlignmentBits);
+        Assert.Equal(32, loadedBus.Options.DefaultAlignmentBits);
+        Assert.Equal(16, loadedMessage.Options.DefaultAlignmentBits);
+        Assert.Equal(32, loadedMessage.Fields.Single().Encoding.AlignmentBits);
+
+        // And the chain still resolves to the innermost answer after the trip.
+        Assert.Equal(16, reloaded.OptionsFor(loadedBus, loadedMessage).DefaultAlignmentBits);
+    }
+
+    [Fact]
+    public void A_project_with_no_alignment_policy_writes_no_alignment_keys()
+    {
+        // Same reason minCount is omitted: every file predating a nullable option round-trips unchanged.
+        var json = JsonProjectRepository.SaveToString(BuildSample());
+
+        Assert.DoesNotContain("defaultAlignmentBits", json, StringComparison.Ordinal);
+    }
+
     // ---- the built-in id enums -------------------------------------------------------------------
 
     /// <summary>

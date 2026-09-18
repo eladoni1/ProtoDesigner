@@ -30,6 +30,24 @@ public sealed record CodeGenerationResult(
 }
 
 /// <summary>
+/// What generation does about a message that overruns its transport's frame budget.
+/// </summary>
+/// <remarks>
+/// <c>PD0050</c> is a <see cref="Severity.Warning"/> by default and stays one, because a budget is a
+/// property of the link rather than of the protocol: a message too big for Ethernet is fine on a bus that
+/// fragments, and refusing it outright would be the validator deciding something it cannot know. What a
+/// build <em>can</em> know is that on this link it must not ship, which is what <see cref="Block"/> says.
+/// </remarks>
+public enum FrameBudgetPolicy
+{
+    /// <summary>Report it and generate anyway. The default, and what the validator alone would do.</summary>
+    Warn,
+
+    /// <summary>Refuse to generate, reporting the same diagnostic as a blocking error.</summary>
+    Block,
+}
+
+/// <summary>
 /// The one place "generate code from this project" is implemented: validate, refuse on errors, build the
 /// IR for each scope, hand the whole set to the generator.
 /// </summary>
@@ -60,16 +78,23 @@ public static class CodeGenerationService
         Project project,
         IProtocolGenerator generator,
         IReadOnlyList<GenerationScope> scopes,
-        GeneratorOptions options)
+        GeneratorOptions options,
+        FrameBudgetPolicy frameBudget = FrameBudgetPolicy.Warn)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(generator);
         ArgumentNullException.ThrowIfNull(scopes);
         options ??= new GeneratorOptions();
 
-        var errors = new Validator().Validate(project)
-            .Where(d => d.Severity == Severity.Error)
-            .ToList();
+        var diagnostics = new Validator().Validate(project);
+        var errors = diagnostics.Where(d => d.Severity == Severity.Error).ToList();
+
+        // Promoted from the same run rather than re-validated, so the gate cannot disagree with what the
+        // report said. The diagnostic keeps its own code, so a caller still sees PD0050 and not a second
+        // error invented here.
+        if (frameBudget == FrameBudgetPolicy.Block)
+            errors.AddRange(diagnostics.Where(d => d.Code == DiagnosticCodes.MtuExceeded));
+
         if (errors.Count > 0) return CodeGenerationResult.RefusedWith(errors);
 
         // A target borrowing a foreign wire format cannot express every message. Narrowing here rather

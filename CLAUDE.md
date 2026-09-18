@@ -113,12 +113,12 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 2 | JSON persistence + repository port + CLI | **Done** |
 | 3 | Resolved IR + C generator | **Done** |
 | 4 | WPF editor | **Usable** — tree, field grid, live byte map, diagnostics, generate dialog |
-| 5 | C# generator + advanced protocol features | **Codec done** — advanced features outstanding |
+| 5 | C# generator + advanced protocol features | **Done** |
 | 5b | Protobuf schema target + protovalidate | **Done** — gated per message, protoc-verified |
 | 5c | Wire-compatibility diffing | **Done** — `compare`, PD0080..PD0088 |
 | 6 | Shared storage & collaboration | Not started — see `docs/shared-storage-design.md` |
 
-**1919 automated tests, all passing**, plus a Windows-only view-model suite. Three conformance checks run inside `dotnet test` and **fail**
+**1944 automated tests, all passing**, plus a Windows-only view-model suite. Three conformance checks run inside `dotnet test` and **fail**
 rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
 red one. None of the toolchains is vendored.
 
@@ -280,9 +280,9 @@ C has no namespaces, so `GeneratorOptions.Namespace` becomes a symbol prefix, an
 every emitted function name must be unique.
 
 **Known gaps, honestly:**
-- ~~The C# target emits declarations only~~ — **it emits a codec now.** What is still outstanding in
-  Phase 5 is the *advanced features* half: automatic `WireId` assignment, MTU checks promoted from
-  warnings to codegen options, configurable alignment policies.
+- ~~The C# target emits declarations only~~ — **it emits a codec now**, and the advanced-features half of
+  Phase 5 is done too: `--assign-ids`, `--frame-budget-is-an-error`, and an alignment policy settable at
+  every level of the chain.
 - The WPF layer is thinly tested. `ProtoDesigner.Wpf.Tests` covers one thing — that every view-model edit
   reaches the command journal — because that is where its only shipped defects were. The views, the
   dialogs and the converters are still uncovered. Dialog logic that is really *policy* should be extracted
@@ -345,18 +345,43 @@ something and watching it go red — do the same before trusting a change here.
 
 ### Open work, in the order I would take it
 
+**Phases 0 through 5 are complete.** The list below is kept as a record of what was decided and why; the
+only unstarted work is Phase 6, and the note under it about doing the schema-v3 flattening first.
+
+
 1. ~~**C# encode/decode.**~~ — **done.** `CSharpWireCrossCheck` compiles the emitted source with Roslyn
    and checks its bytes against the reference codec.
 2. ~~**`FillRemaining` / `Terminated` decode**~~ — **done.** `CTerminatedFillCrossCheck` compiles and runs
    both, decoding into a struct that is never told a count.
-3. **Test the built-in ID enums.** Deferred deliberately, not forgotten: `MessageId`/`ModuleId` are seeded
-   into every project and their members are derived per bus, so the cases to cover are a renamed bus, a
-   renamed message, a changed `WireId`, a renamed module, and a project saved before they existed loading
-   without them. None of that is covered yet.
+3. ~~**Test the built-in ID enums.**~~ — **done.** `SyntheticEnumChangeTests` covers a renamed bus, a
+   renamed module, a changed and a cleared `WireId`, a removed module renumbering the rest, and both
+   always-on enums; the persistence half is in `RoundTripTests`. Writing it found that the serializer
+   *wrote* a synthetic enum's derived members and the reader loaded them back — empty in practice, but
+   the one way the type could have gone stale. Both sides now refuse them.
 4. ~~**Match the ID enums to the requested spelling**~~ — **decided: keep what is emitted.** See
    "Settled" below.
 5. ~~**Wire-compatibility diffing**~~ — **done.** `Core/Compatibility/WireCompatibility.Compare(baseline,
    current)` and `protodesigner compare <a> <b>`. See the section below.
+
+**The advanced protocol features are three small things, and two of them are refusals a build opts into.**
+
+- **`AssignWireIdsCommand`** gives every message without an id the lowest free one *on its bus* — the
+  scope a receiver matches in and the scope `PD0004` checks. **An id that already exists is never moved.**
+  Renumbering would break every deployed peer silently, because the frame still arrives and is simply not
+  recognised; filling gaps is a convenience, rewriting the space is a wire change and stays the user's.
+  Zero counts as a gap, since that is what `_NotAssigned` means. `protodesigner generate --assign-ids`,
+  and it names only what it actually changed.
+- **`FrameBudgetPolicy.Block`** turns `PD0050` into a refusal. The rule stays a `Warning` in the validator
+  and that is the point: a budget is a property of the *link*, not of the protocol — a message too big for
+  one UART frame is fine on a bus that fragments, and the validator cannot know which it is looking at. A
+  build is run for a particular link and its operator can say so, which is why the switch lives on the
+  generation call. `--frame-budget-is-an-error`. The promoted diagnostic keeps `PD0050`, so the report and
+  the refusal cannot say different things.
+- **Alignment was already configurable at every level** — field, message, bus, project, built-in default —
+  modelled, resolved by `EffectiveLayoutOptions.Resolve`, persisted on both sides and honoured by the
+  engine. What it lacked was coverage: only the field and message levels were tested, so the *precedence*
+  was not. `AlignmentPolicyTests` pins the whole chain, and reversing the resolution order turns three of
+  its cases red. There is deliberately no editor surface, on the same reasoning as byte and bit order.
 
 **The C# target emits a codec, and it is the best-checked one in the repo.** Same wire format as C — a
 frame written by one is read by the other — so `CSharpCodec` deliberately mirrors `CGenerator`'s algorithm
@@ -753,9 +778,11 @@ options.
 included. The IR earned its keep: supporting C# needed no change to it at all, only a second reading
 of the same `Fields`/`Members` split the C target already uses.
 
-**What remains in this phase is the advanced-features half**, none of it started: automatic
-`WireId`/Message-ID assignment, MTU/frame-budget checks promoted from warnings to codegen options,
-configurable alignment policies.
+~~**What remains in this phase is the advanced-features half**~~ — **done as well.**
+`AssignWireIdsCommand` fills the gaps in a bus's id space without moving an id anyone already has;
+`FrameBudgetPolicy.Block` promotes `PD0050` to a refusal for a build that knows its link;
+alignment was already modelled, resolved and persisted at all four levels, so what it needed was the
+coverage that proves the precedence — see the notes in §3.
 
 **Acceptance.** Extend the round-trip corpus to C↔C# (encode in one, decode in the other).
 Golden files for the C# target.

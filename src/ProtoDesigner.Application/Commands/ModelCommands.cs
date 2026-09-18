@@ -510,6 +510,75 @@ public sealed class RenameTypeCommand : IEditCommand
 /// use within that message, so a field added after a gap does not silently claim a retired number.
 /// </para>
 /// </remarks>
+/// <summary>
+/// Gives every message without a wire id the lowest free one on its bus.
+/// </summary>
+/// <remarks>
+/// <para>
+/// One id space per bus, because that is the scope a receiver matches in and the scope <c>PD0004</c>
+/// checks for duplicates. Ids start at 1: zero is reserved to mean "not assigned", which is what the
+/// generated <c>_NotAssigned</c> sentinel relies on.
+/// </para>
+/// <para>
+/// <b>An id that already exists is never moved</b>, for the same reason a protobuf field number is not:
+/// a deployed peer matches on the number, so renumbering breaks it silently — the frame still arrives and
+/// is simply not recognised. Filling the gaps is a convenience; rewriting the space is a wire change, and
+/// the user has to make that one themselves.
+/// </para>
+/// </remarks>
+public sealed class AssignWireIdsCommand : IEditCommand
+{
+    private readonly List<(Message Message, int? Previous)> _changed = new();
+
+    public string Describe() => "Assign message ids";
+
+    public void Apply(Project project)
+    {
+        _changed.Clear();
+
+        foreach (var bus in project.Buses)
+        {
+            var used = bus.Messages
+                .Where(m => m.WireId is > 0)
+                .Select(m => m.WireId!.Value)
+                .ToHashSet();
+
+            var next = Bus.FirstValidMessageId;
+
+            foreach (var message in bus.Messages)
+            {
+                if (message.WireId is > 0) continue;
+
+                while (used.Contains(next)) next++;
+
+                _changed.Add((message, message.WireId));
+                message.WireId = next;
+                used.Add(next);
+            }
+        }
+    }
+
+    public void Undo(Project _)
+    {
+        foreach (var (message, previous) in _changed) message.WireId = previous;
+        _changed.Clear();
+    }
+
+    /// <summary>
+    /// The messages this run actually gave an id to, in the order it did. Empty before <c>Apply</c>.
+    /// </summary>
+    /// <remarks>
+    /// A caller reporting the outcome needs to name what changed, not what exists: listing every message
+    /// reads as though the ones that already had ids were reassigned, which is the one thing this
+    /// deliberately never does.
+    /// </remarks>
+    public IReadOnlyList<Message> Assigned => _changed.Select(c => c.Message).ToList();
+
+    /// <summary>True when anything at all would be assigned — lets a caller skip a no-op edit.</summary>
+    public static bool HasUnassigned(Project project) =>
+        project.Buses.Any(b => b.Messages.Any(m => m.WireId is null or 0));
+}
+
 public sealed class AssignProtoFieldNumbersCommand : IEditCommand
 {
     private readonly List<(FieldBinding Field, int? Previous)> _changed = new();

@@ -1,3 +1,4 @@
+using ProtoDesigner.Application.Commands;
 using ProtoDesigner.Application;
 using ProtoDesigner.CodeGen;
 using ProtoDesigner.Core.Compatibility;
@@ -200,8 +201,21 @@ public static class CommandLine
         // The validate-then-build-IR-then-generate sequence lives in the application layer so this command
         // and the editor's Generate dialog cannot drift apart. Refusing on an Error is part of it: a broken
         // protocol fails here with a diagnostic rather than at the compiler with a mystery.
+        // Assigning before validating is the point: a message with no id fails PD0063, and the whole
+        // reason to ask for ids on the command line is to not have to open the editor to clear it.
+        if (parsed.Has("--assign-ids") && AssignWireIdsCommand.HasUnassigned(project!))
+        {
+            var assign = new AssignWireIdsCommand();
+            assign.Apply(project!);
+            foreach (var message in assign.Assigned)
+                stdout.WriteLine($"  assigned {message.Name} id {message.WireId}");
+        }
+
         var result = CodeGenerationService.Generate(
-            project!, generator, scopes, new GeneratorOptions(ns, IncludeReadme: true, targetOptions));
+            project!, generator, scopes, new GeneratorOptions(ns, IncludeReadme: true, targetOptions),
+            parsed.Has("--frame-budget-is-an-error")
+                ? FrameBudgetPolicy.Block
+                : FrameBudgetPolicy.Warn);
 
         if (result.Refused)
         {
@@ -431,7 +445,7 @@ public static class CommandLine
     /// <summary>Options that stand alone.</summary>
     private static readonly HashSet<string> SwitchFlags = new(StringComparer.Ordinal)
     {
-        "--quiet", "--breaking-is-an-error",
+        "--quiet", "--breaking-is-an-error", "--frame-budget-is-an-error", "--assign-ids",
     };
 
     /// <summary>
@@ -522,6 +536,12 @@ public static class CommandLine
         stdout.WriteLine("  --bus <name> --messages A,B   one bus, only those messages");
         stdout.WriteLine("  --module <name>           every message that module sends or receives, on every");
         stdout.WriteLine("                            bus it sits on — both directions, so loopback works");
+        stdout.WriteLine();
+        stdout.WriteLine("Build policy:");
+        stdout.WriteLine("  --assign-ids              give every message without a wire id the lowest free");
+        stdout.WriteLine("                            one on its bus; an assigned id is never moved");
+        stdout.WriteLine("  --frame-budget-is-an-error  refuse to generate a message that overruns its");
+        stdout.WriteLine("                            transport's frame budget (PD0050), instead of warning");
         stdout.WriteLine();
         stdout.WriteLine("Per-target settings:");
         stdout.WriteLine("  --option key=value        repeatable; 'targets' lists what each target accepts");

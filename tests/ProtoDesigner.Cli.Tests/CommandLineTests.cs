@@ -86,7 +86,87 @@ public sealed class CommandLineTests : IDisposable
 
 
 
+
+    // ---- build policy -------------------------------------------------------------------------
+
+    /// <summary>An oversized message on a UART bus: 400 bytes against a 256-byte budget.</summary>
+    private static Project OversizedProject()
+    {
+        var p = new Project("Big");
+        var u8 = p.Types.Add(new ParameterType(TypeId.New(), "u8", PrimitiveKind.U8));
+        var block = p.Types.Add(new ArrayType(TypeId.New(), "Block", u8.Id, new ArrayLength.Fixed(400)));
+        var bus = new Bus(BusId.New(), "Link", Transport.Uart);
+        var m = new Message(MessageId.New(), "Bulk") { WireId = 1 };
+        m.Fields.Add(new FieldBinding(FieldId.New(), "block", block.Id));
+        bus.Messages.Add(m);
+        p.Buses.Add(bus);
+        return p;
+    }
+
+    [Fact]
+    public void An_oversized_message_generates_by_default_and_only_warns()
+    {
+        var path = WriteProject(OversizedProject());
+        var outDir = Path.Combine(_dir, "out");
+
+        var (code, _, _) = Run("generate", path, "--out", outDir);
+
+        Assert.Equal(CommandLine.ExitOk, code);
+
+        // The per-bus header is named after the bus, so this one is link.h rather than main.h.
+        Assert.True(File.Exists(Path.Combine(outDir, "link.h")));
+    }
+
+    [Fact]
+    public void The_frame_budget_becomes_a_refusal_when_asked()
+    {
+        var path = WriteProject(OversizedProject());
+        var outDir = Path.Combine(_dir, "out");
+
+        var (code, _, err) = Run("generate", path, "--out", outDir, "--frame-budget-is-an-error");
+
+        Assert.Equal(CommandLine.ExitValidationErrors, code);
+        Assert.Contains(DiagnosticCodes.MtuExceeded, err, StringComparison.Ordinal);
+
+        // Nothing written: a refusal that left half a header behind would be worse than no refusal.
+        Assert.False(Directory.Exists(outDir));
+    }
+
+    [Fact]
+    public void Assign_ids_fills_the_gaps_and_names_only_what_it_changed()
+    {
+        var project = CleanProject();
+        var bus = project.Buses[0];
+        bus.Messages[0].WireId = 5;
+        var second = new Message(MessageId.New(), "Second");   // no id at all
+        second.Fields.Add(new FieldBinding(FieldId.New(), "x", project.Types.All.First().Id));
+        bus.Messages.Add(second);
+
+        var path = WriteProject(project);
+
+        var (code, output, _) = Run("generate", path, "--out", Path.Combine(_dir, "out"), "--assign-ids");
+
+        Assert.Equal(CommandLine.ExitOk, code);
+        Assert.Contains("assigned Second id 1", output, StringComparison.Ordinal);
+
+        // The message that already had an id is not listed — it was not reassigned, and saying so would
+        // read as though it had been.
+        Assert.DoesNotContain("assigned Ping", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Assign_ids_says_nothing_when_every_message_already_has_one()
+    {
+        var path = WriteProject(CleanProject());
+
+        var (code, output, _) = Run("generate", path, "--out", Path.Combine(_dir, "out"), "--assign-ids");
+
+        Assert.Equal(CommandLine.ExitOk, code);
+        Assert.DoesNotContain("assigned", output, StringComparison.Ordinal);
+    }
+
     // ---- argument handling --------------------------------------------------------------------
+
 
     /// <summary>
     /// Putting the flags first is a common habit, and it used to report "File not found: --out" because
