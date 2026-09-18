@@ -118,7 +118,7 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 5c | Wire-compatibility diffing | **Done** — `compare`, PD0080..PD0088 |
 | 6 | Shared storage & collaboration | Not started — see `docs/shared-storage-design.md` |
 
-**1887 automated tests, all passing**, plus a Windows-only view-model suite. Three conformance checks run inside `dotnet test` and **fail**
+**1908 automated tests, all passing**, plus a Windows-only view-model suite. Three conformance checks run inside `dotnet test` and **fail**
 rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
 red one. None of the toolchains is vendored.
 
@@ -295,9 +295,8 @@ every emitted function name must be unique.
 - Nothing consumes a generated `.proto` end to end (`protoc --csharp_out`, populate, serialize,
   deserialize). The schema is proven valid and its constraints proven to fire; it is not proven *usable*
   by a generated stub. See the note under "Open work" before spending time on it.
-- `FillRemaining` and `Terminated` *decode* by asking the caller for the count rather than scanning for the
-  sentinel or consuming the remainder. Encode is correct for both, and both reach the IR and the C generator
-  correctly — only the decode strategy is missing.
+- ~~`FillRemaining` and `Terminated` decode by asking the caller for the count~~ — **fixed.** Both work the
+  count out for themselves now; see the note below.
 
 The corpus is shaped for wire layouts and declares almost no ranges, so it would show nothing if every
 protovalidate constraint vanished. `ProtovalidateFixture.BuildProject()` is the fixture shaped for the
@@ -345,9 +344,8 @@ something and watching it go red — do the same before trusting a change here.
 ### Open work, in the order I would take it
 
 1. **C# encode/decode.** Declarations and `OnWireLength` exist; the codec does not.
-2. **`FillRemaining` / `Terminated` decode** — scan for the sentinel or consume the remainder instead of
-   asking the caller for a count. This is the *only* remaining gap in those two: they reach the IR and the
-   C generator correctly, which `DynamicArrayKindTests` now pins.
+2. ~~**`FillRemaining` / `Terminated` decode**~~ — **done.** `CTerminatedFillCrossCheck` compiles and runs
+   both, decoding into a struct that is never told a count.
 3. **Test the built-in ID enums.** Deferred deliberately, not forgotten: `MessageId`/`ModuleId` are seeded
    into every project and their members are derived per bus, so the cases to cover are a renamed bus, a
    renamed message, a changed `WireId`, a renamed module, and a project saved before they existed loading
@@ -359,6 +357,27 @@ something and watching it go red — do the same before trusting a change here.
    and break any deployed code that switches on these. Worth a decision, not an assumption.
 5. ~~**Wire-compatibility diffing**~~ — **done.** `Core/Compatibility/WireCompatibility.Compare(baseline,
    current)` and `protodesigner compare <a> <b>`. See the section below.
+
+**`Terminated` and `FillRemaining` work their own count out, and the count is the decoder's job.**
+Both used to read `msg->x_count` and trust it, which made them unusable for the one case they exist for:
+a frame whose length you do not know in advance. Encode was always right, so a golden file could not see
+the difference — the emitted decode was well-formed C that simply read whatever was already in the struct.
+
+The fix is small because it reuses the element loops rather than replacing them: work out the count first,
+then let the ordinary loop read that many. `Terminated` scans ahead for the sentinel with
+`pd_br_match_bytes_at`, which never moves the cursor; `FillRemaining` measures `pd_br_bits_remaining`
+**less the floor of the regions that follow**, so a trailing fixed field is left intact rather than
+swallowed. Both clamp to the declared maximum.
+
+Two consequences worth knowing. A sentinel-terminated array cannot carry its own sentinel value as data —
+inherent to the format, not to this decoder. And a `FillRemaining` array followed by a *second* dynamic
+array has no decodable answer at all; reserving that array's minimum is the conservative reading, since
+under-consuming is recoverable and over-consuming is not.
+
+`CTerminatedFillCrossCheck` is the proof, and the assertion that carries it is the `memset` before decode:
+the destination struct is zeroed and never told a count, so a decoder that reads the caller's count reports
+zero elements and the test fails. Its expected bytes are hand-derived, and `TerminatedFillLayoutTests`
+checks them against the reference codec so a wrong expectation cannot hide on a machine with no MSVC.
 
 **Wire compatibility is the one question git cannot answer, and it is now answerable.**
 `WireCompatibility.Compare(baseline, current)` runs the layout engine over both and reports what a peer
@@ -806,7 +825,7 @@ overflow.
   The protobuf rules would also have reported a width against a field called `payload.__length`.
 - **`Terminated` and `FillRemaining` were never broken the way `LengthPrefixed` was** — only
   `LengthPrefixed` emits a synthetic node. `DynamicArrayKindTests` pins all five variants through the IR
-  and the C generator so this stops being a guess. Their real gap is decode strategy, nothing else.
+  and the C generator so this stops being a guess. Their decode strategy was the last gap and is closed.
 - **`MenuItem.Header` ignores a binding's `StringFormat`.** `Header` is typed `object`, and WPF drops
   `StringFormat` silently when the target is not a string — you get the bare value, no error. Use
   `HeaderStringFormat` (and `ContentStringFormat` on a `ContentControl`). This bit the "Edit {0}..." item

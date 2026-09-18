@@ -211,6 +211,25 @@ PD_INLINE bool pd_br_underflowed(const pd_bit_reader_t* r) { return r->underflow
 PD_INLINE bool pd_br_at_end(const pd_bit_reader_t* r) { return r->cursor >= r->size_bits; }
 PD_INLINE void pd_br_skip(pd_bit_reader_t* r, size_t bits) { r->cursor += bits; }
 
+/* Bits left in the frame. Zero once the cursor has reached or passed the end. */
+PD_INLINE size_t pd_br_bits_remaining(const pd_bit_reader_t* r) {
+    return r->cursor >= r->size_bits ? (size_t)0 : (r->size_bits - r->cursor);
+}
+
+/* True when the `n` bytes at bit offset `at` equal `bytes`. Never moves the cursor, so a decoder can
+   look ahead for a terminator before committing to reading another element. A sentinel is written on a
+   byte boundary, so an unaligned offset cannot match one. */
+PD_INLINE bool pd_br_match_bytes_at(const pd_bit_reader_t* r, size_t at,
+                                    const uint8_t* bytes, size_t n) {
+    size_t i;
+    if ((at % 8u) != 0u) return false;
+    if (at + (n * 8u) > r->size_bits) return false;
+    for (i = 0; i < n; ++i) {
+        if (r->data[(at / 8u) + i] != bytes[i]) return false;
+    }
+    return true;
+}
+
 PD_INLINE void pd_br_align_to(pd_bit_reader_t* r, size_t alignment_bits) {
     size_t mod;
     if (alignment_bits == 0) return;

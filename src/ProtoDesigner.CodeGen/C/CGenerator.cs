@@ -681,6 +681,54 @@ public sealed class CGenerator : IProtocolGenerator
         sb.AppendLine($"    msg->{member} = ({type})({value});");
     }
 
+
+    /// <summary>
+    /// Works out how many elements precede the sentinel, then lets the ordinary element loop read them.
+    /// </summary>
+    /// <remarks>
+    /// Scanning first rather than checking inside the read loop is what keeps this to one small addition:
+    /// every element shape — scalar, enum, struct — is already handled by the loops below, and they only
+    /// need a count. The scan never moves the cursor, so a frame whose sentinel is missing decodes the
+    /// declared maximum and reports underflow rather than running off the end.
+    /// </remarks>
+    private static void EmitTerminatedCount(StringBuilder sb, IrArrayInfo arr, string member)
+    {
+        var bytes = string.Join(", ", arr.Sentinel.Select(b => $"0x{b:X2}"));
+
+        sb.AppendLine($"    {{ static const uint8_t kEnd[] = {{ {bytes} }};");
+        sb.AppendLine("      size_t scan = pd_br_bit_offset(&r);");
+        sb.AppendLine("      uint32_t n = 0;");
+        sb.AppendLine($"      while (n < {arr.MaxElements}u) {{");
+        sb.AppendLine($"          if (pd_br_match_bytes_at(&r, scan, kEnd, {arr.Sentinel.Count})) break;");
+        sb.AppendLine($"          if (scan + {arr.ElementBits}u > pd_br_bit_offset(&r) + pd_br_bits_remaining(&r)) break;");
+        sb.AppendLine($"          scan += {arr.ElementBits}u;");
+        sb.AppendLine("          n++;");
+        sb.AppendLine("      }");
+        sb.AppendLine($"      msg->{member}_count = n; }}");
+    }
+
+    /// <summary>
+    /// Takes every element the frame still has room for, after whatever the layout says must follow.
+    /// </summary>
+    /// <remarks>
+    /// The trailing reservation is the floor of the regions after this one, so a fixed suffix is left
+    /// intact rather than swallowed. It is a floor rather than an exact figure because a second dynamic
+    /// array after a fill-remaining one has no decodable answer at all — reserving its minimum is the
+    /// conservative reading, and under-consuming is recoverable where over-consuming is not.
+    /// </remarks>
+    private static void EmitFillRemainingCount(
+        StringBuilder sb, IrMessage m, IrField f, IrArrayInfo arr, string member)
+    {
+        var trailing = m.Regions.Where(reg => reg.Index > f.RegionIndex).Sum(reg => reg.MinBits);
+
+        sb.AppendLine("    { size_t avail = pd_br_bits_remaining(&r);");
+        if (trailing > 0)
+            sb.AppendLine($"      avail = avail > {trailing}u ? avail - {trailing}u : 0u;");
+        sb.AppendLine($"      avail /= {arr.ElementBits}u;");
+        sb.AppendLine($"      if (avail > {arr.MaxElements}u) avail = {arr.MaxElements}u;");
+        sb.AppendLine($"      msg->{member}_count = (uint32_t)avail; }}");
+    }
+
     /// <summary>Reads one array field: its count, its elements, and any sentinel.</summary>
     private static void EmitDecodeArray(StringBuilder sb, string prefix, ProtocolIr ir, IrMessage m,
         IrField f, IrArrayInfo arr, string member, string endian)
@@ -699,8 +747,12 @@ public sealed class CGenerator : IProtocolGenerator
                 sb.AppendLine($"    msg->{member}_count = (uint32_t)pd_br_read_unsigned(&r, {arr.PrefixBits}, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);");
                 countExpr = $"msg->{member}_count";
                 break;
+            case IrArrayKind.Terminated:
+                EmitTerminatedCount(sb, arr, member);
+                countExpr = $"msg->{member}_count";
+                break;
             default:
-                sb.AppendLine($"    /* {arr.Kind} arrays consume the remainder; the caller supplies the count. */");
+                EmitFillRemainingCount(sb, m, f, arr, member);
                 countExpr = $"msg->{member}_count";
                 break;
         }

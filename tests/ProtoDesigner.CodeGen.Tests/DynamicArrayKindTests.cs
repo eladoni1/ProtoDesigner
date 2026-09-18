@@ -16,9 +16,8 @@ namespace ProtoDesigner.CodeGen.Tests;
 /// <para>
 /// The suspicion at the time was that <c>Terminated</c> and <c>FillRemaining</c> were broken the same way.
 /// They are not — only <c>LengthPrefixed</c> emits a synthetic node — and this class exists to say so with a
-/// test rather than a guess. Their real gap is a different one: <see cref="IrArrayKind.Terminated"/> and
-/// <see cref="IrArrayKind.FillRemaining"/> <em>decode</em> by asking the caller for a count instead of
-/// scanning for the sentinel or consuming the remainder.
+/// test rather than a guess. Their one real gap — decoding by asking the caller for a count rather than
+/// working it out — is closed; <see cref="CTerminatedFillCrossCheck"/> compiles and runs both.
 /// </para>
 /// </remarks>
 public class DynamicArrayKindTests
