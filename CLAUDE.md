@@ -353,11 +353,8 @@ something and watching it go red — do the same before trusting a change here.
    into every project and their members are derived per bus, so the cases to cover are a renamed bus, a
    renamed message, a changed `WireId`, a renamed module, and a project saved before they existed loading
    without them. None of that is covered yet.
-4. **Match the ID enums to the requested spelling, or decide not to.** The shape asked for was
-   `<BUS_NAME>_MESSAGE_ID_NA` / `<BUS_NAME>_<MODULE_NAME>`; what is emitted is
-   `<ns>_<Bus>MessageId_NotAssigned` / `<ns>_<Bus>ModuleId_<Module>`, which is the C target's own naming
-   convention and already carries the bus scope the request was after. Renaming would churn every golden
-   and break any deployed code that switches on these. Worth a decision, not an assumption.
+4. ~~**Match the ID enums to the requested spelling**~~ — **decided: keep what is emitted.** See
+   "Settled" below.
 5. ~~**Wire-compatibility diffing**~~ — **done.** `Core/Compatibility/WireCompatibility.Compare(baseline,
    current)` and `protodesigner compare <a> <b>`. See the section below.
 
@@ -430,6 +427,15 @@ what a reader of a JSON diff does not see. `PD0080`..`PD0088`, none in `Validato
 no single model for a rule to run against — it takes two projects).
 
 **Settled, so that they are not reopened as questions:**
+
+- **The built-in id enums keep the C target's own spelling**, `<ns>_<Bus>MessageId_NotAssigned` and
+  `<ns>_<Bus>ModuleId_<Module>`, not the `<BUS_NAME>_MESSAGE_ID_NA` shape originally asked for. Decided
+  2026-09-18, and the deciding fact is not taste: that spelling is exactly what `CNaming.EnumMemberName`
+  produces for *every* enum, so a user's `Mode` emits `telem_Mode_Idle` beside it. Switching would make
+  the two built-ins the only enums in the header written differently — the inconsistency would be visible
+  in every generated file, where the current inconsistency with the original request is visible nowhere.
+  The bus scope the request was actually after is already there. It would also churn 10 golden files and
+  break any deployed switch on these names, but those are the cheap reasons, not the real one.
 
 - **Byte order and bit order are both bus-level, and nowhere else.** One bus is one agreement about wire
   format; two modules on it disagreeing is a broken link, not a configuration. `LayoutOptions` still
