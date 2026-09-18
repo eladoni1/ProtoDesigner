@@ -118,7 +118,7 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 5c | Wire-compatibility diffing | **Done** — `compare`, PD0080..PD0088 |
 | 6 | Shared storage & collaboration | Not started — see `docs/shared-storage-design.md` |
 
-**1882 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
+**1887 automated tests, all passing**, plus a Windows-only view-model suite. Three conformance checks run inside `dotnet test` and **fail**
 rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
 red one. None of the toolchains is vendored.
 
@@ -149,6 +149,18 @@ in Go's global module cache, **not** in this repo — so `protobuf/protovalidate
 directory and deleting it costs nothing. Deleting all of `protobuf/` also removes protoc and
 `validate.proto`, which turns the second and third checks red until you set their skip variables.
 
+**Running the tests.** `dotnet test` on the solution needs Windows, for the view-model suite and the C
+cross-check. Elsewhere, run the five portable suites by project and set the three skip variables:
+
+```bash
+# Linux/macOS: everything except the Windows-only view-model suite
+export PROTODESIGNER_SKIP_CPP_CROSSCHECK=1 PROTODESIGNER_SKIP_PROTOC=1 PROTODESIGNER_SKIP_PROTOVALIDATE=1
+dotnet build ProtoDesigner.sln -p:EnableWindowsTargeting=true
+for p in Core Application CodeGen Cli Persistence.Json; do
+  dotnet test tests/ProtoDesigner.$p.Tests/ProtoDesigner.$p.Tests.csproj
+done
+```
+
 ```
 src/
   ProtoDesigner.Core/            model, layout, validation, IR — no UI, no language bias
@@ -162,6 +174,7 @@ src/
   ProtoDesigner.Cli/             validate / generate / compare / targets
   ProtoDesigner.Wpf/             the editor
 tests/                           one suite per src project
+  …Wpf.Tests/                    view-model edits reach the journal — Windows only, see above
   …CodeGen.Tests/Golden/         checked-in expected output: C headers *and* .proto schemas
   …CodeGen.Tests/Protovalidate/  harness.go + go.mod/go.sum — the Go runtime check, all in git
 samples/telemetry.pdproj         a worked example exercising most features
@@ -268,9 +281,17 @@ every emitted function name must be unique.
 
 **Known gaps, honestly:**
 - The C# target emits declarations and the wire layout as comments; no encode/decode yet.
-- The WPF layer has no automated tests. Everything below it does. Dialog logic that is really *policy*
-  should be extracted so it can be — `WireSizePolicy` was pulled out of the primitive editor for exactly
-  this reason, after a defect that was untestable where it lived.
+- The WPF layer is thinly tested. `ProtoDesigner.Wpf.Tests` covers one thing — that every view-model edit
+  reaches the command journal — because that is where its only shipped defects were. The views, the
+  dialogs and the converters are still uncovered. Dialog logic that is really *policy* should be extracted
+  so it can be tested from `Application` — `WireSizePolicy` was pulled out of the primitive editor for
+  exactly this reason, after a defect that was untestable where it lived, and the type-edit commands
+  followed it out for the same reason.
+  **That suite only runs on Windows**: it targets `net8.0-windows` to match the assembly under test, and
+  `Microsoft.WindowsDesktop.App` has no Linux runtime. It compiles anywhere with
+  `-p:EnableWindowsTargeting=true`; on Linux, run the other five suites by project and leave this one to
+  CI. The view models touch no WPF type, which is what makes them testable at all — keep it that way, and
+  anything that needs a `Window` belongs in the view.
 - Nothing consumes a generated `.proto` end to end (`protoc --csharp_out`, populate, serialize,
   deserialize). The schema is proven valid and its constraints proven to fire; it is not proven *usable*
   by a generated stub. See the note under "Open work" before spending time on it.

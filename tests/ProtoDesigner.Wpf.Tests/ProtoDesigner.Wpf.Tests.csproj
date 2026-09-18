@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    net8.0-windows because the assembly under test is a WPF one and a test project has to match. The
+    view models themselves touch no WPF type — that is what makes them testable at all, and it is worth
+    keeping true: anything here that needs a Window belongs in the view, not the view model.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ProtoDesigner.Wpf\ProtoDesigner.Wpf.csproj" />
+    <ProjectReference Include="..\..\src\ProtoDesigner.Core\ProtoDesigner.Core.csproj" />
+    <ProjectReference Include="..\..\src\ProtoDesigner.Application\ProtoDesigner.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Using Include="ProtoDesigner.Core.Model" />
+    <Using Include="ProtoDesigner.Application.Commands" />
+    <Using Include="ProtoDesigner.Wpf.ViewModels" />
+  </ItemGroup>
+
+</Project>
