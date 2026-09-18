@@ -13,7 +13,6 @@ namespace ProtoDesigner.Application;
 /// to show, not a stack trace.
 /// </param>
 /// <param name="BlockingErrors">The <see cref="Severity.Error"/> diagnostics that caused a refusal.</param>
-/// <param name="MessageCount">How many messages the run covered — for reporting.</param>
 /// <param name="Excluded">
 /// Messages the chosen target cannot represent, with the reason. Empty for a target whose wire format is
 /// ours. Never silent: a message dropped without saying so is the failure this whole path exists to

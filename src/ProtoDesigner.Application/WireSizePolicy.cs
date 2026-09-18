@@ -28,7 +28,7 @@ public static class WireSizePolicy
     public static WireForm NaturalFormFor(PrimitiveKind kind) => kind switch
     {
         _ when kind.IsFloat() => WireForm.Float,
-        PrimitiveKind.I8 or PrimitiveKind.I16 or PrimitiveKind.I32 or PrimitiveKind.I64 => WireForm.Signed,
+        _ when kind.IsSigned() => WireForm.Signed,
         _ => WireForm.Unsigned,
     };
 
@@ -43,8 +43,6 @@ public static class WireSizePolicy
     /// <summary>
     /// The widths offered for a host kind and representation, in ascending order.
     /// </summary>
-    /// <param name="kind">The host kind.</param>
-    /// <param name="form">The chosen wire representation.</param>
     /// <param name="hasRange">
     /// Whether the type declares limits. Without them, widths below the host's are withheld: Save would
     /// reject the choice anyway, and offering an option that cannot be taken is worse than not offering
@@ -86,8 +84,6 @@ public static class WireSizePolicy
     /// <summary>
     /// The factor a fitted mapping should use for <paramref name="range"/> in <paramref name="bits"/>.
     /// </summary>
-    /// <param name="range">The declared limits the mapping has to cover.</param>
-    /// <param name="bits">The chosen wire width.</param>
     /// <param name="hostIsFloat">
     /// Whether the host type is <c>f32</c>/<c>f64</c>. This is the whole distinction: a float is a sample
     /// of a continuous quantity, so a finer step is more resolution and worth having. An integer has no

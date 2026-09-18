@@ -251,14 +251,6 @@ public sealed class CGenerator : IProtocolGenerator
     }
 
     /// <summary>
-    /// Emits the bus's message-id enum plus a lookup from a wire id onto it.
-    /// </summary>
-    /// <remarks>
-    /// Ids are scoped to a bus and start at 1, so <c>NotAssigned = 0</c> is a safe sentinel: no real
-    /// message can collide with it. Read the id off the frame yourself, ask what it is, then call the
-    /// matching <c>_ConvertToHost</c>.
-    /// </remarks>
-    /// <summary>
     /// Names every module on the bus, so code can say which end it is without a magic number.
     /// </summary>
     /// <remarks>
@@ -300,6 +292,14 @@ public sealed class CGenerator : IProtocolGenerator
         sb.AppendLine();
     }
 
+    /// <summary>
+    /// Emits the bus's message-id enum plus a lookup from a wire id onto it.
+    /// </summary>
+    /// <remarks>
+    /// Ids are scoped to a bus and start at 1, so <c>NotAssigned = 0</c> is a safe sentinel: no real
+    /// message can collide with it. Read the id off the frame yourself, ask what it is, then call the
+    /// matching <c>_ConvertToHost</c>.
+    /// </remarks>
     private static void EmitMessageIdEnum(StringBuilder sb, string prefix, ProtocolIr ir)
     {
         var busType = CNaming.TypeName(prefix, ir.BusName + "MessageId");

@@ -43,8 +43,6 @@ public sealed record IrModule(string Name, int Value);
 /// a typedef would add a name without adding meaning. What it exists for is the wire size, which is the
 /// one thing about it a caller cannot work out from the host type alone.
 /// </remarks>
-/// <param name="Name">The type's name, as the user declared it.</param>
-/// <param name="Host">The primitive kind it is stored as.</param>
 /// <param name="WireBits">Its declared wire size, or the host kind's natural width.</param>
 /// <param name="Range">
 /// The limits the user declared, or null for an unbounded type. Carried because a target may be able to
@@ -54,10 +52,6 @@ public sealed record IrModule(string Name, int Value);
 public sealed record IrPrimitive(string Name, PrimitiveKind Host, int WireBits, NumericRange? Range);
 
 /// <summary>An enum type referenced by one or more fields. Emitted as a first-class type by generators.</summary>
-/// <param name="Name">The type's name, as the user declared it.</param>
-/// <param name="Underlying">The primitive kind that holds a member's value on the host.</param>
-/// <param name="IsFlags">Whether members combine as a bit set.</param>
-/// <param name="Members">The declared members, in declaration order.</param>
 /// <param name="WireBits">
 /// The type's own wire size — its declared <c>WireBits</c>, or its underlying kind's natural width.
 /// A binding may still override it, so this is the type's default, not a promise about every field.
@@ -80,7 +74,6 @@ public sealed record IrEnumMember(string Name, long Value);
 /// A struct type referenced by one or more messages, in declaration order — a struct always appears
 /// after everything it depends on, so a generator can emit the list top to bottom.
 /// </summary>
-/// <param name="Name">The type's name, as the user declared it.</param>
 /// <param name="Members">The struct's members, in declaration order — which is wire order.</param>
 /// <param name="WireBits">
 /// What the struct occupies on the wire on its own, under the project's layout options. A struct's

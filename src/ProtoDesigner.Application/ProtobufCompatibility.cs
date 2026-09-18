@@ -5,7 +5,6 @@ using ProtoDesigner.Core.Validation.Rules;
 namespace ProtoDesigner.Application;
 
 /// <summary>Whether one message can be exported as <c>.proto</c>, and what stops it if not.</summary>
-/// <param name="Message">The message asked about.</param>
 /// <param name="Blockers">Errors preventing export. Empty when <see cref="IsEligible"/> is true.</param>
 /// <param name="Notes">
 /// Warnings that do not prevent export but change the result — a dropped endianness, say. Worth showing

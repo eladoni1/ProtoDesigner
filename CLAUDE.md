@@ -645,9 +645,13 @@ your own primary target first.
   interface IProtocolGenerator { string Id { get; }
       GeneratedFileSet Generate(ProtocolIr ir, GeneratorOptions options); }
   ```
-  Use **Scriban** templates. Emit header(s) with a struct per message plus `encode`/`decode`
+  Emit header(s) with a struct per message plus `encode`/`decode`
   (and `parse`-from-interface) functions honoring width, endianness, bit order, transform, and
   each array length rule.
+
+**Generators are hand-written `StringBuilder`, not templates.** An earlier draft of this plan specified
+Scriban; no generator ever used it and the golden files pin the output of the code that exists. Do not
+introduce a template engine to close a gap the goldens already close.
 
 **Absolute rule for generators.** A generator reads **only** the IR. It never reaches back into
 `Project`/`Message`/`FieldBinding`. That one-way boundary is what makes "add Rust later without

@@ -6,7 +6,14 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <NoWarn>CS1591</NoWarn>
+    <!--
+      CS1591 (undocumented public member) is off because not every member needs prose. CS1573 is off for
+      the same reason one step down: it fires when a member documents some parameters but not all, which
+      forces a choice between documenting a self-evident parameter and deleting the note on the one that
+      genuinely needs explaining. Document the parameter that carries a decision; leave the obvious ones
+      to their names.
+    -->
+    <NoWarn>CS1591;CS1573</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

@@ -9,14 +9,11 @@ public sealed record ArrayUsage(Bus Bus, Message Message, FieldBinding Field);
 /// <summary>
 /// A field that could supply a dynamic array's element count.
 /// </summary>
-/// <param name="Bus">The bus owning the message this candidate lives in.</param>
-/// <param name="Message">The message this candidate and the array both belong to.</param>
 /// <param name="Field">The binding to point <see cref="ArrayLength.CountFromField"/> at.</param>
 /// <param name="Path">
 /// How to name it to a user — <c>count</c>, or <c>header.count</c> for a field inside an earlier struct.
 /// </param>
 /// <param name="WireBits">Its resolved wire width, which is what limits the count it can express.</param>
-/// <param name="MaxCountable">The largest count this field can hold.</param>
 /// <param name="IsWideEnough">
 /// Whether <see cref="MaxCountable"/> reaches the array's declared capacity. A candidate that falls short
 /// is still offered — narrowing the array or widening the field are both reasonable answers, and the

@@ -159,11 +159,6 @@ public partial class PrimitiveEditorDialog : Window
     }
 
     /// <summary>
-    /// Offers the widths that make sense for the chosen representation. A float only has meaningful
-    /// IEEE encodings at 32 and 64 bits; an integer can be any width from 1 bit up to the host size,
-    /// which is where the compression actually happens.
-    /// </summary>
-    /// <summary>
     /// Offers the widths that make sense for the chosen representation.
     /// </summary>
     /// <remarks>

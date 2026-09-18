@@ -5,7 +5,6 @@ namespace ProtoDesigner.Application;
 /// <summary>A language protoc can emit from a generated schema.</summary>
 /// <param name="Id">What the user types: <c>cpp</c>, <c>csharp</c>, …</param>
 /// <param name="Flag">The protoc flag, without the output directory.</param>
-/// <param name="Label">Short description for a picker.</param>
 /// <param name="Note">What the caller has to know before choosing it, or null.</param>
 public sealed record ProtocLanguage(string Id, string Flag, string Label, string? Note = null);
 

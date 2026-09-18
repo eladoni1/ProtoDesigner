@@ -22,7 +22,6 @@ public static class WireLength
     /// The bit length of <paramref name="message"/> when each variable region holds the element count
     /// given by <paramref name="elementCountForRegion"/>.
     /// </summary>
-    /// <param name="message">The message to measure.</param>
     /// <param name="elementCountForRegion">
     /// Called once per variable region with the region's index; returns how many elements it carries.
     /// Counts above the region's declared capacity are clamped, matching the generated encoder's

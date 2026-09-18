@@ -16,7 +16,6 @@ public sealed class IrBuilder
     /// <summary>
     /// Builds the IR for a bus, optionally narrowed to a subset of its messages.
     /// </summary>
-    /// <param name="project">The project owning the types the bus's messages reference.</param>
     /// <param name="bus">The bus to build. Its layout options set the defaults every message inherits.</param>
     /// <param name="only">
     /// The messages to include, or null for all of them. Filtering happens before anything else is

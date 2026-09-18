@@ -54,7 +54,6 @@ public interface IProtocolGenerator
 /// <param name="Namespace">
 /// Wraps the output. A target without namespaces uses it as a symbol prefix instead — see the C target.
 /// </param>
-/// <param name="IncludeReadme">Whether to emit the explanatory README alongside the code.</param>
 /// <param name="TargetOptions">
 /// Target-specific settings, keyed by the option's <see cref="GeneratorOption.Key"/>. A generator reads
 /// its own keys and ignores every other, so one dictionary can carry settings for whichever target the
