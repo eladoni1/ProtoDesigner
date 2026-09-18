@@ -69,10 +69,16 @@ internal static class ProjectSerializer
                 obj["wireForm"] = e.WireForm.ToString();
                 if (e.WireOffset.HasValue) obj["wireOffset"] = e.WireOffset.Value.ToString(Inv);
                 if (e.WireScale.HasValue) obj["wireScale"] = e.WireScale.Value.ToString(Inv);
-                var members = new JsonArray();
-                foreach (var m in e.Members)
-                    members.Add(new JsonObject { ["name"] = m.Name, ["value"] = m.Value });
-                obj["members"] = members;
+                // A synthetic enum's members come from the bus at generation, so they are computed data
+                // and rule 6 keeps them out of the file. Writing them would also be the one way this type
+                // could go stale: a saved list survives the rename that should have changed it.
+                if (e.Synthetic == SyntheticEnum.None)
+                {
+                    var members = new JsonArray();
+                    foreach (var m in e.Members)
+                        members.Add(new JsonObject { ["name"] = m.Name, ["value"] = m.Value });
+                    obj["members"] = members;
+                }
                 break;
 
             case StructType s:
@@ -324,7 +330,10 @@ internal static class ProjectSerializer
                 ? Enum.Parse<SyntheticEnum>(sy.GetValue<string>())
                 : SyntheticEnum.None;
             var enumType = new EnumType(id, name, underlying, isFlags) { Synthetic = synthetic };
-            if (obj["members"] is JsonArray members)
+            // Skipped for a synthetic enum even when present: a file that carries them was hand-edited or
+            // written by an older build, and loading them would restore exactly the staleness the type
+            // removes. The bus is the only source.
+            if (synthetic == SyntheticEnum.None && obj["members"] is JsonArray members)
                 foreach (var m in members.OfType<JsonObject>())
                     enumType.With(RequireString(m, "name"), m["value"]!.GetValue<long>());
             if (obj["wireBits"] is JsonValue ewb) enumType.WireBits = ewb.GetValue<int>();

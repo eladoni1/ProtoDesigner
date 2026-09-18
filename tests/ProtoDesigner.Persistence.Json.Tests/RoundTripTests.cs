@@ -242,6 +242,77 @@ public class RoundTripTests
         Assert.Equal(0, reloaded.Types.All.OfType<ArrayType>().Single().Length.MinimumCount);
     }
 
+
+    // ---- the built-in id enums -------------------------------------------------------------------
+
+    /// <summary>
+    /// The marker is declarative intent — the user chose this field to be "the message id" — so it
+    /// persists. The member list never does: it is derived per bus at generation, which is the whole
+    /// reason renaming a message cannot leave a stale list behind.
+    /// </summary>
+    [Fact]
+    public void A_synthetic_enum_persists_its_marker_and_never_its_members()
+    {
+        var project = new Project("Ids");
+        project.Types.Add(new EnumType(TypeId.New(), "MessageId", PrimitiveKind.U32)
+        {
+            Synthetic = SyntheticEnum.MessageId,
+            WireBits = 32,
+        });
+
+        var json = JsonProjectRepository.SaveToString(project);
+        Assert.Contains("\"synthetic\": \"MessageId\"", json, StringComparison.Ordinal);
+
+        var reloaded = JsonProjectRepository.LoadFromString(json);
+        var loaded = reloaded.Types.All.OfType<EnumType>().Single();
+
+        Assert.Equal(SyntheticEnum.MessageId, loaded.Synthetic);
+        Assert.Empty(loaded.Members);
+    }
+
+    /// <summary>
+    /// Even if a stale member list somehow reached a file, loading must not resurrect it — the bus is the
+    /// only source, and a stored list is exactly the staleness this type exists to remove.
+    /// </summary>
+    [Fact]
+    public void Members_written_into_a_synthetic_enum_do_not_survive_a_round_trip()
+    {
+        var project = new Project("Ids");
+        var ids = project.Types.Add(new EnumType(TypeId.New(), "MessageId", PrimitiveKind.U32)
+        {
+            Synthetic = SyntheticEnum.MessageId,
+        });
+        ids.With("Stale", 3);
+
+        var json = JsonProjectRepository.SaveToString(project);
+        var reloaded = JsonProjectRepository.LoadFromString(json);
+
+        Assert.Empty(reloaded.Types.All.OfType<EnumType>().Single().Members);
+        Assert.DoesNotContain("Stale", json, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A project saved before the built-in ids existed carries no marker, so it loads as the ordinary
+    /// enum it always was. The key is written only when set, which is what let these arrive with no
+    /// schema bump.
+    /// </summary>
+    [Fact]
+    public void A_file_written_before_the_built_in_ids_existed_loads_without_them()
+    {
+        var project = new Project("Old");
+        var mode = project.Types.Add(new EnumType(TypeId.New(), "Mode", PrimitiveKind.U8));
+        mode.With("Idle", 0).With("Run", 1);
+
+        var json = JsonProjectRepository.SaveToString(project);
+        Assert.DoesNotContain("synthetic", json, StringComparison.Ordinal);
+
+        var reloaded = JsonProjectRepository.LoadFromString(json);
+        var loaded = reloaded.Types.All.OfType<EnumType>().Single();
+
+        Assert.Equal(SyntheticEnum.None, loaded.Synthetic);
+        Assert.Equal(new[] { "Idle", "Run" }, loaded.Members.Select(m => m.Name));
+    }
+
     private static Project BuildSample()
     {
         var project = new Project("Sample");
