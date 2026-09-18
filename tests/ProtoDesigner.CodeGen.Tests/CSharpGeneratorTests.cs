@@ -53,7 +53,8 @@ public class CSharpGeneratorTests
         var set = Generator.Generate(irs, new GeneratorOptions(Namespace: "Proto"));
 
         AssertCompiles(set);
-        Assert.Equal(irs.Count + 2, set.Files.Count);   // one per bus, plus shared types and the README
+        // one per bus, plus shared types, the runtime and the README
+        Assert.Equal(irs.Count + 3, set.Files.Count);
     }
 
     [Fact]
@@ -105,17 +106,21 @@ public class CSharpGeneratorTests
     }
 
     [Fact]
-    public void The_output_says_plainly_that_conversion_code_is_missing()
+    public void Every_message_carries_conversion_in_both_directions()
     {
-        // Shipping declarations that look complete is the failure mode worth guarding: someone builds
-        // against them, finds no encoder, and assumes the tool is broken rather than unfinished.
+        // The target used to emit declarations only and say so. Now that it does not, the guard is the
+        // other way round: a message without both halves is a message someone can encode and never read
+        // back, which is worse than one that plainly refuses.
         var ir = Corpus.BuildIr(Corpus.Scalars());
         var set = Generator.Generate(ir, new GeneratorOptions(Namespace: "Proto"));
+        var source = BusFile(set, ir);
 
-        foreach (var file in set.Files.Where(f => f.RelativePath.EndsWith(".cs", StringComparison.Ordinal)))
-            Assert.Contains("Encode/decode is not emitted for C# yet", file.Contents, StringComparison.Ordinal);
+        Assert.Contains("public int ConvertToWire(byte[] wire)", source, StringComparison.Ordinal);
+        Assert.Contains("public static PdDecodeResult ConvertToHost(", source, StringComparison.Ordinal);
 
-        Assert.Contains("no encode/decode", Generator.DisplayName, StringComparison.OrdinalIgnoreCase);
+        // The runtime they both call has to travel with them, or none of it compiles.
+        Assert.Contains(set.Files, f => f.RelativePath == "ProtoDesignerRuntime.cs");
+        Assert.DoesNotContain("no encode/decode", Generator.DisplayName, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]

@@ -113,12 +113,12 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 2 | JSON persistence + repository port + CLI | **Done** |
 | 3 | Resolved IR + C generator | **Done** |
 | 4 | WPF editor | **Usable** — tree, field grid, live byte map, diagnostics, generate dialog |
-| 5 | C# generator + advanced protocol features | **Started** — C# emits declarations only |
+| 5 | C# generator + advanced protocol features | **Codec done** — advanced features outstanding |
 | 5b | Protobuf schema target + protovalidate | **Done** — gated per message, protoc-verified |
 | 5c | Wire-compatibility diffing | **Done** — `compare`, PD0080..PD0088 |
 | 6 | Shared storage & collaboration | Not started — see `docs/shared-storage-design.md` |
 
-**1908 automated tests, all passing**, plus a Windows-only view-model suite. Three conformance checks run inside `dotnet test` and **fail**
+**1919 automated tests, all passing**, plus a Windows-only view-model suite. Three conformance checks run inside `dotnet test` and **fail**
 rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
 red one. None of the toolchains is vendored.
 
@@ -170,7 +170,7 @@ src/
   ProtoDesigner.Persistence.Json canonical ID-keyed JSON + migration chain
   ProtoDesigner.Application/     …also ProtobufCompatibility (the export gate) and WireSizePolicy
   ProtoDesigner.CodeGen/         IProtocolGenerator, GeneratorCatalog, BitBuffer + ReferenceCodec,
-                                 C/ (full codec)   CSharp/ (declarations only)   Proto/ (schema)
+                                 C/ (full codec)   CSharp/ (full codec)   Proto/ (schema)
   ProtoDesigner.Cli/             validate / generate / compare / targets
   ProtoDesigner.Wpf/             the editor
 tests/                           one suite per src project
@@ -280,7 +280,9 @@ C has no namespaces, so `GeneratorOptions.Namespace` becomes a symbol prefix, an
 every emitted function name must be unique.
 
 **Known gaps, honestly:**
-- The C# target emits declarations and the wire layout as comments; no encode/decode yet.
+- ~~The C# target emits declarations only~~ — **it emits a codec now.** What is still outstanding in
+  Phase 5 is the *advanced features* half: automatic `WireId` assignment, MTU checks promoted from
+  warnings to codegen options, configurable alignment policies.
 - The WPF layer is thinly tested. `ProtoDesigner.Wpf.Tests` covers one thing — that every view-model edit
   reaches the command journal — because that is where its only shipped defects were. The views, the
   dialogs and the converters are still uncovered. Dialog logic that is really *policy* should be extracted
@@ -343,7 +345,8 @@ something and watching it go red — do the same before trusting a change here.
 
 ### Open work, in the order I would take it
 
-1. **C# encode/decode.** Declarations and `OnWireLength` exist; the codec does not.
+1. ~~**C# encode/decode.**~~ — **done.** `CSharpWireCrossCheck` compiles the emitted source with Roslyn
+   and checks its bytes against the reference codec.
 2. ~~**`FillRemaining` / `Terminated` decode**~~ — **done.** `CTerminatedFillCrossCheck` compiles and runs
    both, decoding into a struct that is never told a count.
 3. **Test the built-in ID enums.** Deferred deliberately, not forgotten: `MessageId`/`ModuleId` are seeded
@@ -357,6 +360,27 @@ something and watching it go red — do the same before trusting a change here.
    and break any deployed code that switches on these. Worth a decision, not an assumption.
 5. ~~**Wire-compatibility diffing**~~ — **done.** `Core/Compatibility/WireCompatibility.Compare(baseline,
    current)` and `protodesigner compare <a> <b>`. See the section below.
+
+**The C# target emits a codec, and it is the best-checked one in the repo.** Same wire format as C — a
+frame written by one is read by the other — so `CSharpCodec` deliberately mirrors `CGenerator`'s algorithm
+rather than inventing a second one. That is not the mistake the reference codec must not make: the
+independence that matters is *reference codec vs generators*, and `CSharpWireCrossCheck` measures against
+exactly that.
+
+It is better checked than the C target for one reason that has nothing to do with the code: **Roslyn
+compiles the emitted source in memory and reflection runs it**, so the whole thing is verified on any
+machine that can run the suite. The C equivalent needs MSVC and only runs on Windows. Arrays of structs go
+further still and are compared against the bytes `CStructArrayCrossCheck` derives *by hand* — two
+generators, two languages, agreeing with a third answer neither produced.
+
+Two things worth knowing before changing it:
+
+- **A field path is flat; the host shape is nested.** `header.messageId` is declared as `Header.MessageId`,
+  a member of a member, so `AccessPath` walks the member tree instead of flattening the path to one
+  identifier. Flattening produced code naming something no class had, which is how this was found.
+- **An array of structs must arrive constructed.** `new Block[4]` is four nulls, so the declaration uses
+  `PdInit.Array<Block>(4)`; a decoder writing into `blocks[i].Field` would otherwise throw before reading
+  a byte. That was a latent defect in the declarations-only output too.
 
 **`Terminated` and `FillRemaining` work their own count out, and the count is the decoder's job.**
 Both used to read `msg->x_count` and trust it, which made them unusable for the one case they exist for:
@@ -719,11 +743,13 @@ hand in the UI — call `LayoutEngine` and render its output.
 **Goal.** Second generator (proves the IR is truly language-agnostic) plus the remaining protocol
 options.
 
-**Build.** A C# `IProtocolGenerator` behind the same interface (this is where the IR earns its
-keep — if it needs changes to support C#, the abstraction was leaky, so fix the IR, not the
-editor). The declarations and the on-wire length API already exist; what remains is encode/decode.
-Advanced features: automatic `WireId`/Message-ID assignment, MTU/frame-budget checks promoted from
-warnings to codegen options, configurable alignment policies.
+**Build.** ~~A C# `IProtocolGenerator` behind the same interface~~ — **done**, encode and decode
+included. The IR earned its keep: supporting C# needed no change to it at all, only a second reading
+of the same `Fields`/`Members` split the C target already uses.
+
+**What remains in this phase is the advanced-features half**, none of it started: automatic
+`WireId`/Message-ID assignment, MTU/frame-budget checks promoted from warnings to codegen options,
+configurable alignment policies.
 
 **Acceptance.** Extend the round-trip corpus to C↔C# (encode in one, decode in the other).
 Golden files for the C# target.

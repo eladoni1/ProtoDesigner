@@ -110,7 +110,8 @@ public class ModuleIdTests
 
         var source = new CSharpGenerator().Generate(ir, new GeneratorOptions(Namespace: "App"))
             .Files.Single(f => f.RelativePath.EndsWith(".cs", StringComparison.Ordinal)
-                               && !f.RelativePath.EndsWith("Types.cs", StringComparison.Ordinal))
+                               && !f.RelativePath.EndsWith("Types.cs", StringComparison.Ordinal)
+                               && f.RelativePath != "ProtoDesignerRuntime.cs")
             .Contents;
 
         Assert.Contains("public enum MainModuleId : uint", source, StringComparison.Ordinal);
