@@ -47,10 +47,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up .NET 8
+      # Both, deliberately. Every project targets net8.0 with LangVersion pinned to 12.0, so the net8.0
+      # runtime has to be present to execute the tests; but nothing pins the SDK, so MSBuild picks the
+      # highest installed one. Installing 8 and 10 reproduces a working developer machine exactly —
+      # build with the 10 SDK, run the net8.0 test binaries on the 8 runtime. Pinning CI to 8 alone
+      # would have it build with a compiler nobody here uses.
+      - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       # The Go version comes from the harness's own go.mod rather than being restated here, so the
       # runtime check and CI can never disagree about it.
