@@ -2,6 +2,7 @@ using ProtoDesigner.Application.Commands;
 using ProtoDesigner.Application;
 using ProtoDesigner.CodeGen;
 using ProtoDesigner.Core.Compatibility;
+using ProtoDesigner.Core.Merge;
 using ProtoDesigner.Core.Model;
 using ProtoDesigner.Core.Validation;
 using ProtoDesigner.Persistence.Json;
@@ -9,7 +10,8 @@ using ProtoDesigner.Persistence.Json;
 namespace ProtoDesigner.Cli;
 
 /// <summary>
-/// The headless entry point: <c>validate</c>, <c>generate</c> and <c>compare</c>. Exit codes are the
+/// The headless entry point: <c>validate</c>, <c>generate</c>, <c>compare</c> and <c>merge</c>. Exit
+/// codes are the
 /// contract that makes this usable in CI, so they are documented and tested rather than incidental.
 /// </summary>
 public static class CommandLine
@@ -36,6 +38,7 @@ public static class CommandLine
             "validate" => Validate(args.Skip(1).ToArray(), stdout, stderr),
             "generate" => Generate(args.Skip(1).ToArray(), stdout, stderr),
             "compare" => Compare(args.Skip(1).ToArray(), stdout, stderr),
+            "merge" => Merge(args.Skip(1).ToArray(), stdout, stderr),
             "targets" => ListTargets(stdout),
             _ => Unknown(args[0], stderr),
         };
@@ -137,6 +140,74 @@ public static class CommandLine
             : $"{breaking} breaking change(s), {report.Count - breaking} safe.");
 
         return breaking > 0 && parsed.Has("--breaking-is-an-error") ? ExitValidationErrors : ExitOk;
+    }
+
+    // ---- merge ---------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Combines two people's edits to one project, given the version they both started from.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The headless half of the editor's merging save. It exists for the case the editor cannot reach: a
+    /// merge driver, or a CI job reconciling two branches of a <c>.pdproj</c> that git has declared a
+    /// conflict for no reason other than both sides having appended to the same array.
+    /// </para>
+    /// <para>
+    /// Writing is opt-in — without <c>--out</c> this reports and changes nothing, so it is safe to point
+    /// at a file to find out what would happen.
+    /// </para>
+    /// </remarks>
+    private static int Merge(string[] args, TextWriter stdout, TextWriter stderr)
+    {
+        if (!TryParseArgs(args, stderr, out var parsed)) return ExitUsage;
+
+        if (parsed.Paths.Count < 3)
+        {
+            stderr.WriteLine("usage: protodesigner merge <baseline.pdproj> <ours.pdproj> <theirs.pdproj> [--out <file>]");
+            stderr.WriteLine("       combines two sets of edits to one project, matching entities by id");
+            return ExitUsage;
+        }
+
+        if (!TryLoad(parsed.Paths[0], stderr, out var baseline)) return ExitIoError;
+        if (!TryLoad(parsed.Paths[1], stderr, out var ours)) return ExitIoError;
+        if (!TryLoad(parsed.Paths[2], stderr, out var theirs)) return ExitIoError;
+
+        var result = ProjectMerge.Merge(baseline!, ours!, theirs!);
+
+        foreach (var c in result.Conflicts) stdout.WriteLine($"{c.Code} CONFLICT: {c.Description} [{c.Target}]");
+
+        if (result.Conflicts.Count > 0)
+        {
+            stdout.WriteLine($"{result.Conflicts.Count} conflict(s). Nothing was merged and nothing was written.");
+            return ExitValidationErrors;
+        }
+
+        foreach (var change in result.Applied) stdout.WriteLine($"merged: {change}");
+        foreach (var d in result.Validation) stdout.WriteLine($"{d.Code} {d.Severity}: {d.Message} [{d.Target}]");
+
+        stdout.WriteLine(result.Applied.Count == 0
+            ? "Already up to date."
+            : $"Merged {result.Applied.Count} change(s).");
+
+        var outPath = parsed.Value("--out");
+        if (outPath is not null)
+        {
+            try
+            {
+                new JsonProjectRepository().Save(ours!, outPath);
+                stdout.WriteLine($"Wrote {outPath}");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                stderr.WriteLine($"Could not write '{outPath}': {ex.Message}");
+                return ExitIoError;
+            }
+        }
+
+        // A merge that combined cleanly but produced an invalid project is a result the caller has to act
+        // on, so it fails like a validation run rather than passing quietly.
+        return result.Validation.Count > 0 ? ExitValidationErrors : ExitOk;
     }
 
     // ---- generate ------------------------------------------------------------------------------
@@ -529,6 +600,7 @@ public static class CommandLine
         stdout.WriteLine("  protodesigner validate <file.pdproj> [--quiet]");
         stdout.WriteLine("  protodesigner generate <file.pdproj> --out <dir> [--target c] [--namespace <ns>]");
         stdout.WriteLine("  protodesigner compare <baseline.pdproj> <current.pdproj> [--breaking-is-an-error]");
+        stdout.WriteLine("  protodesigner merge <baseline.pdproj> <ours.pdproj> <theirs.pdproj> [--out <file>]");
         stdout.WriteLine("  protodesigner targets");
         stdout.WriteLine();
         stdout.WriteLine("Choosing what to generate (default: every bus):");

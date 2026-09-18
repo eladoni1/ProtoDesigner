@@ -116,9 +116,9 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 5 | C# generator + advanced protocol features | **Done** |
 | 5b | Protobuf schema target + protovalidate | **Done** — gated per message, protoc-verified |
 | 5c | Wire-compatibility diffing | **Done** — `compare`, PD0080..PD0088 |
-| 6 | Shared storage & collaboration | **Started** — three-way entity merge done; storage not begun. See `docs/shared-storage-design.md` |
+| 6 | Shared storage & collaboration | **Started** — merging save works end to end on files; shared storage not begun. See `docs/shared-storage-design.md` |
 
-**2027 automated tests, all passing**, plus a Windows-only view-model suite. Three conformance checks run inside `dotnet test` and **fail**
+**2043 automated tests, all passing**, plus a Windows-only view-model suite. Three conformance checks run inside `dotnet test` and **fail**
 rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
 red one. None of the toolchains is vendored.
 
@@ -171,7 +171,7 @@ src/
   ProtoDesigner.Application/     …also ProtobufCompatibility (the export gate) and WireSizePolicy
   ProtoDesigner.CodeGen/         IProtocolGenerator, GeneratorCatalog, BitBuffer + ReferenceCodec,
                                  C/ (full codec)   CSharp/ (full codec)   Proto/ (schema)
-  ProtoDesigner.Cli/             validate / generate / compare / targets
+  ProtoDesigner.Cli/             validate / generate / compare / merge / targets
   ProtoDesigner.Wpf/             the editor
 tests/                           one suite per src project
   …Wpf.Tests/                    view-model edits reach the journal — Windows only, see above
@@ -481,6 +481,31 @@ project that is nobody's. `EntityStateCoverageTests` reflects over the model rat
 so a new property on `FieldBinding` fails the suite until it is either covered or written down as
 carrying no state. It asserts both halves separately, because they fail separately: that the merge *saw*
 the edit, and that the copy routine *carried* it.
+
+**The save button merges, and that is the whole of what "multi-person" means today.** `WorkingCopy`
+(Application) holds the open project *and* the baseline it was read from; `Save()` re-reads storage,
+merges by entity and writes. It runs over `IProjectRepository`, so it is a file today and a database
+later with no change here. `protodesigner merge <baseline> <ours> <theirs> [--out]` is the headless
+half, for a git merge driver or a CI job.
+
+Three things about it were decided rather than fallen into:
+
+- **Every save merges, including when nothing came in.** No "has the file changed?" shortcut: a
+  timestamp or hash read before the load is stale by the time the load happens, and a merge against an
+  identical copy applies nothing anyway. One path that is always right beats two that are usually right.
+- **A conflicted save writes nothing and changes nothing.** The working copy is left exactly as the user
+  had it, so the conflict list is something to act on rather than a state to climb out of.
+- **A merged save resets the undo history**, and says so. The journal describes operations against a
+  project that changed underneath them, so replaying one backwards is undefined. The editor rebuilds the
+  view models for the same reason — the merge edits the model in place and the old ones wrapped what it
+  used to be.
+
+`MergingSaveTests` lives in the *persistence* suite on purpose. `WorkingCopy` is only correct if a
+project written to disk and read back is the same project as far as the merge can tell, and a fake
+repository handing back objects would prove the save logic while assuming the half most likely to be
+wrong. `Opening_a_file_and_saving_it_straight_back_merges_nothing` is that assumption as a test: if the
+serializer ever drops something `EntityState` renders, the field symptom is a save reporting phantom
+incoming changes from a file nobody edited.
 
 **Settled, so that they are not reopened as questions:**
 

@@ -130,8 +130,23 @@ backend arrives. Four facts about it are worth carrying forward:
   different entities and conflict nowhere, so the result is validated and the `Error` diagnostics come
   back with it. `MergeResult.Succeeded` means both.
 
-What it does *not* do is decide when to merge. That is the save-versus-live-update question, and it stays
-open until there is something to sync with.
+**The save that uses it is built too** — `Application/WorkingCopy.cs`, wired into the editor's Save and
+exposed headlessly as `protodesigner merge`. A `WorkingCopy` holds the open project and the baseline it
+was read from; saving re-reads storage, merges by entity and writes. It goes through `IProjectRepository`,
+so the same class works unchanged when that port is backed by SQL — which is the point of having put the
+port there in Phase 2.
+
+Two behaviours are worth stating because the obvious alternatives are wrong:
+
+- **Every save merges**, even when nothing came in. A "has the file changed?" check is stale between the
+  check and the read, and a merge against an identical copy applies nothing, so the check buys a second
+  code path and no correctness.
+- **A merged save resets the undo history**, and tells the user. The journal describes operations against
+  a project that has since changed underneath them.
+
+So §1's question — constant sync or an explicit save — is answered for the local case: an explicit save
+that merges. Nothing about that forecloses live sync later; a live sync is this same merge on a shorter
+timer, which is the reason the merge was built first.
 
 ### 3.4 Published versions are immutable
 

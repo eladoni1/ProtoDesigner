@@ -1,3 +1,4 @@
+using ProtoDesigner.Core.Merge;
 using ProtoDesigner.Core.Validation;
 using ProtoDesigner.Application;
 using ProtoDesigner.Persistence.Json;
@@ -322,6 +323,132 @@ public sealed class CommandLineTests : IDisposable
         var path = WriteProject(CleanProject());
 
         Assert.Equal(CommandLine.ExitIoError, Run("compare", "nope.pdproj", path).Code);
+    }
+
+    // ---- merge --------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Three files, all descended from one project, which is what makes the ids line up. Each callback
+    /// gets its own load so the two sides are genuinely separate edits rather than one shared object.
+    /// </summary>
+    private (string Baseline, string Ours, string Theirs) ThreeWay(
+        Action<Project> ours, Action<Project> theirs)
+    {
+        var repo = new JsonProjectRepository();
+        var basePath = WriteProject(CleanProject(), "base.pdproj");
+
+        var mine = repo.Load(basePath);
+        ours(mine);
+        var ourPath = WriteProject(mine, "ours.pdproj");
+
+        var yours = repo.Load(basePath);
+        theirs(yours);
+        var theirPath = WriteProject(yours, "theirs.pdproj");
+
+        return (basePath, ourPath, theirPath);
+    }
+
+    private static Message NewMessage(Project p, string name, int wireId)
+    {
+        var m = new Message(MessageId.New(), name) { WireId = wireId };
+        m.Fields.Add(new FieldBinding(FieldId.New(), "payload", p.Types.All.First().Id));
+        return m;
+    }
+
+    /// <summary>
+    /// The case a line-based merge cannot do: both sides append a different message to one bus.
+    /// </summary>
+    [Fact]
+    public void Merging_two_added_messages_takes_both()
+    {
+        var (b, ours, theirs) = ThreeWay(
+            p => p.Buses[0].Messages.Add(NewMessage(p, "Alice", 10)),
+            p => p.Buses[0].Messages.Add(NewMessage(p, "Bob", 11)));
+
+        var (code, output, _) = Run("merge", b, ours, theirs);
+
+        Assert.Equal(CommandLine.ExitOk, code);
+        Assert.Contains("Bob", output, StringComparison.Ordinal);
+        Assert.Contains("Merged 1 change(s)", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Merging_a_file_with_itself_is_already_up_to_date()
+    {
+        var path = WriteProject(CleanProject());
+
+        var (code, output, _) = Run("merge", path, path, path);
+
+        Assert.Equal(CommandLine.ExitOk, code);
+        Assert.Contains("Already up to date", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Merging_the_same_message_changed_two_ways_reports_a_conflict()
+    {
+        var (b, ours, theirs) = ThreeWay(
+            p => p.Buses[0].Messages[0].Name = "Ours",
+            p => p.Buses[0].Messages[0].Name = "Theirs");
+
+        var (code, output, _) = Run("merge", b, ours, theirs);
+
+        Assert.Equal(CommandLine.ExitValidationErrors, code);
+        Assert.Contains(MergeCodes.MessageChangedOnBothSides, output, StringComparison.Ordinal);
+        Assert.Contains("nothing was written", output, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Writing is opt-in, so pointing it at a file to see what would happen is safe.</summary>
+    [Fact]
+    public void Merging_writes_nothing_unless_out_is_given()
+    {
+        var (b, ours, theirs) = ThreeWay(
+            p => p.Buses[0].Messages.Add(NewMessage(p, "Alice", 10)),
+            p => p.Buses[0].Messages.Add(NewMessage(p, "Bob", 11)));
+
+        var before = File.ReadAllText(ours);
+        Assert.Equal(CommandLine.ExitOk, Run("merge", b, ours, theirs).Code);
+        Assert.Equal(before, File.ReadAllText(ours));
+
+        var merged = Path.Combine(_dir, "merged.pdproj");
+        Assert.Equal(CommandLine.ExitOk, Run("merge", b, ours, theirs, "--out", merged).Code);
+
+        var result = new JsonProjectRepository().Load(merged);
+        Assert.Equal(new[] { "Alice", "Bob", "Ping" },
+            result.Buses[0].Messages.Select(m => m.Name).OrderBy(n => n, StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// Clean and invalid at once: two people add a message each on the same wire id, touching different
+    /// entities so nothing conflicts. The run fails, because a caller acting on exit 0 would ship it.
+    /// </summary>
+    [Fact]
+    public void A_clean_merge_that_collides_wire_ids_fails_the_run()
+    {
+        var (b, ours, theirs) = ThreeWay(
+            p => p.Buses[0].Messages.Add(NewMessage(p, "Alice", 10)),
+            p => p.Buses[0].Messages.Add(NewMessage(p, "Bob", 10)));
+
+        var (code, output, _) = Run("merge", b, ours, theirs);
+
+        Assert.Equal(CommandLine.ExitValidationErrors, code);
+        Assert.Contains(DiagnosticCodes.DuplicateWireId, output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Merging_without_three_files_is_a_usage_error()
+    {
+        var path = WriteProject(CleanProject());
+
+        Assert.Equal(CommandLine.ExitUsage, Run("merge").Code);
+        Assert.Equal(CommandLine.ExitUsage, Run("merge", path, path).Code);
+    }
+
+    [Fact]
+    public void Merging_against_a_missing_file_is_an_io_error()
+    {
+        var path = WriteProject(CleanProject());
+
+        Assert.Equal(CommandLine.ExitIoError, Run("merge", "nope.pdproj", path, path).Code);
     }
 
     // ---- usage --------------------------------------------------------------------------------

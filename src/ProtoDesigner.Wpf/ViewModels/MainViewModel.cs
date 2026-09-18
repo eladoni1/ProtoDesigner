@@ -11,6 +11,12 @@ public sealed class MainViewModel : ObservableObject
 {
     private readonly IProjectRepository _repository;
 
+    /// <summary>
+    /// The open project and the baseline its next save merges against. Null until the project has a file —
+    /// a brand-new project has no stored copy anyone else could have edited.
+    /// </summary>
+    private WorkingCopy? _workingCopy;
+
     public MainViewModel()
     {
         _repository = new JsonProjectRepository();
@@ -53,6 +59,7 @@ public sealed class MainViewModel : ObservableObject
     {
         if (!ConfirmDiscardIfDirty()) return;
         var project = new Core.Model.Project("Untitled");
+        _workingCopy = null;
         Project = new ProjectViewModel(project);
         Project.Types.SeedBuiltIns();
 
@@ -74,8 +81,9 @@ public sealed class MainViewModel : ObservableObject
 
         try
         {
-            var loaded = _repository.Load(dialog.FileName);
-            Project = new ProjectViewModel(loaded) { CurrentFilePath = dialog.FileName };
+            var opened = WorkingCopy.Open(_repository, dialog.FileName);
+            _workingCopy = opened;
+            Project = new ProjectViewModel(opened.Project) { CurrentFilePath = dialog.FileName };
             Project.MarkSaved();
         }
         catch (Exception ex)
@@ -84,13 +92,29 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Saves, merging in anything another author stored since this copy was opened.
+    /// </summary>
+    /// <remarks>
+    /// The policy lives in <see cref="WorkingCopy"/> and is tested there; this is the part that has to be
+    /// here — telling the user, and re-rendering when the model changed underneath them.
+    /// </remarks>
     private bool Save()
     {
-        if (Project.CurrentFilePath is null) return SaveAs(null);
+        if (_workingCopy is null || Project.CurrentFilePath is null) return SaveAs(null);
         try
         {
-            _repository.Save(Project.Project, Project.CurrentFilePath);
-            Project.MarkSaved();
+            var outcome = _workingCopy.Save();
+
+            if (outcome.Status == SaveStatus.Conflicted)
+            {
+                ReportConflicts(outcome);
+                return false;
+            }
+
+            if (outcome.Status == SaveStatus.Merged) AdoptMergedProject(outcome);
+            else Project.MarkSaved();
+
             return true;
         }
         catch (Exception ex)
@@ -98,6 +122,47 @@ public sealed class MainViewModel : ObservableObject
             MessageBox.Show($"Save failed:\n\n{ex.Message}", "ProtoDesigner", MessageBoxButton.OK, MessageBoxImage.Warning);
             return false;
         }
+    }
+
+    private static void ReportConflicts(SaveOutcome outcome)
+    {
+        var what = string.Join("\n", outcome.Conflicts.Select(c => $"  • {c.Description} [{c.Target}]"));
+        MessageBox.Show(
+            "Someone else has saved changes that cannot be combined with yours automatically.\n\n"
+            + what
+            + "\n\nNothing was written and nothing on screen has changed. Adjust what is listed above, "
+            + "then save again.",
+            "ProtoDesigner", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
+    /// <summary>
+    /// Re-renders after someone else's changes were merged into the open project.
+    /// </summary>
+    /// <remarks>
+    /// The merge edits the model in place and the view models were built around what it used to be, so the
+    /// tree is rebuilt rather than patched. That discards the undo history, which is the honest outcome
+    /// rather than a shortcut: the journal describes operations against a project that has since changed
+    /// underneath them, so replaying one backwards is not defined. The user is told, because losing undo
+    /// silently is worse than losing it.
+    /// </remarks>
+    private void AdoptMergedProject(SaveOutcome outcome)
+    {
+        var path = Project.CurrentFilePath;
+        Project = new ProjectViewModel(_workingCopy!.Project) { CurrentFilePath = path };
+        Project.MarkSaved();
+
+        var what = string.Join("\n", outcome.Merged.Select(m => $"  • {m}"));
+        var invalid = outcome.Validation.Count == 0
+            ? ""
+            : "\n\nThe combined project has problems that need fixing:\n"
+              + string.Join("\n", outcome.Validation.Select(d => $"  • {d.Code}: {d.Message}"));
+
+        MessageBox.Show(
+            "Changes from another author were merged into yours and everything was saved.\n\n"
+            + what
+            + "\n\nUndo history has been reset, because the project changed underneath it."
+            + invalid,
+            "ProtoDesigner", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private bool SaveAs(object? _)
@@ -112,7 +177,8 @@ public sealed class MainViewModel : ObservableObject
 
         try
         {
-            _repository.Save(Project.Project, dialog.FileName);
+            _workingCopy ??= WorkingCopy.Started(_repository, Project.Project, dialog.FileName);
+            _workingCopy.SaveAs(dialog.FileName);
             Project.CurrentFilePath = dialog.FileName;
             Project.MarkSaved();
             return true;
