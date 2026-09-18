@@ -115,9 +115,10 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 4 | WPF editor | **Usable** — tree, field grid, live byte map, diagnostics, generate dialog |
 | 5 | C# generator + advanced protocol features | **Started** — C# emits declarations only |
 | 5b | Protobuf schema target + protovalidate | **Done** — gated per message, protoc-verified |
+| 5c | Wire-compatibility diffing | **Done** — `compare`, PD0080..PD0088 |
 | 6 | Shared storage & collaboration | Not started — see `docs/shared-storage-design.md` |
 
-**1847 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
+**1882 automated tests, all passing.** Three conformance checks run inside `dotnet test` and **fail**
 rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
 red one. None of the toolchains is vendored.
 
@@ -158,7 +159,7 @@ src/
   ProtoDesigner.Application/     …also ProtobufCompatibility (the export gate) and WireSizePolicy
   ProtoDesigner.CodeGen/         IProtocolGenerator, GeneratorCatalog, BitBuffer + ReferenceCodec,
                                  C/ (full codec)   CSharp/ (declarations only)   Proto/ (schema)
-  ProtoDesigner.Cli/             validate / generate / targets
+  ProtoDesigner.Cli/             validate / generate / compare / targets
   ProtoDesigner.Wpf/             the editor
 tests/                           one suite per src project
   …CodeGen.Tests/Golden/         checked-in expected output: C headers *and* .proto schemas
@@ -335,10 +336,34 @@ something and watching it go red — do the same before trusting a change here.
    `<ns>_<Bus>MessageId_NotAssigned` / `<ns>_<Bus>ModuleId_<Module>`, which is the C target's own naming
    convention and already carries the bus scope the request was after. Renaming would churn every golden
    and break any deployed code that switches on these. Worth a decision, not an assumption.
-5. **Wire-compatibility diffing** — compare two versions' `MessageLayout`s and report which changes
-   break a deployed decoder (reorder, narrow, widen, endianness, `WireId` change) versus which are safe
-   (rename anything — identity is an ID). This needs no database, works against the last git commit, and
-   is the thing git structurally cannot do for a binary protocol. Recommended before any of Phase 6.
+5. ~~**Wire-compatibility diffing**~~ — **done.** `Core/Compatibility/WireCompatibility.Compare(baseline,
+   current)` and `protodesigner compare <a> <b>`. See the section below.
+
+**Wire compatibility is the one question git cannot answer, and it is now answerable.**
+`WireCompatibility.Compare(baseline, current)` runs the layout engine over both and reports what a peer
+built from the baseline would make of the result. It needs no database: the baseline is any other
+`Project`, as easily the last git commit as the last published version. `protodesigner compare <a> <b>`
+exposes it, and `--breaking-is-an-error` turns a report into a CI gate.
+
+It works because of two rules already in place, and it is worth stating which:
+
+- **Identity is an id**, so fields are matched on a *chain* of `FieldId`s rather than on `Path`. Keying on
+  the path would be simpler and wrong — the path carries names, so every rename would report as a removal
+  plus an addition, and the one change this tool can promise is free would be the loudest thing in the
+  report. The chain rather than a single id, because one struct used twice contributes its members twice
+  with the same inner binding id: `from.version` and `to.version` are one binding reached by two paths.
+- **Layout is computed**, so the comparison is between two runs of `LayoutEngine` rather than between two
+  sets of stored offsets that could disagree with the model that produced them.
+
+**Breaking changes are `Warning`, never `Error`, and this is deliberate.** `Error` blocks code generation,
+and breaking the wire on purpose is exactly what a protocol version bump is. The point is that nobody
+breaks a fleet without being told, not that it cannot be done. `compare` exits 0 by default for the same
+reason: a check that fails the build on every intentional bump is one people route around.
+
+The cascade is the part worth having. Narrowing one field by two bits moves every field after it, and
+those are reported by name — `temperature` and `battery` moved because `mode` changed, which is precisely
+what a reader of a JSON diff does not see. `PD0080`..`PD0088`, none in `Validator.DefaultRules` (there is
+no single model for a rule to run against — it takes two projects).
 
 **Settled, so that they are not reopened as questions:**
 

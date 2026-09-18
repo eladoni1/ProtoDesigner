@@ -99,8 +99,18 @@ the revision it was based on; the server rejects any whose revision has moved. T
 different messages therefore never conflict, which is the common case on a real bus. Two people editing
 the same message conflict on that message alone, and the merge view shows one message, not a file.
 
-The flat, ID-keyed JSON collections from Phase 2 (`"messages": { "<id>": {…} }`) were chosen for
-exactly this: each entry becomes a row with a revision column, with no reshaping of the model.
+Phase 2 intended flat, ID-keyed collections for exactly this — each entry becoming a row with a revision
+column, with no reshaping. **Check the file before relying on that: only `types` was built that way.**
+`ProjectSerializer` writes `buses`, `messages`, `modules`, `routes` and `fields` as nested JSON *arrays*,
+sorted by id. Sorting keeps them diff-stable, so nothing is broken, but "explodes into rows with no
+reshaping" is true of types alone. Flattening the rest is a schema v3 migration, and the migration chain
+already exists to carry it — do it before the SQL backend, not after.
+
+One caveat on treating git as the interim database: it is weaker than it looks for this. Two branches that
+each **add a different message** to the same bus conflict on merge, because both insertions land at the
+same textual anchor. The merge is semantically trivial — take both — but a line-based diff cannot know
+that. That is the argument for the entity-level merge in §3.3 rather than a reason to distrust the
+format.
 
 ### 3.4 Published versions are immutable
 
@@ -115,6 +125,11 @@ Explicit publish provides the private workspace. These are the rails on top of i
 are worth building.
 
 ### 4.1 Wire-compatibility checking — the one that actually matters
+
+> **Built, 2026-09-18.** `WireCompatibility.Compare(baseline, current)` in `Core/Compatibility/`, and
+> `protodesigner compare <baseline> <current> [--breaking-is-an-error]`. The table below is its test
+> suite. Breaking changes report as `Warning` rather than `Error`, because an intentional version bump is
+> a breaking change and `Error` blocks code generation — see CLAUDE.md §3.
 
 This is the feature that makes ProtoDesigner worth more than a shared folder, and it is the reason to
 be excited about Phase 6 rather than merely resigned to it.

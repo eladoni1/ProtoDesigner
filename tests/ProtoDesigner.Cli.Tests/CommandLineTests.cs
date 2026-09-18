@@ -1,3 +1,4 @@
+using ProtoDesigner.Core.Validation;
 using ProtoDesigner.Application;
 using ProtoDesigner.Persistence.Json;
 
@@ -83,7 +84,93 @@ public sealed class CommandLineTests : IDisposable
         return p;
     }
 
+
+    // ---- compare ------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The two projects here are the same object saved twice, so every id matches — the situation two
+    /// checkouts of one file are in, and the only one where the comparison means anything.
+    /// </summary>
+    [Fact]
+    public void Comparing_a_project_against_itself_reports_no_differences()
+    {
+        var path = WriteProject(CleanProject());
+
+        var (code, output, _) = Run("compare", path, path);
+
+        Assert.Equal(CommandLine.ExitOk, code);
+        Assert.Contains("No wire-visible differences", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Comparing_reports_a_narrowed_field_as_breaking()
+    {
+        var baseline = CleanProject();
+        var basePath = WriteProject(baseline, "base.pdproj");
+
+        baseline.Buses[0].Messages[0].Fields[0].Encoding.BitWidth = 16;
+        var nextPath = WriteProject(baseline, "next.pdproj");
+
+        var (code, output, _) = Run("compare", basePath, nextPath);
+
+        Assert.Equal(CommandLine.ExitOk, code);
+        Assert.Contains(DiagnosticCodes.FieldResized, output, StringComparison.Ordinal);
+        Assert.Contains("BREAKING", output, StringComparison.Ordinal);
+    }
+
+    /// <summary>Renaming is the one change this tool can promise is free, so the CLI must say so.</summary>
+    [Fact]
+    public void Comparing_reports_a_rename_as_safe()
+    {
+        var baseline = CleanProject();
+        var basePath = WriteProject(baseline, "base.pdproj");
+
+        baseline.Buses[0].Messages[0].Fields[0].Name = "identifier";
+        var nextPath = WriteProject(baseline, "next.pdproj");
+
+        var (code, output, _) = Run("compare", basePath, nextPath);
+
+        Assert.Equal(CommandLine.ExitOk, code);
+        Assert.Contains(DiagnosticCodes.RenamedSafely, output, StringComparison.Ordinal);
+        Assert.DoesNotContain("BREAKING", output, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Breaking the wire on purpose is what a version bump is, so the default exit code stays 0 and a CI
+    /// job that wants otherwise has to say so.
+    /// </summary>
+    [Fact]
+    public void Breaking_changes_only_fail_the_run_when_asked()
+    {
+        var baseline = CleanProject();
+        var basePath = WriteProject(baseline, "base.pdproj");
+        baseline.Buses[0].Messages[0].WireId = 99;
+        var nextPath = WriteProject(baseline, "next.pdproj");
+
+        Assert.Equal(CommandLine.ExitOk, Run("compare", basePath, nextPath).Code);
+        Assert.Equal(CommandLine.ExitValidationErrors,
+            Run("compare", basePath, nextPath, "--breaking-is-an-error").Code);
+    }
+
+    [Fact]
+    public void Comparing_without_two_files_is_a_usage_error()
+    {
+        var path = WriteProject(CleanProject());
+
+        Assert.Equal(CommandLine.ExitUsage, Run("compare").Code);
+        Assert.Equal(CommandLine.ExitUsage, Run("compare", path).Code);
+    }
+
+    [Fact]
+    public void Comparing_against_a_missing_baseline_is_an_io_error()
+    {
+        var path = WriteProject(CleanProject());
+
+        Assert.Equal(CommandLine.ExitIoError, Run("compare", "nope.pdproj", path).Code);
+    }
+
     // ---- usage --------------------------------------------------------------------------------
+
 
     [Fact]
     public void No_arguments_prints_usage_and_returns_the_usage_code()

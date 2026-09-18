@@ -78,4 +78,24 @@ public static class DiagnosticCodes
     public const string ProtoDuplicateFieldNumber = "PD0073";
     public const string ProtoNarrowInteger        = "PD0074";
     public const string ProtoBitOrderIgnored      = "PD0075";
+
+    // ---- wire compatibility (PD0080..PD0089) -----------------------------------------------------
+    //
+    // Also NOT part of the default rule set, and for a sharper reason than the protobuf codes: these
+    // compare two *versions* of a project, so there is no single model a rule could run against.
+    // WireCompatibility.Compare is the entry point.
+    //
+    // Breaking changes are Warning, never Error. A deployed decoder breaking is sometimes exactly what
+    // the author intends — that is what a protocol version bump is — and Error blocks code generation.
+    // The point is that nobody breaks a fleet without being told, not that it cannot be done.
+
+    public const string WireIdChanged             = "PD0080";
+    public const string MessageRemoved            = "PD0081";
+    public const string FieldRemoved              = "PD0082";
+    public const string FieldAdded                = "PD0083";
+    public const string FieldMoved                = "PD0084";
+    public const string FieldResized              = "PD0085";
+    public const string FieldEncodingChanged      = "PD0086";
+    public const string MessageAdded              = "PD0087";
+    public const string RenamedSafely             = "PD0088";
 }

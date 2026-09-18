@@ -1,5 +1,6 @@
 using ProtoDesigner.Application;
 using ProtoDesigner.CodeGen;
+using ProtoDesigner.Core.Compatibility;
 using ProtoDesigner.Core.Model;
 using ProtoDesigner.Core.Validation;
 using ProtoDesigner.Persistence.Json;
@@ -7,8 +8,8 @@ using ProtoDesigner.Persistence.Json;
 namespace ProtoDesigner.Cli;
 
 /// <summary>
-/// The headless entry point: <c>validate</c> and <c>generate</c>. Exit codes are the contract that
-/// makes this usable in CI, so they are documented and tested rather than incidental.
+/// The headless entry point: <c>validate</c>, <c>generate</c> and <c>compare</c>. Exit codes are the
+/// contract that makes this usable in CI, so they are documented and tested rather than incidental.
 /// </summary>
 public static class CommandLine
 {
@@ -33,6 +34,7 @@ public static class CommandLine
         {
             "validate" => Validate(args.Skip(1).ToArray(), stdout, stderr),
             "generate" => Generate(args.Skip(1).ToArray(), stdout, stderr),
+            "compare" => Compare(args.Skip(1).ToArray(), stdout, stderr),
             "targets" => ListTargets(stdout),
             _ => Unknown(args[0], stderr),
         };
@@ -94,6 +96,43 @@ public static class CommandLine
             : $"{project!.Name}: {errors} error(s), {warnings} warning(s), {infos} info.");
 
         return errors > 0 ? ExitValidationErrors : ExitOk;
+    }
+
+    // ---- compare -------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Reports what a peer built from the baseline would make of the current definition.
+    /// </summary>
+    /// <remarks>
+    /// Exit 0 even when the report is full of breaking changes: breaking the wire on purpose is what a
+    /// version bump is, and a build that refused would make the check something people route around.
+    /// <c>--breaking-is-an-error</c> is for a CI job that wants the opposite, stated explicitly.
+    /// </remarks>
+    private static int Compare(string[] args, TextWriter stdout, TextWriter stderr)
+    {
+        var positional = args.Where(a => !a.StartsWith("--", StringComparison.Ordinal)).ToArray();
+        if (positional.Length < 2)
+        {
+            stderr.WriteLine("usage: protodesigner compare <baseline.pdproj> <current.pdproj> [--breaking-is-an-error]");
+            stderr.WriteLine("       reports which changes would break a decoder already deployed");
+            return ExitUsage;
+        }
+
+        if (!TryLoad(positional[0], stderr, out var baseline)) return ExitIoError;
+        if (!TryLoad(positional[1], stderr, out var current)) return ExitIoError;
+
+        var report = WireCompatibility.Compare(baseline!, current!);
+        var breaking = report.Count(d => d.Severity == Severity.Warning);
+
+        foreach (var d in report)
+            stdout.WriteLine($"{d.Code} {(d.Severity == Severity.Warning ? "BREAKING" : "safe")}: "
+                + $"{d.Message} [{d.Target}]");
+
+        stdout.WriteLine(report.Count == 0
+            ? "No wire-visible differences."
+            : $"{breaking} breaking change(s), {report.Count - breaking} safe.");
+
+        return breaking > 0 && args.Contains("--breaking-is-an-error") ? ExitValidationErrors : ExitOk;
     }
 
     // ---- generate ------------------------------------------------------------------------------
@@ -410,6 +449,7 @@ public static class CommandLine
         stdout.WriteLine("Usage:");
         stdout.WriteLine("  protodesigner validate <file.pdproj> [--quiet]");
         stdout.WriteLine("  protodesigner generate <file.pdproj> --out <dir> [--target c] [--namespace <ns>]");
+        stdout.WriteLine("  protodesigner compare <baseline.pdproj> <current.pdproj> [--breaking-is-an-error]");
         stdout.WriteLine("  protodesigner targets");
         stdout.WriteLine();
         stdout.WriteLine("Choosing what to generate (default: every bus):");
