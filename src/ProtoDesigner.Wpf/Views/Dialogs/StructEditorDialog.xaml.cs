@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Controls;
 using ProtoDesigner.Application;
+using ProtoDesigner.Application.Commands;
 using ProtoDesigner.Core.Model;
 using ProtoDesigner.Wpf.Behaviors;
 using ProtoDesigner.Wpf.Mvvm;
@@ -187,14 +188,12 @@ public partial class StructEditorDialog : Window
         if (duplicate is not null) { ShowError($"Two fields are both called '{duplicate.Key}'."); return; }
 
         var target = _existing ?? _project.Types.AddStruct(name!);
-        target.Name = name!;
+        var edit = new StructEdit(name!, _rows.Select(r => new StructField(r.Binding, r.Name.Trim())).ToList());
 
-        target.Fields.Clear();
-        foreach (var row in _rows)
-        {
-            row.Binding.Name = row.Name.Trim();
-            target.Fields.Add(row.Binding);
-        }
+        // Creating already pushed one command, and undoing it removes the whole type — so the initial
+        // contents ride along with it rather than becoming a second step the user has to undo twice.
+        if (_existing is null) edit.ApplyTo(target);
+        else _project.Journal.Do(new EditStructCommand(target, edit));
 
         _project.Types.Rebuild();
         _project.RefreshAll();

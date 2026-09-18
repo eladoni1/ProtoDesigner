@@ -2,6 +2,20 @@ using ProtoDesigner.Core.Model;
 
 namespace ProtoDesigner.Application.Commands;
 
+// ---- project ----------------------------------------------------------------------------------
+
+public sealed class RenameProjectCommand : IEditCommand
+{
+    private readonly string _newName;
+    private string _oldName = string.Empty;
+
+    public RenameProjectCommand(string newName) => _newName = newName;
+
+    public string Describe() => $"Rename project to '{_newName}'";
+    public void Apply(Project project) { _oldName = project.Name; project.Name = _newName; }
+    public void Undo(Project project) { project.Name = _oldName; }
+}
+
 // ---- bus --------------------------------------------------------------------------------------
 
 public sealed class AddBusCommand : IEditCommand
@@ -47,6 +61,27 @@ public sealed class RenameBusCommand : IEditCommand
     public string Describe() => $"Rename bus to '{_newName}'";
     public void Apply(Project _)  { _oldName = _bus.Name; _bus.Name = _newName; }
     public void Undo(Project _)   { _bus.Name = _oldName; }
+}
+
+/// <summary>
+/// Changes a bus's transport. Journalled like any other edit: the transport sets the frame budget the
+/// validator measures every message against, so it is not the cosmetic property it looks like.
+/// </summary>
+public sealed class SetBusTransportCommand : IEditCommand
+{
+    private readonly Bus _bus;
+    private readonly Transport _newTransport;
+    private Transport _oldTransport;
+
+    public SetBusTransportCommand(Bus bus, Transport newTransport)
+    {
+        _bus = bus;
+        _newTransport = newTransport;
+    }
+
+    public string Describe() => $"Set bus '{_bus.Name}' transport to {_newTransport}";
+    public void Apply(Project _) { _oldTransport = _bus.Transport; _bus.Transport = _newTransport; }
+    public void Undo(Project _)  { _bus.Transport = _oldTransport; }
 }
 
 // ---- modules ----------------------------------------------------------------------------------

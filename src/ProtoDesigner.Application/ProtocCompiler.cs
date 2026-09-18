@@ -52,6 +52,20 @@ public static class ProtocCompiler
     public const string PathVariable = "PROTODESIGNER_PROTOC";
 
     /// <summary>
+    /// Set to 1 to let a test suite accept coverage on a machine with no protoc.
+    /// </summary>
+    /// <remarks>
+    /// The compiler itself never consults this — a caller who asked for C++ gets an error, not a shrug.
+    /// It exists so the opt-out documented for the protoc conformance checks covers every suite that
+    /// needs the toolchain, rather than only the one that happened to define it.
+    /// </remarks>
+    public const string SkipVariable = "PROTODESIGNER_SKIP_PROTOC";
+
+    /// <summary>Whether a run has explicitly opted out of needing protoc.</summary>
+    public static bool SkipRequested =>
+        Environment.GetEnvironmentVariable(SkipVariable) is "1" or "true";
+
+    /// <summary>
     /// The languages offered.
     /// </summary>
     /// <remarks>

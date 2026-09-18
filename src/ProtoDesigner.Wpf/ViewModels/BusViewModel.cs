@@ -40,7 +40,7 @@ public sealed class BusViewModel : ObservableObject
         set
         {
             if (Bus.Transport == value) return;
-            Bus.Transport = value;   // simple property; not journalled (rare edit, low risk).
+            Project.Journal.Do(new SetBusTransportCommand(Bus, value));
             OnPropertyChanged();
         }
     }

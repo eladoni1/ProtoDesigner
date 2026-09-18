@@ -83,23 +83,26 @@ public class ProtocCompilerTests : IDisposable
     // ---- the real thing ---------------------------------------------------------------------------
 
     /// <summary>
-    /// Fails when protoc is absent rather than passing quietly, matching every other toolchain check
-    /// here — a green test that compiled nothing is worse than a red one.
+    /// The compiler, or null when the run has explicitly opted out. Fails when protoc is simply absent,
+    /// matching every other toolchain check here — a green test that compiled nothing is worse than a red
+    /// one. Opting out is the same switch the protoc conformance suite honours, so one variable covers
+    /// every check that needs the toolchain.
     /// </summary>
-    private static string RequireProtoc()
+    private static string? RequireProtoc()
     {
         var protoc = ProtocCompiler.Locate();
-        Assert.True(protoc is not null,
+        Assert.True(protoc is not null || ProtocCompiler.SkipRequested,
             "protoc was not found, so nothing was compiled from the schema and this test proved only "
             + $"that a command line can be built. Put it in protobuf/bin/, set "
-            + $"{ProtocCompiler.PathVariable}, or put it on PATH.");
-        return protoc!;
+            + $"{ProtocCompiler.PathVariable}, put it on PATH, or set {ProtocCompiler.SkipVariable}=1 "
+            + "to accept coverage without it.");
+        return protoc;
     }
 
     [Fact]
     public void A_schema_compiles_to_real_cpp()
     {
-        RequireProtoc();
+        if (RequireProtoc() is null) return;
         WriteSchema();
 
         var result = ProtocCompiler.Run(_dir, ["cpp"]);
@@ -118,7 +121,7 @@ public class ProtocCompilerTests : IDisposable
     [Fact]
     public void A_schema_compiles_to_real_csharp()
     {
-        RequireProtoc();
+        if (RequireProtoc() is null) return;
         WriteSchema();
 
         var result = ProtocCompiler.Run(_dir, ["csharp"]);
@@ -132,7 +135,7 @@ public class ProtocCompilerTests : IDisposable
     [Fact]
     public void Several_languages_come_out_of_one_run()
     {
-        RequireProtoc();
+        if (RequireProtoc() is null) return;
         WriteSchema();
 
         var result = ProtocCompiler.Run(_dir, ["cpp", "csharp"]);
@@ -148,7 +151,7 @@ public class ProtocCompilerTests : IDisposable
         // The generated main.pb.h carries `#include "buf/validate/validate.pb.h"`, so without compiling
         // the import too the output does not build. Staging it is not a convenience — it is the
         // difference between usable source and a dangling include.
-        RequireProtoc();
+        if (RequireProtoc() is null) return;
         WriteSchema(withConstraints: true);
 
         var result = ProtocCompiler.Run(_dir, ["cpp"]);
@@ -172,7 +175,7 @@ public class ProtocCompilerTests : IDisposable
     {
         // The other half: no constraints, no import, no megabyte of validate code the user never asked
         // for. This is what `--option protovalidate=false` buys.
-        RequireProtoc();
+        if (RequireProtoc() is null) return;
         WriteSchema(withConstraints: false);
 
         var result = ProtocCompiler.Run(_dir, ["cpp"]);
@@ -185,7 +188,7 @@ public class ProtocCompilerTests : IDisposable
     [Fact]
     public void A_broken_schema_reports_protocs_own_complaint()
     {
-        RequireProtoc();
+        if (RequireProtoc() is null) return;
         File.WriteAllText(Path.Combine(_dir, "main.proto"), "syntax = \"proto3\";\nmessage {{{\n");
 
         var result = ProtocCompiler.Run(_dir, ["cpp"]);

@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using ProtoDesigner.Application;
+using ProtoDesigner.Application.Commands;
 using ProtoDesigner.Core.Layout;
 using ProtoDesigner.Core.Model;
 using ProtoDesigner.Wpf.ViewModels;
@@ -444,25 +445,19 @@ public partial class PrimitiveEditorDialog : Window
             created.WireBits = bits;
             created.WireOffset = wireOffset;
             created.WireScale = wireScale;
+            _project.PropagateWireEncoding(created);
             Result = created;
         }
         else
         {
-            if (!string.Equals(_existing.Name, name, StringComparison.Ordinal))
-                _existing.Name = name;
-            _existing.Kind = SelectedKind;
-            _existing.Range = range;
-            _existing.WireForm = form;
-            _existing.WireBits = bits;
-            _existing.WireOffset = wireOffset;
-            _existing.WireScale = wireScale;
+            // A type serialises the same way everywhere, so the command pushes this choice onto every
+            // field that uses it — and takes those writes back with it on undo.
+            _project.Journal.Do(new EditPrimitiveCommand(_existing, new PrimitiveEdit(
+                name, SelectedKind, range, form, bits, wireOffset, wireScale)));
             _project.Types.Rebuild();
             Result = _existing;
         }
 
-        // A type serialises the same way everywhere, so the choice made here reaches every field that
-        // uses it, in every message on every bus.
-        _project.PropagateWireEncoding(Result!);
         _project.RefreshAll();
         DialogResult = true;
     }

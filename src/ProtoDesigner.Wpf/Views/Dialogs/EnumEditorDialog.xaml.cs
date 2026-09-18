@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using ProtoDesigner.Application.Commands;
 using ProtoDesigner.Core.Layout;
 using ProtoDesigner.Core.Model;
 using ProtoDesigner.Wpf.Mvvm;
@@ -305,27 +306,22 @@ public partial class EnumEditorDialog : Window
             return;
         }
 
-        var target = _existing;
-        if (target is null)
+        var target = _existing ?? _project.Types.AddEnum(name!, SelectedKind);
+        var edit = new EnumEdit(name!, SelectedKind, SelectedWireForm, bits, members);
+
+        // The edit writes members only when the enum is not synthetic, and pushes the wire size onto every
+        // field using this enum. Creating already pushed one command, and undoing it removes the type.
+        if (_existing is null)
         {
-            target = _project.Types.AddEnum(name!, SelectedKind);
+            edit.ApplyTo(target);
+            _project.PropagateWireEncoding(target);
         }
         else
         {
-            target.Name = name!;
-            target.UnderlyingKind = SelectedKind;
+            _project.Journal.Do(new EditEnumCommand(target, edit));
         }
-
-        if (target.Synthetic == SyntheticEnum.None)
-        {
-            target.Members.Clear();
-            foreach (var m in members) target.Members.Add(m);
-        }
-        target.WireForm = SelectedWireForm;
-        target.WireBits = bits;
 
         _project.Types.Rebuild();
-        _project.PropagateWireEncoding(target);
         _project.RefreshAll();
 
         Result = target;

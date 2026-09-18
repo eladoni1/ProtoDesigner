@@ -55,7 +55,12 @@ public sealed class ProjectViewModel : ObservableObject
     public string Name
     {
         get => Project.Name;
-        set { if (Project.Name != value && !string.IsNullOrWhiteSpace(value)) { Project.Name = value; OnPropertyChanged(); } }
+        set
+        {
+            if (Project.Name == value || string.IsNullOrWhiteSpace(value)) return;
+            Journal.Do(new RenameProjectCommand(value));
+            OnPropertyChanged();
+        }
     }
 
     /// <summary>Human-readable type name for a field's referenced type.</summary>

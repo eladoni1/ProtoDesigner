@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using ProtoDesigner.Application;
+using ProtoDesigner.Application.Commands;
 using ProtoDesigner.Core.Layout;
 using ProtoDesigner.Core.Model;
 using ProtoDesigner.Wpf.ViewModels;
@@ -373,18 +374,13 @@ public partial class ArrayEditorDialog : Window
 
         var length = BuildLength(_existing?.Length, count, min);
 
-        if (_existing is null)
-        {
-            Result = _project.Types.AddArray(name!, option.Type.Id, count);
-            Result.Length = length;
-        }
-        else
-        {
-            _existing.Name = name!;
-            _existing.ElementTypeId = option.Type.Id;
-            _existing.Length = length;
-            Result = _existing;
-        }
+        var target = _existing ?? _project.Types.AddArray(name!, option.Type.Id, count);
+        var edit = new ArrayEdit(name!, option.Type.Id, length);
+
+        // Creating already pushed one command, and undoing it removes the whole type.
+        if (_existing is null) edit.ApplyTo(target);
+        else _project.Journal.Do(new EditArrayCommand(target, edit));
+        Result = target;
 
         _project.Types.Rebuild();
         _project.RefreshAll();
