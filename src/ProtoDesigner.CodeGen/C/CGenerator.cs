@@ -484,7 +484,7 @@ public sealed class CGenerator : IProtocolGenerator
             {
                 sb.AppendLine($"    /* {f.Path} */");
                 sb.AppendLine($"    if (pd_bw_bit_length(&w) < r{region.Index} + {f.BitOffset}) pd_bw_skip(&w, r{region.Index} + {f.BitOffset} - pd_bw_bit_length(&w));");
-                EmitEncodeField(sb, prefix, ir, m, f);
+                EmitEncodeField(sb, m, f);
             }
 
             if (region.Kind == IrRegionKind.Fixed)
@@ -499,85 +499,14 @@ public sealed class CGenerator : IProtocolGenerator
         sb.AppendLine();
     }
 
-    private static void EmitEncodeField(StringBuilder sb, string prefix, ProtocolIr ir, IrMessage m, IrField f)
+    private static void EmitEncodeField(StringBuilder sb, IrMessage m, IrField f)
     {
         var member = CNaming.MemberPath(f.Path);
         var endian = EndianExpr(f.Endianness, f.BitOrder);
 
         if (f.Kind == IrFieldKind.Array && f.Array is { } arr)
         {
-            var countExpr = arr.Kind switch
-            {
-                IrArrayKind.Fixed => arr.ElementCount!.Value.ToString(CultureInfo.InvariantCulture),
-                // The count field is the single source of truth — read it, don't shadow it.
-                IrArrayKind.CountFromField when arr.CountFieldIndex is { } ci =>
-                    $"msg->{CNaming.MemberPath(m.Fields[ci].Path)}",
-                _ => $"msg->{member}_count",
-            };
-
-            if (arr.Kind == IrArrayKind.LengthPrefixed)
-            {
-                // Clamped, because the element loop below clamps too. The generator owns this prefix — unlike
-                // a CountFromField count, which is the caller's field and is left as written — so a prefix
-                // announcing 30 elements ahead of the 24 actually emitted would be the generator's own lie,
-                // and any third-party decoder reading the frame would run straight off the end of it.
-                sb.AppendLine($"    {{ uint64_t n = (uint64_t)({countExpr}); if (n > {arr.MaxElements}u) n = {arr.MaxElements}u;");
-                sb.AppendLine($"      pd_bw_write_unsigned(&w, n, {arr.PrefixBits}, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST); }}");
-            }
-
-            // A struct element is written member by member, each positioned from the element's own
-            // start. The stride is re-established at the end of every iteration so that padding
-            // inside the element cannot accumulate into a drift across the array.
-            if (arr.HasCompositeElement)
-            {
-                sb.AppendLine($"    for (size_t i = 0; i < (size_t)({countExpr}) && i < {arr.MaxElements}; ++i) {{");
-                sb.AppendLine("        const size_t e = pd_bw_bit_length(&w);");
-                foreach (var em in arr.ElementFields!)
-                {
-                    var emEndian = EndianExpr(em.Endianness, em.BitOrder);
-                    var emName = CNaming.MemberName(em.Name);
-                    sb.AppendLine($"        /* {member}[].{em.Name} */");
-                    sb.AppendLine($"        if (pd_bw_bit_length(&w) < e + {em.BitOffset}) pd_bw_skip(&w, e + {em.BitOffset} - pd_bw_bit_length(&w));");
-
-                    var open = "        ";
-                    var memberAccess = $"msg->{member}[i].{emName}";
-                    if (em.FixedArrayCount is { } n)
-                    {
-                        sb.AppendLine($"        for (size_t j = 0; j < {n}; ++j) {{");
-                        open = "            ";
-                        memberAccess = $"msg->{member}[i].{emName}[j]";
-                    }
-                    EmitWriteValue(sb, open, memberAccess, em.Primitive, em.EnumIndex is not null,
-                                   em.Transform, em.BitWidth, emEndian, em.WireIsSigned);
-                    if (em.FixedArrayCount is not null) sb.AppendLine("        }");
-                }
-                sb.AppendLine($"        if (pd_bw_bit_length(&w) < e + {arr.ElementBits}) pd_bw_skip(&w, e + {arr.ElementBits} - pd_bw_bit_length(&w));");
-                sb.AppendLine("    }");
-                return;
-            }
-
-            sb.AppendLine($"    for (size_t i = 0; i < (size_t)({countExpr}) && i < {arr.MaxElements}; ++i) {{");
-            var elemAccess = arr.ElementEnumIndex is not null
-                ? $"(int64_t)(msg->{member}[i])"
-                : $"msg->{member}[i]";
-            var elemWire = IsRawFloat(arr.ElementPrimitive, f.Transform)
-                ? (arr.ElementPrimitive == PrimitiveKind.F32
-                    ? $"pd_float_bits(msg->{member}[i])"
-                    : $"pd_double_bits(msg->{member}[i])")
-                : ToWireCode(elemAccess, f.Transform, arr.ElementPrimitive);
-            if (IsRawFloat(arr.ElementPrimitive, f.Transform))
-                sb.AppendLine($"        pd_bw_write_unsigned(&w, (uint64_t)({elemWire}), {arr.ElementBits}, {endian});");
-            else if (f.WireIsSigned)
-                sb.AppendLine($"        pd_bw_write_signed(&w, (int64_t)({elemWire}), {arr.ElementBits}, {endian});");
-            else
-                sb.AppendLine($"        pd_bw_write_unsigned(&w, (uint64_t)({elemWire}), {arr.ElementBits}, {endian});");
-            sb.AppendLine("    }");
-
-            if (arr.Kind == IrArrayKind.Terminated && arr.Sentinel.Count > 0)
-            {
-                var bytes = string.Join(", ", arr.Sentinel.Select(b => $"0x{b:X2}"));
-                sb.AppendLine($"    {{ static const uint8_t kSentinel[] = {{ {bytes} }}; pd_bw_write_bytes(&w, kSentinel, {arr.Sentinel.Count}); }}");
-            }
+            EmitEncodeArray(sb, m, f, arr, member, endian);
             return;
         }
 
@@ -601,6 +530,84 @@ public sealed class CGenerator : IProtocolGenerator
             sb.AppendLine($"    pd_bw_write_signed(&w, (int64_t)({wire}), {f.BitWidth}, {endian});");
         else
             sb.AppendLine($"    pd_bw_write_unsigned(&w, (uint64_t)({wire}), {f.BitWidth}, {endian});");
+    }
+
+    /// <summary>Writes one array field: its optional length prefix, its elements, and any sentinel.</summary>
+    private static void EmitEncodeArray(StringBuilder sb, IrMessage m, IrField f, IrArrayInfo arr,
+        string member, string endian)
+    {
+        var countExpr = arr.Kind switch
+        {
+            IrArrayKind.Fixed => arr.ElementCount!.Value.ToString(CultureInfo.InvariantCulture),
+            // The count field is the single source of truth — read it, don't shadow it.
+            IrArrayKind.CountFromField when arr.CountFieldIndex is { } ci =>
+                $"msg->{CNaming.MemberPath(m.Fields[ci].Path)}",
+            _ => $"msg->{member}_count",
+        };
+
+        if (arr.Kind == IrArrayKind.LengthPrefixed)
+        {
+            // Clamped, because the element loop below clamps too. The generator owns this prefix — unlike
+            // a CountFromField count, which is the caller's field and is left as written — so a prefix
+            // announcing 30 elements ahead of the 24 actually emitted would be the generator's own lie,
+            // and any third-party decoder reading the frame would run straight off the end of it.
+            sb.AppendLine($"    {{ uint64_t n = (uint64_t)({countExpr}); if (n > {arr.MaxElements}u) n = {arr.MaxElements}u;");
+            sb.AppendLine($"      pd_bw_write_unsigned(&w, n, {arr.PrefixBits}, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST); }}");
+        }
+
+        // A struct element is written member by member, each positioned from the element's own
+        // start. The stride is re-established at the end of every iteration so that padding
+        // inside the element cannot accumulate into a drift across the array.
+        if (arr.HasCompositeElement)
+        {
+            sb.AppendLine($"    for (size_t i = 0; i < (size_t)({countExpr}) && i < {arr.MaxElements}; ++i) {{");
+            sb.AppendLine("        const size_t e = pd_bw_bit_length(&w);");
+            foreach (var em in arr.ElementFields!)
+            {
+                var emEndian = EndianExpr(em.Endianness, em.BitOrder);
+                var emName = CNaming.MemberName(em.Name);
+                sb.AppendLine($"        /* {member}[].{em.Name} */");
+                sb.AppendLine($"        if (pd_bw_bit_length(&w) < e + {em.BitOffset}) pd_bw_skip(&w, e + {em.BitOffset} - pd_bw_bit_length(&w));");
+
+                var open = "        ";
+                var memberAccess = $"msg->{member}[i].{emName}";
+                if (em.FixedArrayCount is { } n)
+                {
+                    sb.AppendLine($"        for (size_t j = 0; j < {n}; ++j) {{");
+                    open = "            ";
+                    memberAccess = $"msg->{member}[i].{emName}[j]";
+                }
+                EmitWriteValue(sb, open, memberAccess, em.Primitive, em.EnumIndex is not null,
+                               em.Transform, em.BitWidth, emEndian, em.WireIsSigned);
+                if (em.FixedArrayCount is not null) sb.AppendLine("        }");
+            }
+            sb.AppendLine($"        if (pd_bw_bit_length(&w) < e + {arr.ElementBits}) pd_bw_skip(&w, e + {arr.ElementBits} - pd_bw_bit_length(&w));");
+            sb.AppendLine("    }");
+            return;
+        }
+
+        sb.AppendLine($"    for (size_t i = 0; i < (size_t)({countExpr}) && i < {arr.MaxElements}; ++i) {{");
+        var elemAccess = arr.ElementEnumIndex is not null
+            ? $"(int64_t)(msg->{member}[i])"
+            : $"msg->{member}[i]";
+        var elemWire = IsRawFloat(arr.ElementPrimitive, f.Transform)
+            ? (arr.ElementPrimitive == PrimitiveKind.F32
+                ? $"pd_float_bits(msg->{member}[i])"
+                : $"pd_double_bits(msg->{member}[i])")
+            : ToWireCode(elemAccess, f.Transform, arr.ElementPrimitive);
+        if (IsRawFloat(arr.ElementPrimitive, f.Transform))
+            sb.AppendLine($"        pd_bw_write_unsigned(&w, (uint64_t)({elemWire}), {arr.ElementBits}, {endian});");
+        else if (f.WireIsSigned)
+            sb.AppendLine($"        pd_bw_write_signed(&w, (int64_t)({elemWire}), {arr.ElementBits}, {endian});");
+        else
+            sb.AppendLine($"        pd_bw_write_unsigned(&w, (uint64_t)({elemWire}), {arr.ElementBits}, {endian});");
+        sb.AppendLine("    }");
+
+        if (arr.Kind == IrArrayKind.Terminated && arr.Sentinel.Count > 0)
+        {
+            var bytes = string.Join(", ", arr.Sentinel.Select(b => $"0x{b:X2}"));
+            sb.AppendLine($"    {{ static const uint8_t kSentinel[] = {{ {bytes} }}; pd_bw_write_bytes(&w, kSentinel, {arr.Sentinel.Count}); }}");
+        }
     }
 
     // ---- decode -------------------------------------------------------------------------------
@@ -650,84 +657,7 @@ public sealed class CGenerator : IProtocolGenerator
 
         if (f.Kind == IrFieldKind.Array && f.Array is { } arr)
         {
-            string countExpr;
-            switch (arr.Kind)
-            {
-                case IrArrayKind.Fixed:
-                    countExpr = arr.ElementCount!.Value.ToString(CultureInfo.InvariantCulture);
-                    break;
-                case IrArrayKind.CountFromField when arr.CountFieldIndex is { } ci:
-                    // The count field was decoded earlier in this same message; read it directly.
-                    countExpr = $"msg->{CNaming.MemberPath(m.Fields[ci].Path)}";
-                    break;
-                case IrArrayKind.LengthPrefixed:
-                    sb.AppendLine($"    msg->{member}_count = (uint32_t)pd_br_read_unsigned(&r, {arr.PrefixBits}, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);");
-                    countExpr = $"msg->{member}_count";
-                    break;
-                default:
-                    sb.AppendLine($"    /* {arr.Kind} arrays consume the remainder; the caller supplies the count. */");
-                    countExpr = $"msg->{member}_count";
-                    break;
-            }
-
-            // Mirror of the encode side: member by member, each from the element's own start, with the
-            // stride re-established per iteration so element padding cannot drift across the array.
-            if (arr.HasCompositeElement)
-            {
-                sb.AppendLine($"    for (size_t i = 0; i < (size_t)({countExpr}) && i < {arr.MaxElements}; ++i) {{");
-                sb.AppendLine("        const size_t e = pd_br_bit_offset(&r);");
-                foreach (var em in arr.ElementFields!)
-                {
-                    var emEndian = EndianExpr(em.Endianness, em.BitOrder);
-                    var emName = CNaming.MemberName(em.Name);
-                    var emType = em.EnumIndex is { } eei
-                        ? CNaming.TypeName(prefix, ir.Enums[eei].Name)
-                        : CNaming.StorageType(em.Primitive);
-
-                    sb.AppendLine($"        /* {member}[].{em.Name} */");
-                    sb.AppendLine($"        if (pd_br_bit_offset(&r) < e + {em.BitOffset}) pd_br_skip(&r, e + {em.BitOffset} - pd_br_bit_offset(&r));");
-
-                    var open = "        ";
-                    var target = $"msg->{member}[i].{emName}";
-                    if (em.FixedArrayCount is { } n)
-                    {
-                        sb.AppendLine($"        for (size_t j = 0; j < {n}; ++j) {{");
-                        open = "            ";
-                        target = $"msg->{member}[i].{emName}[j]";
-                    }
-                    EmitReadValue(sb, open, target, emType, em.Primitive, em.Transform,
-                                  em.BitWidth, emEndian, em.WireIsSigned);
-                    if (em.FixedArrayCount is not null) sb.AppendLine("        }");
-                }
-                sb.AppendLine($"        if (pd_br_bit_offset(&r) < e + {arr.ElementBits}) pd_br_skip(&r, e + {arr.ElementBits} - pd_br_bit_offset(&r));");
-                sb.AppendLine("    }");
-                return;
-            }
-
-            sb.AppendLine($"    for (size_t i = 0; i < (size_t)({countExpr}) && i < {arr.MaxElements}; ++i) {{");
-            var elemType = arr.ElementEnumIndex is { } ei
-                ? CNaming.TypeName(prefix, ir.Enums[ei].Name)
-                : CNaming.StorageType(arr.ElementPrimitive);
-
-            if (IsRawFloat(arr.ElementPrimitive, f.Transform))
-            {
-                var fromBits = arr.ElementPrimitive == PrimitiveKind.F32
-                    ? $"pd_bits_to_float((uint32_t)pd_br_read_unsigned(&r, {arr.ElementBits}, {endian}))"
-                    : $"pd_bits_to_double((uint64_t)pd_br_read_unsigned(&r, {arr.ElementBits}, {endian}))";
-                sb.AppendLine($"        msg->{member}[i] = {fromBits};");
-            }
-            else
-            {
-                var readCall = f.WireIsSigned
-                    ? $"pd_br_read_signed(&r, {arr.ElementBits}, {endian})"
-                    : $"pd_br_read_unsigned(&r, {arr.ElementBits}, {endian})";
-                var fromWire = FromWireCode(readCall, f.Transform, arr.ElementPrimitive);
-                sb.AppendLine($"        msg->{member}[i] = ({elemType})({fromWire});");
-            }
-            sb.AppendLine("    }");
-
-            if (arr.Kind == IrArrayKind.Terminated && arr.Sentinel.Count > 0)
-                sb.AppendLine($"    pd_br_skip(&r, {arr.Sentinel.Count * 8});   /* sentinel */");
+            EmitDecodeArray(sb, prefix, ir, m, f, arr, member, endian);
             return;
         }
 
@@ -749,6 +679,91 @@ public sealed class CGenerator : IProtocolGenerator
             : CNaming.StorageType(f.Primitive);
 
         sb.AppendLine($"    msg->{member} = ({type})({value});");
+    }
+
+    /// <summary>Reads one array field: its count, its elements, and any sentinel.</summary>
+    private static void EmitDecodeArray(StringBuilder sb, string prefix, ProtocolIr ir, IrMessage m,
+        IrField f, IrArrayInfo arr, string member, string endian)
+    {
+        string countExpr;
+        switch (arr.Kind)
+        {
+            case IrArrayKind.Fixed:
+                countExpr = arr.ElementCount!.Value.ToString(CultureInfo.InvariantCulture);
+                break;
+            case IrArrayKind.CountFromField when arr.CountFieldIndex is { } ci:
+                // The count field was decoded earlier in this same message; read it directly.
+                countExpr = $"msg->{CNaming.MemberPath(m.Fields[ci].Path)}";
+                break;
+            case IrArrayKind.LengthPrefixed:
+                sb.AppendLine($"    msg->{member}_count = (uint32_t)pd_br_read_unsigned(&r, {arr.PrefixBits}, PD_ENDIAN_LITTLE, PD_BITS_MSB_FIRST);");
+                countExpr = $"msg->{member}_count";
+                break;
+            default:
+                sb.AppendLine($"    /* {arr.Kind} arrays consume the remainder; the caller supplies the count. */");
+                countExpr = $"msg->{member}_count";
+                break;
+        }
+
+        // Mirror of the encode side: member by member, each from the element's own start, with the
+        // stride re-established per iteration so element padding cannot drift across the array.
+        if (arr.HasCompositeElement)
+        {
+            sb.AppendLine($"    for (size_t i = 0; i < (size_t)({countExpr}) && i < {arr.MaxElements}; ++i) {{");
+            sb.AppendLine("        const size_t e = pd_br_bit_offset(&r);");
+            foreach (var em in arr.ElementFields!)
+            {
+                var emEndian = EndianExpr(em.Endianness, em.BitOrder);
+                var emName = CNaming.MemberName(em.Name);
+                var emType = em.EnumIndex is { } eei
+                    ? CNaming.TypeName(prefix, ir.Enums[eei].Name)
+                    : CNaming.StorageType(em.Primitive);
+
+                sb.AppendLine($"        /* {member}[].{em.Name} */");
+                sb.AppendLine($"        if (pd_br_bit_offset(&r) < e + {em.BitOffset}) pd_br_skip(&r, e + {em.BitOffset} - pd_br_bit_offset(&r));");
+
+                var open = "        ";
+                var target = $"msg->{member}[i].{emName}";
+                if (em.FixedArrayCount is { } n)
+                {
+                    sb.AppendLine($"        for (size_t j = 0; j < {n}; ++j) {{");
+                    open = "            ";
+                    target = $"msg->{member}[i].{emName}[j]";
+                }
+                EmitReadValue(sb, open, target, emType, em.Primitive, em.Transform,
+                              em.BitWidth, emEndian, em.WireIsSigned);
+                if (em.FixedArrayCount is not null) sb.AppendLine("        }");
+            }
+            sb.AppendLine($"        if (pd_br_bit_offset(&r) < e + {arr.ElementBits}) pd_br_skip(&r, e + {arr.ElementBits} - pd_br_bit_offset(&r));");
+            sb.AppendLine("    }");
+            return;
+        }
+
+        sb.AppendLine($"    for (size_t i = 0; i < (size_t)({countExpr}) && i < {arr.MaxElements}; ++i) {{");
+        var elemType = arr.ElementEnumIndex is { } ei
+            ? CNaming.TypeName(prefix, ir.Enums[ei].Name)
+            : CNaming.StorageType(arr.ElementPrimitive);
+
+        if (IsRawFloat(arr.ElementPrimitive, f.Transform))
+        {
+            var fromBits = arr.ElementPrimitive == PrimitiveKind.F32
+                ? $"pd_bits_to_float((uint32_t)pd_br_read_unsigned(&r, {arr.ElementBits}, {endian}))"
+                : $"pd_bits_to_double((uint64_t)pd_br_read_unsigned(&r, {arr.ElementBits}, {endian}))";
+            sb.AppendLine($"        msg->{member}[i] = {fromBits};");
+        }
+        else
+        {
+            var readCall = f.WireIsSigned
+                ? $"pd_br_read_signed(&r, {arr.ElementBits}, {endian})"
+                : $"pd_br_read_unsigned(&r, {arr.ElementBits}, {endian})";
+            var fromWire = FromWireCode(readCall, f.Transform, arr.ElementPrimitive);
+            sb.AppendLine($"        msg->{member}[i] = ({elemType})({fromWire});");
+        }
+        sb.AppendLine("    }");
+
+        if (arr.Kind == IrArrayKind.Terminated && arr.Sentinel.Count > 0)
+            sb.AppendLine($"    pd_br_skip(&r, {arr.Sentinel.Count * 8});   /* sentinel */");
+        return;
     }
 
     // ---- one value, shared by whole fields and by members of a composite array element -----------
