@@ -109,8 +109,29 @@ already exists to carry it — do it before the SQL backend, not after.
 One caveat on treating git as the interim database: it is weaker than it looks for this. Two branches that
 each **add a different message** to the same bus conflict on merge, because both insertions land at the
 same textual anchor. The merge is semantically trivial — take both — but a line-based diff cannot know
-that. That is the argument for the entity-level merge in §3.3 rather than a reason to distrust the
+that. That is the argument for the entity-level merge below rather than a reason to distrust the
 format.
+
+**The entity merge is built** — `Core/Merge/ProjectMerge.Merge(baseline, local, remote)`, `PD0090`..`PD0095`.
+It needs no database and no revision column: the baseline is any other `Project`, as easily the last
+published version as the file on disk before a reload, so it is usable now and unchanged when the SQL
+backend arrives. Four facts about it are worth carrying forward:
+
+- **Entities are matched by id, never by name or position**, which is what makes a rename an ordinary
+  property change rather than a delete plus an add. The case that motivated all of this — two people each
+  adding a different message — is the trivial one here.
+- **A field list touched on both sides is refused**, even when the two edits are disjoint. Field order is
+  wire order: appending one field each produces a layout neither person designed, and every check
+  downstream would call it correct. This is the one conflict the merge could resolve and must not.
+- **Nothing is applied unless everything can be.** The merge is planned in full and written only if it is
+  clean, because a half-applied merge leaves the working copy holding a mixture neither person wrote and
+  no undo describes.
+- **A clean merge is not a valid one.** Two people adding a message each with the same wire id touch
+  different entities and conflict nowhere, so the result is validated and the `Error` diagnostics come
+  back with it. `MergeResult.Succeeded` means both.
+
+What it does *not* do is decide when to merge. That is the save-versus-live-update question, and it stays
+open until there is something to sync with.
 
 ### 3.4 Published versions are immutable
 

@@ -116,9 +116,9 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 5 | C# generator + advanced protocol features | **Done** |
 | 5b | Protobuf schema target + protovalidate | **Done** — gated per message, protoc-verified |
 | 5c | Wire-compatibility diffing | **Done** — `compare`, PD0080..PD0088 |
-| 6 | Shared storage & collaboration | Not started — see `docs/shared-storage-design.md` |
+| 6 | Shared storage & collaboration | **Started** — three-way entity merge done; storage not begun. See `docs/shared-storage-design.md` |
 
-**1944 automated tests, all passing**, plus a Windows-only view-model suite. Three conformance checks run inside `dotnet test` and **fail**
+**2027 automated tests, all passing**, plus a Windows-only view-model suite. Three conformance checks run inside `dotnet test` and **fail**
 rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
 red one. None of the toolchains is vendored.
 
@@ -164,7 +164,7 @@ done
 ```
 src/
   ProtoDesigner.Core/            model, layout, validation, IR — no UI, no language bias
-    Model/  Layout/  Validation/  Ir/
+    Model/  Layout/  Validation/  Ir/  Compatibility/  Merge/
   ProtoDesigner.Application/     IProjectRepository, IEditCommand + CommandJournal,
                                  GenerationScopes, CodeGenerationService
   ProtoDesigner.Persistence.Json canonical ID-keyed JSON + migration chain
@@ -182,7 +182,8 @@ samples/protobuf-demo.pdproj     aimed at the protobuf target: two exportable me
                                  constraint shape, plus one bit-packed and one quantized message that
                                  the gate must refuse by name
 docs/pdproj-format.md            the on-disk format, for anything writing a .pdproj without the editor
-docs/shared-storage-design.md    Phase 6 design note — read before building any of it
+docs/shared-storage-design.md    Phase 6 design note — read before building any of it; §3.3 records
+                                 what the merge already does and what it deliberately refuses
 protobuf/                        gitignored toolchain: bin/protoc, include/, validate.proto
 ```
 
@@ -450,6 +451,36 @@ The cascade is the part worth having. Narrowing one field by two bits moves ever
 those are reported by name — `temperature` and `battery` moved because `mode` changed, which is precisely
 what a reader of a JSON diff does not see. `PD0080`..`PD0088`, none in `Validator.DefaultRules` (there is
 no single model for a rule to run against — it takes two projects).
+
+**Two people's edits merge by identity, and git cannot do this for us.** `ProjectMerge.Merge(baseline,
+local, remote)` walks types, buses, modules, messages and fields, comparing each entity's own state
+against the common ancestor. `PD0090`..`PD0095`. It was built first of the Phase 6 work because it needs
+no database — the baseline is any other `Project` — so it is useful before the storage exists and
+unchanged after.
+
+The motivating case is measured, not assumed: two branches each adding a different message to one bus
+**conflict under a real `git merge`**, because both insertions land at the same textual anchor. Matching
+on ids makes that the trivial "take both" it always was.
+
+Four decisions in it are load-bearing:
+
+- **A field list touched on both sides is a conflict even when the two edits are disjoint** (`PD0095`).
+  Field order is wire order, so appending one field on each side yields a layout neither person designed
+  and nothing downstream would report it. This is the only conflict the merge could resolve and must not.
+- **Nothing is applied unless everything can be.** The merge is planned in full and written into `local`
+  only if it is clean; a half-applied merge leaves a mixture neither person wrote, that no undo describes.
+- **A clean merge is not a valid one.** Two people adding a message each with the same wire id conflict
+  nowhere, because they touched different entities. The result is validated and its `Error` diagnostics
+  come back in `MergeResult.Validation`; `Succeeded` means clean *and* valid.
+- **The same change made independently on both sides is not a conflict.** People reach the same edit more
+  often than is comfortable, and stopping them would be noise.
+
+`EntityState` renders the state string the whole thing turns on, and **a property missing from it is
+silent data loss** — an edit the merge cannot see is one it discards as "unchanged", leaving a valid
+project that is nobody's. `EntityStateCoverageTests` reflects over the model rather than trusting a list,
+so a new property on `FieldBinding` fails the suite until it is either covered or written down as
+carrying no state. It asserts both halves separately, because they fail separately: that the merge *saw*
+the edit, and that the copy routine *carried* it.
 
 **Settled, so that they are not reopened as questions:**
 
