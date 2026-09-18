@@ -79,8 +79,19 @@ public static class PrimitiveKindExtensions
         kind is PrimitiveKind.I8 or PrimitiveKind.I16 or PrimitiveKind.I32 or PrimitiveKind.I64;
 
     /// <summary>False for F32/F64, whose bit pattern is IEEE-754 and cannot be range-compressed without a transform.</summary>
-    public static bool IsIntegral(this PrimitiveKind kind) =>
-        kind is not (PrimitiveKind.F32 or PrimitiveKind.F64);
+    public static bool IsIntegral(this PrimitiveKind kind) => !kind.IsFloat();
+
+    /// <summary>
+    /// Whether the kind has values between its values.
+    /// </summary>
+    /// <remarks>
+    /// The distinction behind several decisions that look unrelated: a float may be quantized because a
+    /// finer step is more resolution, an integer may not because there is nothing between 1000 and 1001;
+    /// a float is 32 or 64 bits in protobuf as it is here; a float's wire form is IEEE rather than a
+    /// width to choose. Written out once so those decisions cannot drift apart.
+    /// </remarks>
+    public static bool IsFloat(this PrimitiveKind kind) =>
+        kind is PrimitiveKind.F32 or PrimitiveKind.F64;
 
     /// <summary>
     /// The full span of values the kind can hold, used to pre-fill a new type's range so a <c>uint8</c>

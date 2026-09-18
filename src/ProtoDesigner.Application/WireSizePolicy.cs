@@ -27,7 +27,7 @@ public static class WireSizePolicy
     /// </summary>
     public static WireForm NaturalFormFor(PrimitiveKind kind) => kind switch
     {
-        PrimitiveKind.F32 or PrimitiveKind.F64 => WireForm.Float,
+        _ when kind.IsFloat() => WireForm.Float,
         PrimitiveKind.I8 or PrimitiveKind.I16 or PrimitiveKind.I32 or PrimitiveKind.I64 => WireForm.Signed,
         _ => WireForm.Unsigned,
     };
@@ -113,7 +113,4 @@ public static class WireSizePolicy
         return hostIsFloat ? minimum : Math.Max(1m, minimum);
     }
 
-    /// <summary>Whether a host kind has values between its values.</summary>
-    public static bool IsFloatKind(PrimitiveKind kind) =>
-        kind is PrimitiveKind.F32 or PrimitiveKind.F64;
 }

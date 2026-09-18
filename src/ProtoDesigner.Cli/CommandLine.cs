@@ -68,14 +68,16 @@ public static class CommandLine
 
     private static int Validate(string[] args, TextWriter stdout, TextWriter stderr)
     {
-        if (args.Length == 0)
+        if (!TryParseArgs(args, stderr, out var parsed)) return ExitUsage;
+
+        if (parsed.Paths.Count == 0)
         {
             stderr.WriteLine("usage: protodesigner validate <file.pdproj> [--quiet]");
             return ExitUsage;
         }
 
-        var path = args[0];
-        var quiet = args.Contains("--quiet");
+        var path = parsed.Paths[0];
+        var quiet = parsed.Has("--quiet");
 
         if (!TryLoad(path, stderr, out var project)) return ExitIoError;
 
@@ -110,16 +112,17 @@ public static class CommandLine
     /// </remarks>
     private static int Compare(string[] args, TextWriter stdout, TextWriter stderr)
     {
-        var positional = args.Where(a => !a.StartsWith("--", StringComparison.Ordinal)).ToArray();
-        if (positional.Length < 2)
+        if (!TryParseArgs(args, stderr, out var parsed)) return ExitUsage;
+
+        if (parsed.Paths.Count < 2)
         {
             stderr.WriteLine("usage: protodesigner compare <baseline.pdproj> <current.pdproj> [--breaking-is-an-error]");
             stderr.WriteLine("       reports which changes would break a decoder already deployed");
             return ExitUsage;
         }
 
-        if (!TryLoad(positional[0], stderr, out var baseline)) return ExitIoError;
-        if (!TryLoad(positional[1], stderr, out var current)) return ExitIoError;
+        if (!TryLoad(parsed.Paths[0], stderr, out var baseline)) return ExitIoError;
+        if (!TryLoad(parsed.Paths[1], stderr, out var current)) return ExitIoError;
 
         var report = WireCompatibility.Compare(baseline!, current!);
         var breaking = report.Count(d => d.Severity == Severity.Warning);
@@ -132,14 +135,16 @@ public static class CommandLine
             ? "No wire-visible differences."
             : $"{breaking} breaking change(s), {report.Count - breaking} safe.");
 
-        return breaking > 0 && args.Contains("--breaking-is-an-error") ? ExitValidationErrors : ExitOk;
+        return breaking > 0 && parsed.Has("--breaking-is-an-error") ? ExitValidationErrors : ExitOk;
     }
 
     // ---- generate ------------------------------------------------------------------------------
 
     private static int Generate(string[] args, TextWriter stdout, TextWriter stderr)
     {
-        if (args.Length == 0)
+        if (!TryParseArgs(args, stderr, out var parsed)) return ExitUsage;
+
+        if (parsed.Paths.Count == 0)
         {
             stderr.WriteLine("usage: protodesigner generate <file.pdproj> --out <dir> [--target <id>]");
             stderr.WriteLine("       [--bus <name> [--messages <a,b,c>]] | [--module <name>] [--namespace <ns>]");
@@ -147,18 +152,18 @@ public static class CommandLine
             return ExitUsage;
         }
 
-        var path = args[0];
+        var path = parsed.Paths[0];
         // C is the default: it is the only target that emits conversion code today, and its output
         // compiles as C or C++.
-        var target = GetOption(args, "--target") ?? "c";
-        var outDir = GetOption(args, "--out");
-        var busName = GetOption(args, "--bus");
-        var moduleName = GetOption(args, "--module");
-        var messageList = GetOption(args, "--messages");
-        var ns = GetOption(args, "--namespace") ?? "proto";
+        var target = parsed.Value("--target") ?? "c";
+        var outDir = parsed.Value("--out");
+        var busName = parsed.Value("--bus");
+        var moduleName = parsed.Value("--module");
+        var messageList = parsed.Value("--messages");
+        var ns = parsed.Value("--namespace") ?? "proto";
 
-        if (!TryParseTargetOptions(args, stderr, out var targetOptions)) return ExitUsage;
-        if (!TryParseProtocLanguages(args, stderr, out var protocLanguages)) return ExitUsage;
+        if (!TryParseTargetOptions(parsed, stderr, out var targetOptions)) return ExitUsage;
+        if (!TryParseProtocLanguages(parsed, stderr, out var protocLanguages)) return ExitUsage;
 
         if (outDir is null)
         {
@@ -367,21 +372,12 @@ public static class CommandLine
     /// changes the output should not look like the flag being ignored.
     /// </summary>
     private static bool TryParseTargetOptions(
-        string[] args, TextWriter stderr, out Dictionary<string, string> options)
+        ParsedArgs args, TextWriter stderr, out Dictionary<string, string> options)
     {
         options = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        for (var i = 0; i < args.Length; i++)
+        foreach (var pair in args.AllValues("--option"))
         {
-            if (args[i] != "--option") continue;
-
-            if (i + 1 >= args.Length)
-            {
-                stderr.WriteLine("--option needs a key=value pair.");
-                return false;
-            }
-
-            var pair = args[++i];
             var split = pair.IndexOf('=');
             if (split <= 0 || split == pair.Length - 1)
             {
@@ -403,23 +399,12 @@ public static class CommandLine
     /// finished by the time this runs, and the languages available depend on the installed protoc rather
     /// than on the target.
     /// </remarks>
-    private static bool TryParseProtocLanguages(string[] args, TextWriter stderr, out List<string> languages)
+    private static bool TryParseProtocLanguages(ParsedArgs args, TextWriter stderr, out List<string> languages)
     {
         languages = [];
 
-        for (var i = 0; i < args.Length; i++)
+        foreach (var id in args.AllValues("--protoc-out"))
         {
-            if (args[i] != "--protoc-out") continue;
-
-            if (i + 1 >= args.Length)
-            {
-                stderr.WriteLine(
-                    "--protoc-out needs a language, one of: "
-                    + string.Join(", ", ProtocCompiler.Languages.Select(l => l.Id)) + ".");
-                return false;
-            }
-
-            var id = args[++i];
             if (ProtocCompiler.FindLanguage(id) is null)
             {
                 stderr.WriteLine(
@@ -435,11 +420,91 @@ public static class CommandLine
         return true;
     }
 
-    private static string? GetOption(string[] args, string name)
+    // ---- argument parsing ----------------------------------------------------------------------
+
+    /// <summary>Options that consume the argument after them.</summary>
+    private static readonly HashSet<string> ValueFlags = new(StringComparer.Ordinal)
     {
-        var idx = Array.IndexOf(args, name);
-        if (idx < 0 || idx + 1 >= args.Length) return null;
-        return args[idx + 1];
+        "--target", "--out", "--bus", "--module", "--messages", "--namespace", "--option", "--protoc-out",
+    };
+
+    /// <summary>Options that stand alone.</summary>
+    private static readonly HashSet<string> SwitchFlags = new(StringComparer.Ordinal)
+    {
+        "--quiet", "--breaking-is-an-error",
+    };
+
+    /// <summary>
+    /// One command's arguments, with paths separated from options.
+    /// </summary>
+    /// <remarks>
+    /// Parsing up front rather than scanning the raw array per flag is what lets a file be named anywhere
+    /// on the line. It also makes an unknown option an error: scanning silently ignored one, so a typo in
+    /// a flag that changes the output looked exactly like the flag working.
+    /// </remarks>
+    private sealed record ParsedArgs(
+        IReadOnlyList<string> Paths,
+        IReadOnlyList<(string Flag, string Value)> Values,
+        IReadOnlySet<string> Switches)
+    {
+        /// <summary>The last value given for a flag, or null when it was not given.</summary>
+        public string? Value(string flag) => Values.LastOrDefault(v => v.Flag == flag).Value;
+
+        public IEnumerable<string> AllValues(string flag) =>
+            Values.Where(v => v.Flag == flag).Select(v => v.Value);
+
+        public bool Has(string flag) => Switches.Contains(flag);
+    }
+
+    private static bool TryParseArgs(string[] args, TextWriter stderr, out ParsedArgs parsed)
+    {
+        var paths = new List<string>();
+        var values = new List<(string, string)>();
+        var switches = new HashSet<string>(StringComparer.Ordinal);
+        parsed = new ParsedArgs(paths, values, switches);
+
+        for (var i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+
+            if (!arg.StartsWith("--", StringComparison.Ordinal))
+            {
+                paths.Add(arg);
+                continue;
+            }
+
+            if (SwitchFlags.Contains(arg))
+            {
+                switches.Add(arg);
+                continue;
+            }
+
+            if (!ValueFlags.Contains(arg))
+            {
+                stderr.WriteLine($"Unknown option '{arg}'. Run 'protodesigner --help' for usage.");
+                return false;
+            }
+
+            if (i + 1 >= args.Length)
+            {
+                stderr.WriteLine($"{arg} needs a value.");
+                return false;
+            }
+
+            // A value that looks like another option is nearly always a forgotten argument. Taking it
+            // silently is how `--namespace --out dir` generated into `dir` under the namespace "out".
+            var value = args[i + 1];
+            if (value.StartsWith("--", StringComparison.Ordinal))
+            {
+                stderr.WriteLine($"{arg} needs a value, but the next argument is '{value}'.");
+                return false;
+            }
+
+            values.Add((arg, value));
+            i++;
+        }
+
+        return true;
     }
 
     private static void PrintUsage(TextWriter stdout)

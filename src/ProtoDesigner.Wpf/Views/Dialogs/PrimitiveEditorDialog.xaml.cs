@@ -212,7 +212,7 @@ public partial class PrimitiveEditorDialog : Window
         return form == WireForm.Signed ? $"{label} (int{bits})" : label;
     }
 
-    private bool HostIsFloat => SelectedKind is PrimitiveKind.F32 or PrimitiveKind.F64;
+    private bool HostIsFloat => SelectedKind.IsFloat();
 
     private void OnAutoScaleToggled(object sender, RoutedEventArgs e)
     {
@@ -380,7 +380,7 @@ public partial class PrimitiveEditorDialog : Window
         var form = WireFormBox.SelectedItem is WireForm f ? f : WireForm.Unsigned;
         var bits = SelectedWireBits;
 
-        var hostIsFloat = SelectedKind is PrimitiveKind.F32 or PrimitiveKind.F64;
+        var hostIsFloat = HostIsFloat;
         var isIntegerWire = form != WireForm.Float;
         var needsMapping = isIntegerWire && (hostIsFloat || bits < SelectedKind.NaturalBits());
 

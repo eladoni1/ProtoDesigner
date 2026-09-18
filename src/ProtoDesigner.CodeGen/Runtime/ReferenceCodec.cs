@@ -247,7 +247,7 @@ public sealed class ReferenceCodec
     private static bool IsSigned(PrimitiveKind kind) =>
         kind is PrimitiveKind.I8 or PrimitiveKind.I16 or PrimitiveKind.I32 or PrimitiveKind.I64;
 
-    private static bool IsFloat(PrimitiveKind kind) => kind is PrimitiveKind.F32 or PrimitiveKind.F64;
+    private static bool IsFloat(PrimitiveKind kind) => kind.IsFloat();
 
     /// <summary>
     /// Clamps a value to what its host type can actually represent.

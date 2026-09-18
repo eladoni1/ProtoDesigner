@@ -474,11 +474,18 @@ public sealed class IrBuilder
             return BuildCompositeArrayField(project, node, type, elementNode, elementBits,
                                             structElem, enumTable, structTable);
 
+        // Struct elements were handled above, so anything left that is not a primitive or an enum has no
+        // element kind to report. Defaulting to one is how an array of something else silently became an
+        // array of uint8_t; PD0036 is what should have caught it, and naming the array says where to look.
         var (elemKind, elemEnumIdx) = elemType switch
         {
             ParameterType pt => (pt.Kind, (int?)null),
             EnumType et => (et.UnderlyingKind, enumTable.TryGetValue(et.Id, out var i) ? i : (int?)null),
-            _ => (PrimitiveKind.U8, (int?)null),
+            null => throw new InvalidOperationException(
+                $"Array '{node.Path}' has an element type that is not in the project's type library."),
+            _ => throw new InvalidOperationException(
+                $"Array '{node.Path}' has {elemType.GetType().Name} elements. Only primitives, enums and "
+                + "structs may be array elements."),
         };
 
         var elemRange = elemType switch
@@ -508,15 +515,21 @@ public sealed class IrBuilder
     /// never disagree about which field carries the count.
     /// </remarks>
     private static (IrArrayKind Kind, int? Count, int MaxCount, int PrefixBits, IReadOnlyList<byte> Sentinel)
-        ResolveLength(ArrayType type, string path) => type.Length switch
+        ResolveLength(ArrayType type, string path)
     {
-        ArrayLength.Fixed f => (IrArrayKind.Fixed, (int?)f.Count, f.Count, 0, (IReadOnlyList<byte>)Array.Empty<byte>()),
-        ArrayLength.CountFromField c => (IrArrayKind.CountFromField, (int?)null, c.MaxCount, 0, (IReadOnlyList<byte>)Array.Empty<byte>()),
-        ArrayLength.LengthPrefixed l => (IrArrayKind.LengthPrefixed, (int?)null, l.MaxCount, l.PrefixBits, (IReadOnlyList<byte>)Array.Empty<byte>()),
-        ArrayLength.Terminated s => (IrArrayKind.Terminated, (int?)null, s.MaxCount, 0, (IReadOnlyList<byte>)s.Sentinel.ToArray()),
-        ArrayLength.FillRemaining r => (IrArrayKind.FillRemaining, (int?)null, r.MaxCount, 0, (IReadOnlyList<byte>)Array.Empty<byte>()),
-        _ => throw new InvalidOperationException($"Array '{path}' has unknown length kind {type.Length.GetType().Name}."),
-    };
+        IReadOnlyList<byte> none = Array.Empty<byte>();
+
+        return type.Length switch
+        {
+            ArrayLength.Fixed f => (IrArrayKind.Fixed, f.Count, f.Count, 0, none),
+            ArrayLength.CountFromField c => (IrArrayKind.CountFromField, null, c.MaxCount, 0, none),
+            ArrayLength.LengthPrefixed l => (IrArrayKind.LengthPrefixed, null, l.MaxCount, l.PrefixBits, none),
+            ArrayLength.Terminated s => (IrArrayKind.Terminated, null, s.MaxCount, 0, s.Sentinel.ToArray()),
+            ArrayLength.FillRemaining r => (IrArrayKind.FillRemaining, null, r.MaxCount, 0, none),
+            _ => throw new InvalidOperationException(
+                $"Array '{path}' has unknown length kind {type.Length.GetType().Name}."),
+        };
+    }
 
     /// <summary>
     /// An array whose element is a struct: described by its members rather than by one primitive kind.
@@ -593,7 +606,7 @@ public sealed class IrBuilder
                         $"Array '{arrayPath}' has a struct element containing '{name}', an array of "
                         + "composites. Only arrays of primitives or enums may appear inside an element.");
 
-                var (itemKind, itemEnum, itemRange) = Describe(itemType, enumTable);
+                var (itemKind, itemEnum, itemRange) = Describe(itemType, enumTable, name, arrayPath);
                 var itemBits = child.ElementBits > 0 ? child.ElementBits : (itemNode?.BitWidth ?? child.BitWidth);
 
                 sink.Add(new IrElementField(name, itemKind, itemEnum, child.BitOffset, itemBits,
@@ -603,24 +616,32 @@ public sealed class IrBuilder
                 continue;
             }
 
-            if (childType is StructType)
-            {
-                CollectElementFields(project, child, name, enumTable, sink, arrayPath);
-                continue;
-            }
-
-            var (kind, enumIdx, range) = Describe(childType, enumTable);
+            var (kind, enumIdx, range) = Describe(childType, enumTable, name, arrayPath);
             sink.Add(new IrElementField(name, kind, enumIdx, child.BitOffset, child.BitWidth,
                 child.Endianness, child.BitOrder, child.Transform,
                 WireIsSigned(kind, range, child.Transform)));
         }
     }
 
+    /// <summary>
+    /// The wire description of one value inside an array element.
+    /// </summary>
+    /// <remarks>
+    /// Anything that is not a primitive or an enum throws rather than defaulting to a kind. A silent
+    /// fallback here is what once turned an array of structs into an array of <c>uint8_t</c>: the output
+    /// compiled, ran, and put the wrong bytes on the wire. Reaching this means <c>PD0036</c> let a shape
+    /// through, so the message names the member and the array it sits in.
+    /// </remarks>
     private static (PrimitiveKind Kind, int? EnumIndex, NumericRange? Range) Describe(
-        TypeDefinition? type, Dictionary<TypeId, int> enumTable) => type switch
+        TypeDefinition? type, Dictionary<TypeId, int> enumTable, string member, string arrayPath) => type switch
     {
         ParameterType p => (p.Kind, (int?)null, p.Range),
         EnumType e => (e.UnderlyingKind, enumTable.TryGetValue(e.Id, out var i) ? i : (int?)null, e.MemberRange),
-        _ => (PrimitiveKind.U8, (int?)null, (NumericRange?)null),
+        null => throw new InvalidOperationException(
+            $"Array '{arrayPath}' has a struct element whose member '{member}' references a type that is "
+            + "not in the project's type library."),
+        _ => throw new InvalidOperationException(
+            $"Array '{arrayPath}' has a struct element whose member '{member}' is a {type.GetType().Name}. "
+            + "Only primitives and enums may appear as values inside an array element."),
     };
 }

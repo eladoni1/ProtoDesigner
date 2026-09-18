@@ -115,7 +115,7 @@ public static class WireEncodingPropagator
 
         if (range is not { } r || r.IsConstant) return null;
 
-        var hostIsFloat = type is ParameterType { Kind: PrimitiveKind.F32 or PrimitiveKind.F64 };
+        var hostIsFloat = type is ParameterType p2 && p2.Kind.IsFloat();
         if (!hostIsFloat && bits >= naturalBits) return null;   // integer host at full width is exact
 
         // A signed wire keeps zero at zero, so negatives stay negative and the value stays readable in a

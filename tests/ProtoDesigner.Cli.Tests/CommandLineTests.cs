@@ -85,7 +85,82 @@ public sealed class CommandLineTests : IDisposable
     }
 
 
+
+    // ---- argument handling --------------------------------------------------------------------
+
+    /// <summary>
+    /// Putting the flags first is a common habit, and it used to report "File not found: --out" because
+    /// the path was whatever landed in position zero.
+    /// </summary>
+    [Fact]
+    public void The_file_may_be_named_after_the_flags()
+    {
+        var path = WriteProject(CleanProject());
+        var outDir = Path.Combine(_dir, "out");
+
+        var (code, _, err) = Run("generate", "--out", outDir, path);
+
+        Assert.Equal(CommandLine.ExitOk, code);
+        Assert.DoesNotContain("File not found", err, StringComparison.Ordinal);
+        Assert.True(File.Exists(Path.Combine(outDir, "main.h")));
+    }
+
+    /// <summary>
+    /// A forgotten value used to swallow the next flag: `--namespace --out dir` generated successfully
+    /// into `dir` under the namespace "out", which is a wrong answer reported as a right one.
+    /// </summary>
+    [Fact]
+    public void An_option_will_not_swallow_the_next_flag_as_its_value()
+    {
+        var path = WriteProject(CleanProject());
+        var outDir = Path.Combine(_dir, "out");
+
+        var (code, _, err) = Run("generate", path, "--namespace", "--out", outDir);
+
+        Assert.Equal(CommandLine.ExitUsage, code);
+        Assert.Contains("--namespace", err, StringComparison.Ordinal);
+        Assert.False(Directory.Exists(outDir));
+    }
+
+    /// <summary>A misspelled flag that changes the output must not look like the flag working.</summary>
+    [Fact]
+    public void An_unknown_option_is_reported_rather_than_ignored()
+    {
+        var path = WriteProject(CleanProject());
+
+        var (code, _, err) = Run("generate", path, "--outt", Path.Combine(_dir, "out"));
+
+        Assert.Equal(CommandLine.ExitUsage, code);
+        Assert.Contains("--outt", err, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_option_missing_its_value_at_the_end_of_the_line_is_a_usage_error()
+    {
+        var path = WriteProject(CleanProject());
+
+        var (code, _, err) = Run("generate", path, "--out");
+
+        Assert.Equal(CommandLine.ExitUsage, code);
+        Assert.Contains("--out", err, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Repeating_an_option_uses_the_last_value()
+    {
+        var path = WriteProject(CleanProject());
+        var wrong = Path.Combine(_dir, "wrong");
+        var right = Path.Combine(_dir, "right");
+
+        var (code, _, _) = Run("generate", path, "--out", wrong, "--out", right);
+
+        Assert.Equal(CommandLine.ExitOk, code);
+        Assert.True(File.Exists(Path.Combine(right, "main.h")));
+        Assert.False(Directory.Exists(wrong));
+    }
+
     // ---- compare ------------------------------------------------------------------------------
+
 
     /// <summary>
     /// The two projects here are the same object saved twice, so every id matches — the situation two

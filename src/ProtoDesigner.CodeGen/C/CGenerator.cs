@@ -859,7 +859,7 @@ public sealed class CGenerator : IProtocolGenerator
     /// </summary>
     private static bool IsRawFloat(PrimitiveKind host, ScalarTransform t) => IsFloat(host) && t.IsIdentity;
 
-    private static bool IsFloat(PrimitiveKind kind) => kind is PrimitiveKind.F32 or PrimitiveKind.F64;
+    private static bool IsFloat(PrimitiveKind kind) => kind.IsFloat();
 
     /// <summary>Renders a term as <c>+ n</c> or <c>- n</c>, so an offset of -40 reads `+ 40`, not `- -40`.</summary>
     private static string Signed(decimal value) =>
