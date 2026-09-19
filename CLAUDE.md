@@ -118,7 +118,7 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 5c | Wire-compatibility diffing | **Done** — `compare`, PD0080..PD0088 |
 | 6 | Shared storage & collaboration | **Started** — merging save works end to end on files; shared storage not begun. See `docs/shared-storage-design.md` |
 
-**2044 automated tests, all passing**, plus a Windows-only view-model suite. Three conformance checks run inside `dotnet test` and **fail**
+**2047 automated tests, all passing**, plus a Windows-only view-model suite. Three conformance checks run inside `dotnet test` and **fail**
 rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
 red one. None of the toolchains is vendored.
 
@@ -343,6 +343,37 @@ something and watching it go red — do the same before trusting a change here.
 
   If the first stays green the test is skipping when it should be failing, which is the failure mode the
   whole fail-loudly policy exists to prevent.
+
+### Is every rule actually shipped? Sweep it, don't assume
+
+A rule can be correct and still not be in the product. `Validator.DefaultRules()` is the shipped
+catalogue, and a test that builds its rule directly (`new Validator(new[] { rule })`) proves the rule
+works while saying nothing about whether anyone runs it. **Comment a rule out of the catalogue and
+something must go red:**
+
+```bash
+# one rule at a time, from the repo root
+V=src/ProtoDesigner.Core/Validation/Validator.cs
+sed -i "s|        new <RuleName>(),|        // new <RuleName>(),|" $V
+dotnet test tests/ProtoDesigner.Core.Tests/ProtoDesigner.Core.Tests.csproj   # must fail
+git checkout -- $V
+```
+
+Swept over all 21 rules on 2026-09-19. Seventeen were caught by `Core`; `TransportBudgetRule` and
+`UnreferencedTypeRule` are caught by `Application`/`Cli` instead, which is fine — they are pinned, just
+not where you would look first. **Two were caught by nothing in the repo**: `BusHasNoMessagesRule` and
+`MessageHasNoFieldsRule` could be deleted outright and every suite stayed green. `EmptyContainerTests`
+closes that, and re-running the sweep on those two now turns it red. Run the sweep after adding a rule;
+it is the only thing that distinguishes "written" from "shipped".
+
+**The golden files are load-bearing, and that was checked the same way.** Deleting a golden does not
+pass by regenerating — `AssertMatchGoldens` writes the missing file and then `Assert.Fail`s, so the
+update is never mistaken for agreement. Renaming an emitted macro in `CGenerator` (`ON_WIRE_BYTES` →
+`ON_WIRE_OCTETS`) turns 10 of the 33 golden cases red. Both verified 2026-09-19.
+
+One caution learned from doing it: **check that the mutation landed before believing a green result.**
+The first attempt here edited a token that does not appear in `CGenerator` at all, so the suite stayed
+green and briefly looked like a hole. A mutation that changes nothing proves nothing.
 
 ### Open work, in the order I would take it
 
