@@ -118,7 +118,7 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 5c | Wire-compatibility diffing | **Done** — `compare`, PD0080..PD0088 |
 | 6 | Shared storage & collaboration | **Started** — merging save works end to end on files; shared storage not begun. See `docs/shared-storage-design.md` |
 
-**2047 automated tests, all passing**, plus a Windows-only view-model suite. Three conformance checks run inside `dotnet test` and **fail**
+**2051 automated tests, all passing**, plus a Windows-only view-model suite. Three conformance checks run inside `dotnet test` and **fail**
 rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
 red one. None of the toolchains is vendored.
 
@@ -549,6 +549,24 @@ repository handing back objects would prove the save logic while assuming the ha
 wrong. `Opening_a_file_and_saving_it_straight_back_merges_nothing` is that assumption as a test: if the
 serializer ever drops something `EntityState` renders, the field symptom is a save reporting phantom
 incoming changes from a file nobody edited.
+
+**The repository port has a written contract now, and one clause of it is not guessable.**
+`ProjectRepositoryContract` (Persistence.Json tests) is an abstract suite a new backend derives from —
+the Phase 6 acceptance criterion, written while there was still one implementation to check it against.
+Four clauses: a round trip preserves the project, a save replaces what was there, loading something
+never stored **throws rather than inventing an empty project**, and:
+
+> **Every `Load` must return a fresh object graph.**
+
+That one is the reason the contract exists. `WorkingCopy` loads a project *twice* on purpose — once as
+the copy being edited, once as the untouched baseline its next save merges against. An implementation
+that cached and returned the same instance would share those, so the baseline would mutate along with
+the edits, every merge would compare a project against itself, find nothing, take nothing and report
+success. Nothing downstream would notice, and the JSON implementation satisfies it by accident rather
+than by design — it reparses every call. A SQL or in-memory backend is exactly where it would break.
+
+Verified by writing a deliberately bad repository (cached instance, empty project for a missing key) and
+watching the contract turn those two clauses red while the other two correctly stayed green.
 
 **Settled, so that they are not reopened as questions:**
 
