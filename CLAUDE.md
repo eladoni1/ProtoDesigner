@@ -118,7 +118,7 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 5c | Wire-compatibility diffing | **Done** — `compare`, PD0080..PD0088 |
 | 6 | Shared storage & collaboration | **Started** — merging save works end to end on files; shared storage not begun. See `docs/shared-storage-design.md` |
 
-**2043 automated tests, all passing**, plus a Windows-only view-model suite. Three conformance checks run inside `dotnet test` and **fail**
+**2044 automated tests, all passing**, plus a Windows-only view-model suite. Three conformance checks run inside `dotnet test` and **fail**
 rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
 red one. None of the toolchains is vendored.
 
@@ -499,6 +499,18 @@ Three things about it were decided rather than fallen into:
   project that changed underneath them, so replaying one backwards is undefined. The editor rebuilds the
   view models for the same reason — the merge edits the model in place and the old ones wrapped what it
   used to be.
+
+**One fact, one field, in both halves of this.** `WorkingCopy` holds the path and the baseline as a single
+nullable pair, because they *are* one fact: a project with nowhere to save has no ancestor to merge
+against, and a stored one always has both. Held apart they could disagree, and the merge would run against
+the wrong ancestor with nothing to show for it. `Path is null` is therefore the whole of "never stored",
+and `Save()` refuses rather than guessing a destination — picking one is the caller's job.
+
+`MainViewModel.Show(copy)` is the same move one layer up: **the only place `_workingCopy` and `Project` are
+assigned.** They are two views of one fact, and the failure mode if they drift is the worst kind — the app
+saves the wrong project and reports success. Setting them together in one three-line method makes that
+impossible instead of merely unlikely, which matters more here than a test would, because this suite only
+runs on Windows. Do not assign either one anywhere else; `Show` also covers the post-merge rebuild.
 
 `MergingSaveTests` lives in the *persistence* suite on purpose. `WorkingCopy` is only correct if a
 project written to disk and read back is the same project as far as the merge can tell, and a fake

@@ -62,19 +62,20 @@ public sealed class WorkingCopy
 {
     private readonly IProjectRepository _repository;
 
-    /// <summary>The project as it was last read from or written to storage. Never edited.</summary>
+    /// <summary>Where this copy is stored, and what it looked like when it got there.</summary>
     /// <remarks>
-    /// Null until the first save of a project that was never stored, which is the one case with no
-    /// common ancestor to merge against — nobody else can have edited a file that does not exist yet.
+    /// One nullable field rather than two, because the path and the baseline are the same fact: a project
+    /// with nowhere to save has no common ancestor to merge against, and a project that has been saved
+    /// always has both. Held separately they could disagree, and the merge would be measured against the
+    /// wrong ancestor with nothing to show for it.
     /// </remarks>
-    private Project? _baseline;
+    private (string Path, Project Baseline)? _storedAs;
 
-    private WorkingCopy(IProjectRepository repository, Project project, string path, Project? baseline)
+    private WorkingCopy(IProjectRepository repository, Project project, (string, Project)? storedAs)
     {
         _repository = repository;
         Project = project;
-        Path = path;
-        _baseline = baseline;
+        _storedAs = storedAs;
     }
 
     /// <summary>Opens a stored project for editing.</summary>
@@ -87,63 +88,70 @@ public sealed class WorkingCopy
     {
         ArgumentNullException.ThrowIfNull(repository);
         ArgumentException.ThrowIfNullOrEmpty(path);
-        return new WorkingCopy(repository, repository.Load(path), path, repository.Load(path));
+        return new WorkingCopy(repository, repository.Load(path), (path, repository.Load(path)));
     }
 
-    /// <summary>Takes a project that has never been stored, to be written at <paramref name="path"/>.</summary>
-    public static WorkingCopy Started(IProjectRepository repository, Project project, string path)
+    /// <summary>Takes a project that has never been stored. It has nowhere to save until <see cref="SaveAs"/>.</summary>
+    public static WorkingCopy Started(IProjectRepository repository, Project project)
     {
         ArgumentNullException.ThrowIfNull(repository);
         ArgumentNullException.ThrowIfNull(project);
-        ArgumentException.ThrowIfNullOrEmpty(path);
-        return new WorkingCopy(repository, project, path, baseline: null);
+        return new WorkingCopy(repository, project, storedAs: null);
     }
 
     /// <summary>The copy being edited. Every mutation goes through the command journal, as ever.</summary>
     public Project Project { get; }
 
-    public string Path { get; private set; }
+    /// <summary>Where <see cref="Save"/> writes. Null until this project has been stored somewhere.</summary>
+    public string? Path => _storedAs?.Path;
 
     /// <summary>
     /// Merges in whatever was stored since this copy was opened, then writes the result.
     /// </summary>
+    /// <remarks>
+    /// Requires a <see cref="Path"/>. A project that has never been stored has nowhere to save and no
+    /// ancestor to merge against, so the caller has to ask the user for a destination and call
+    /// <see cref="SaveAs"/> — a choice only the caller can make, which is why this refuses rather than guesses.
+    /// </remarks>
     public SaveOutcome Save()
     {
-        if (_baseline is null) return Write(SaveStatus.Written, Array.Empty<string>(), Array.Empty<Diagnostic>());
+        if (_storedAs is not { } stored)
+            throw new InvalidOperationException(
+                "This project has never been stored, so there is nowhere to save it. Call SaveAs first.");
 
-        var stored = _repository.Load(Path);
-        var merge = ProjectMerge.Merge(_baseline, Project, stored);
+        var merge = ProjectMerge.Merge(stored.Baseline, Project, _repository.Load(stored.Path));
 
         if (merge.Conflicts.Count > 0)
             return new SaveOutcome(SaveStatus.Conflicted, Array.Empty<string>(), merge.Conflicts,
                                    Array.Empty<Diagnostic>());
 
-        return Write(merge.Applied.Count == 0 ? SaveStatus.Written : SaveStatus.Merged,
+        return Write(stored.Path,
+                     merge.Applied.Count == 0 ? SaveStatus.Written : SaveStatus.Merged,
                      merge.Applied, merge.Validation);
     }
 
     /// <summary>
-    /// Writes to a different path, replacing whatever is there.
+    /// Writes to a given path, replacing whatever is there.
     /// </summary>
     /// <remarks>
     /// Deliberately does not merge. "Save as" is a fork: the user named a destination, and merging into
-    /// whatever happens to be there would be a different operation than the one they asked for. The new
-    /// path becomes this copy's own from here on, so ordinary saves resume merging against it.
+    /// whatever happens to be there would be a different operation than the one they asked for. The path
+    /// becomes this copy's own from here on, so ordinary saves resume merging against it.
     /// </remarks>
     public SaveOutcome SaveAs(string path)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
-        Path = path;
-        return Write(SaveStatus.Written, Array.Empty<string>(), Array.Empty<Diagnostic>());
+        return Write(path, SaveStatus.Written, Array.Empty<string>(), Array.Empty<Diagnostic>());
     }
 
-    private SaveOutcome Write(SaveStatus status, IReadOnlyList<string> merged, IReadOnlyList<Diagnostic> validation)
+    private SaveOutcome Write(string path, SaveStatus status,
+                              IReadOnlyList<string> merged, IReadOnlyList<Diagnostic> validation)
     {
-        _repository.Save(Project, Path);
+        _repository.Save(Project, path);
 
         // Re-read rather than keeping the copy just written: the baseline has to be what storage now
         // holds, and only a read proves that is what we think it is.
-        _baseline = _repository.Load(Path);
+        _storedAs = (path, _repository.Load(path));
 
         return new SaveOutcome(status, merged, Array.Empty<MergeConflict>(), validation);
     }

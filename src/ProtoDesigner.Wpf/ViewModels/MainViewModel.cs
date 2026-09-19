@@ -11,16 +11,20 @@ public sealed class MainViewModel : ObservableObject
 {
     private readonly IProjectRepository _repository;
 
-    /// <summary>
-    /// The open project and the baseline its next save merges against. Null until the project has a file —
-    /// a brand-new project has no stored copy anyone else could have edited.
-    /// </summary>
-    private WorkingCopy? _workingCopy;
+    /// <summary>The open project, its file, and the baseline its next save merges against.</summary>
+    private WorkingCopy _workingCopy = null!;   // set by Show() in the constructor
 
     public MainViewModel()
     {
         _repository = new JsonProjectRepository();
-        Project = BuildSampleProject();
+        Show(WorkingCopy.Started(_repository, BuildSampleProject()));
+
+        // The sample declares only the handful of types its own messages need, so bool, char and the
+        // wider integers were absent from the Types tab on launch and looked as though the tool did not
+        // support them. Seeding fills in the rest; entries the sample already declared are skipped.
+        Project.Types.SeedBuiltIns();
+        Project.MarkSaved();
+        Project.SelectedMessage = Project.Buses.FirstOrDefault()?.Messages.FirstOrDefault();
 
         NewCommand = new RelayCommand(p => NewProject(p));
         OpenCommand = new RelayCommand(p => OpenProject(p));
@@ -47,6 +51,21 @@ public sealed class MainViewModel : ObservableObject
 
     public string WindowTitle => Project.WindowTitle;
 
+    /// <summary>
+    /// The one place the open project is swapped, and the only place these two are assigned.
+    /// </summary>
+    /// <remarks>
+    /// The working copy already owns the project and its path, so anything that sets the view model
+    /// separately is how the two come to disagree — and a save that writes the wrong project reports
+    /// success. Keeping it to one line makes that impossible rather than merely unlikely.
+    /// </remarks>
+    private void Show(WorkingCopy copy)
+    {
+        _workingCopy = copy;
+        Project = new ProjectViewModel(copy.Project) { CurrentFilePath = copy.Path };
+        Project.MarkSaved();
+    }
+
     public RelayCommand NewCommand { get; }
     public RelayCommand OpenCommand { get; }
     public RelayCommand SaveCommand { get; }
@@ -58,9 +77,8 @@ public sealed class MainViewModel : ObservableObject
     private void NewProject(object? _)
     {
         if (!ConfirmDiscardIfDirty()) return;
-        var project = new Core.Model.Project("Untitled");
-        _workingCopy = null;
-        Project = new ProjectViewModel(project);
+
+        Show(WorkingCopy.Started(_repository, new Core.Model.Project("Untitled")));
         Project.Types.SeedBuiltIns();
 
         // Seeding routes through the journal, which marks the project dirty. A brand-new project holding
@@ -81,10 +99,7 @@ public sealed class MainViewModel : ObservableObject
 
         try
         {
-            var opened = WorkingCopy.Open(_repository, dialog.FileName);
-            _workingCopy = opened;
-            Project = new ProjectViewModel(opened.Project) { CurrentFilePath = dialog.FileName };
-            Project.MarkSaved();
+            Show(WorkingCopy.Open(_repository, dialog.FileName));
         }
         catch (Exception ex)
         {
@@ -101,7 +116,7 @@ public sealed class MainViewModel : ObservableObject
     /// </remarks>
     private bool Save()
     {
-        if (_workingCopy is null || Project.CurrentFilePath is null) return SaveAs(null);
+        if (_workingCopy.Path is null) return SaveAs(null);
         try
         {
             var outcome = _workingCopy.Save();
@@ -113,7 +128,7 @@ public sealed class MainViewModel : ObservableObject
             }
 
             if (outcome.Status == SaveStatus.Merged) AdoptMergedProject(outcome);
-            else Project.MarkSaved();
+            else Project.MarkSaved();   // Show() already marks saved for the merged case
 
             return true;
         }
@@ -147,9 +162,7 @@ public sealed class MainViewModel : ObservableObject
     /// </remarks>
     private void AdoptMergedProject(SaveOutcome outcome)
     {
-        var path = Project.CurrentFilePath;
-        Project = new ProjectViewModel(_workingCopy!.Project) { CurrentFilePath = path };
-        Project.MarkSaved();
+        Show(_workingCopy);
 
         var what = string.Join("\n", outcome.Merged.Select(m => $"  • {m}"));
         var invalid = outcome.Validation.Count == 0
@@ -177,9 +190,8 @@ public sealed class MainViewModel : ObservableObject
 
         try
         {
-            _workingCopy ??= WorkingCopy.Started(_repository, Project.Project, dialog.FileName);
             _workingCopy.SaveAs(dialog.FileName);
-            Project.CurrentFilePath = dialog.FileName;
+            Project.CurrentFilePath = _workingCopy.Path;
             Project.MarkSaved();
             return true;
         }
@@ -209,7 +221,7 @@ public sealed class MainViewModel : ObservableObject
 
     // ---- sample project seed ------------------------------------------------------------------
 
-    private static ProjectViewModel BuildSampleProject()
+    private static Core.Model.Project BuildSampleProject()
     {
         var project = new Core.Model.Project("SampleProject");
 
@@ -270,16 +282,6 @@ public sealed class MainViewModel : ObservableObject
         bus.Messages.Add(ping);
 
         project.Buses.Add(bus);
-
-        var vm = new ProjectViewModel(project);
-
-        // The sample declares only the handful of types its own messages need, so bool, char and the
-        // wider integers were absent from the Types tab on launch and looked as though the tool did not
-        // support them. Seeding fills in the rest; entries the sample already declared are skipped.
-        vm.Types.SeedBuiltIns();
-
-        vm.MarkSaved();
-        vm.SelectedMessage = vm.Buses.FirstOrDefault()?.Messages.FirstOrDefault();
-        return vm;
+        return project;
     }
 }

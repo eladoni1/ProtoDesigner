@@ -222,15 +222,33 @@ public class MergingSaveTests : IDisposable
 
     // ---- first save, and save as -------------------------------------------------------------------
 
+    /// <summary>
+    /// A project nobody has stored has nowhere to save and no ancestor to merge against, so it refuses
+    /// rather than guessing a destination. Picking one is the caller's job — a file dialog, in the editor.
+    /// </summary>
     [Fact]
-    public void A_project_that_was_never_stored_just_writes()
+    public void A_project_that_was_never_stored_has_nowhere_to_save()
     {
-        var copy = WorkingCopy.Started(_repo, Build(), _path);
+        var copy = WorkingCopy.Started(_repo, Build());
 
-        var outcome = copy.Save();
+        Assert.Null(copy.Path);
+        Assert.Throws<InvalidOperationException>(() => copy.Save());
+    }
 
-        Assert.Equal(SaveStatus.Written, outcome.Status);
+    [Fact]
+    public void Saving_a_never_stored_project_somewhere_gives_it_a_path_to_keep_using()
+    {
+        var copy = WorkingCopy.Started(_repo, Build());
+
+        Assert.Equal(SaveStatus.Written, copy.SaveAs(_path).Status);
+
+        Assert.Equal(_path, copy.Path);
         Assert.Equal("Telemetry", Stored().Name);
+
+        // And from here on it is an ordinary merging save, against what was just written.
+        MessageOf(copy.Project).Name = "Renamed";
+        Assert.Equal(SaveStatus.Written, copy.Save().Status);
+        Assert.Equal("Renamed", MessageOf(Stored()).Name);
     }
 
     [Fact]
