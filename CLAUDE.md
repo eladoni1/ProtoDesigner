@@ -116,9 +116,9 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 5 | C# generator + advanced protocol features | **Done** |
 | 5b | Protobuf schema target + protovalidate | **Done** — gated per message, protoc-verified |
 | 5c | Wire-compatibility diffing | **Done** — `compare`, PD0080..PD0088 |
-| 6 | Shared storage & collaboration | **Started** — merging save works end to end on files; shared storage not begun. See `docs/shared-storage-design.md` |
+| 6 | Shared storage & collaboration | **Started** — merging save, and a SQL backend behind the same port. Revisions and operations not begun. See `docs/shared-storage-design.md` |
 
-**2051 automated tests, all passing**, plus a Windows-only view-model suite. Three conformance checks run inside `dotnet test` and **fail**
+**2059 automated tests, all passing**, plus a Windows-only view-model suite. Three conformance checks run inside `dotnet test` and **fail**
 rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
 red one. None of the toolchains is vendored.
 
@@ -150,13 +150,13 @@ directory and deleting it costs nothing. Deleting all of `protobuf/` also remove
 `validate.proto`, which turns the second and third checks red until you set their skip variables.
 
 **Running the tests.** `dotnet test` on the solution needs Windows, for the view-model suite and the C
-cross-check. Elsewhere, run the five portable suites by project and set the three skip variables:
+cross-check. Elsewhere, run the six portable suites by project and set the three skip variables:
 
 ```bash
 # Linux/macOS: everything except the Windows-only view-model suite
 export PROTODESIGNER_SKIP_CPP_CROSSCHECK=1 PROTODESIGNER_SKIP_PROTOC=1 PROTODESIGNER_SKIP_PROTOVALIDATE=1
 dotnet build ProtoDesigner.sln -p:EnableWindowsTargeting=true
-for p in Core Application CodeGen Cli Persistence.Json; do
+for p in Core Application CodeGen Cli Persistence.Json Persistence.Sql; do
   dotnet test tests/ProtoDesigner.$p.Tests/ProtoDesigner.$p.Tests.csproj
 done
 ```
@@ -168,12 +168,14 @@ src/
   ProtoDesigner.Application/     IProjectRepository, IEditCommand + CommandJournal,
                                  GenerationScopes, CodeGenerationService
   ProtoDesigner.Persistence.Json canonical ID-keyed JSON + migration chain
+  ProtoDesigner.Persistence.Sql  the same port over SQL rows — SQLite today, Postgres by dialect
   ProtoDesigner.Application/     …also ProtobufCompatibility (the export gate) and WireSizePolicy
   ProtoDesigner.CodeGen/         IProtocolGenerator, GeneratorCatalog, BitBuffer + ReferenceCodec,
                                  C/ (full codec)   CSharp/ (full codec)   Proto/ (schema)
   ProtoDesigner.Cli/             validate / generate / compare / merge / targets
   ProtoDesigner.Wpf/             the editor
 tests/                           one suite per src project
+  …Persistence.Contract/         the IProjectRepository contract both backends derive from
   …Wpf.Tests/                    view-model edits reach the journal — Windows only, see above
   …CodeGen.Tests/Golden/         checked-in expected output: C headers *and* .proto schemas
   …CodeGen.Tests/Protovalidate/  harness.go + go.mod/go.sum — the Go runtime check, all in git
@@ -567,6 +569,42 @@ than by design — it reparses every call. A SQL or in-memory backend is exactly
 
 Verified by writing a deliberately bad repository (cached instance, empty project for a missing key) and
 watching the contract turn those two clauses red while the other two correctly stayed green.
+
+**The SQL backend is the second implementation, and the contract is what made it safe to write.**
+`SqlProjectRepository` (Persistence.Sql) stores a project as rows over SQLite. The database is named once
+in the constructor and the port's `path` is **the key of one project inside it** — that is the whole
+difference a shared backend makes: one store holds everyone's projects where one file holds one.
+
+**Rows for identity, columns for values.** Everything the model gives an id becomes a row, because that
+is what makes an entity separately addressable — two people editing different messages touch different
+rows, which is the reason for a database rather than a document. Value objects with no identity that are
+never referenced (`FieldEncoding`, `LayoutOptions`, `NumericRange`) are columns on their owner.
+`ArrayLength` is the single exception and stored as compact JSON: it is a five-variant union, so
+relationally it is five nullable column groups or five sub-tables, for a query nothing here makes.
+
+**Decimals are TEXT, not REAL.** SQLite's REAL is a double, which loses the top of the 64-bit integer
+domain — the exact reason `ScalarTransform` uses `decimal`. This is checked, not assumed: routing `Text()`
+through a double turns the cross-check red.
+
+**A save replaces that project's rows in one transaction.** Writing only what changed needs a per-entity
+revision to compare against, which is the next piece and not this one; until then, replacing wholesale is
+the version that cannot leave a half-written project behind.
+
+It shares no code with the JSON serializer, deliberately. Two implementations of one port are only worth
+having if they are independent — a shared mapping would mean a bug in it passed both their tests.
+
+**`SqlMatchesJsonTests` asks the merge whether the two agree, rather than asserting field by field.** A
+new mapping fails by *dropping* things, and a hand-written assertion only ever checks what its author
+remembered. So one rich project goes through both backends and `ProjectMerge` is asked whether they are
+the same project — the sharpest question available, because `EntityStateCoverageTests` already pins the
+merge against every property of the model by reflection. Four mutations were watched to go red (a dropped
+wire offset, dropped routes, a dropped protobuf number, decimals through a double), and each names the
+entity it lost. A second test compares SQL against the original rather than against JSON, so a blind spot
+the two share is still caught.
+
+One caution, learned the hard way here: the fixture mints fresh ids on every call, so using it as both
+baseline and round-trip input reports **every** entity as added. That was this suite's first red run, and
+the test was what was wrong, not the mapping.
 
 **Settled, so that they are not reopened as questions:**
 

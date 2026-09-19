@@ -16,6 +16,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ProtoDesigner.Core\ProtoDesigner.Core.csproj" />
+    <ProjectReference Include="..\..\src\ProtoDesigner.Persistence.Sql\ProtoDesigner.Persistence.Sql.csproj" />
+    <!-- The JSON backend is referenced so the two can be checked against each other, not to use it. -->
     <ProjectReference Include="..\..\src\ProtoDesigner.Persistence.Json\ProtoDesigner.Persistence.Json.csproj" />
     <ProjectReference Include="..\ProtoDesigner.Persistence.Contract\ProtoDesigner.Persistence.Contract.csproj" />
   </ItemGroup>
@@ -23,7 +25,7 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <Using Include="ProtoDesigner.Core.Model" />
-    <Using Include="ProtoDesigner.Persistence.Json" />
+    <Using Include="ProtoDesigner.Persistence.Sql" />
   </ItemGroup>
 
 </Project>

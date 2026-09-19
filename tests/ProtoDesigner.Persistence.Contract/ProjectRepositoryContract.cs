@@ -1,6 +1,6 @@
 using ProtoDesigner.Application;
 
-namespace ProtoDesigner.Persistence.Json.Tests;
+namespace ProtoDesigner.Persistence.Contract;
 
 /// <summary>
 /// What every <see cref="IProjectRepository"/> must do, whatever it stores into.
@@ -20,8 +20,8 @@ namespace ProtoDesigner.Persistence.Json.Tests;
 /// reporting success. Nothing downstream would notice.
 /// </para>
 /// <para>
-/// Derive from this to check a new backend; when the SQL one lands, this class moves somewhere both test
-/// projects can see it.
+/// Each backend's suite derives from this and supplies a store. The concrete subclasses live beside the
+/// implementation they check, so a red test names the backend rather than this file.
 /// </para>
 /// </remarks>
 public abstract class ProjectRepositoryContract
@@ -110,23 +110,5 @@ public abstract class ProjectRepositoryContract
         var (repo, path) = NewStore();
 
         Assert.ThrowsAny<Exception>(() => repo.Load(path));
-    }
-}
-
-/// <summary>The JSON implementation against the contract above.</summary>
-public sealed class JsonProjectRepositoryContractTests : ProjectRepositoryContract, IDisposable
-{
-    private readonly List<string> _paths = new();
-
-    protected override (IProjectRepository Repository, string Path) NewStore()
-    {
-        var path = Path.Combine(Path.GetTempPath(), $"protodesigner-contract-{Guid.NewGuid():N}.pdproj");
-        _paths.Add(path);
-        return (new JsonProjectRepository(), path);
-    }
-
-    public void Dispose()
-    {
-        foreach (var path in _paths.Where(File.Exists)) File.Delete(path);
     }
 }
