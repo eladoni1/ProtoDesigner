@@ -150,16 +150,34 @@ directory and deleting it costs nothing. Deleting all of `protobuf/` also remove
 `validate.proto`, which turns the second and third checks red until you set their skip variables.
 
 **Running the tests.** `dotnet test` on the solution needs Windows, for the view-model suite and the C
-cross-check. Elsewhere, run the six portable suites by project and set the three skip variables:
+cross-check. **Only those two are Windows-bound** — protoc and Go both run on Linux, so setting all three
+skip variables there wastes 20 real conformance cases. Stage the toolchain instead and skip one:
 
 ```bash
-# Linux/macOS: everything except the Windows-only view-model suite
-export PROTODESIGNER_SKIP_CPP_CROSSCHECK=1 PROTODESIGNER_SKIP_PROTOC=1 PROTODESIGNER_SKIP_PROTOVALIDATE=1
+# Linux/macOS: stage protoc + validate.proto once (protobuf/ is gitignored)
+curl -sSL -o /tmp/protoc.zip \
+  https://github.com/protocolbuffers/protobuf/releases/download/v35.1/protoc-35.1-linux-x86_64.zip
+mkdir -p protobuf && unzip -oq /tmp/protoc.zip -d protobuf
+curl -sSL -o protobuf/validate.proto \
+  https://raw.githubusercontent.com/bufbuild/protovalidate/v1.2.0/proto/protovalidate/buf/validate/validate.proto
+
+export PROTODESIGNER_SKIP_CPP_CROSSCHECK=1      # the only one Linux genuinely needs
 dotnet build ProtoDesigner.sln -p:EnableWindowsTargeting=true
 for p in Core Application CodeGen Cli Persistence.Json Persistence.Sql; do
   dotnet test tests/ProtoDesigner.$p.Tests/ProtoDesigner.$p.Tests.csproj
 done
 ```
+
+That is 2051 of the 2059 cases genuinely run, plus the 9 Windows-only view-model cases left to CI.
+Versions match the CI workflow's `PROTOC_VERSION` / `PROTOVALIDATE_VERSION`; Go comes from the harness's
+own `go.mod`. Verified on Linux with Go 1.24.7 against a `go.mod` asking for 1.26.5 — the toolchain
+directive upgrades in place, so it works.
+
+**CI runs on `main` and on `claude/**` branches.** That second pattern was added 2026-09-21 after
+noticing CI had run exactly *once*, on the commit before a long run of work: the trigger was
+`branches: [main]` with no PR open, so roughly fifteen commits' worth of Windows-only coverage — the
+view-model suite and the C cross-check — had never executed. A branch CI never sees is a branch whose
+Windows coverage is theoretical. If you add a branch prefix, add it here too.
 
 ```
 src/

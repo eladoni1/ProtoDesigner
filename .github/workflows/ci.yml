@@ -21,7 +21,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Working branches too, not just main. The Windows-only half of the suite — the view-model tests
+    # and the C cross-check — runs nowhere else, so a branch CI never sees is a branch whose Windows
+    # coverage is theoretical. That was true of ~15 commits before this line was added.
+    branches: [main, 'claude/**']
   pull_request:
   workflow_dispatch:
 
