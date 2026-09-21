@@ -119,15 +119,39 @@ public sealed class WorkingCopy
             throw new InvalidOperationException(
                 "This project has never been stored, so there is nowhere to save it. Call SaveAs first.");
 
-        var merge = ProjectMerge.Merge(stored.Baseline, Project, _repository.Load(stored.Path));
+        // Attempts, not retries-on-error: being overtaken means the merge had stale input, so the only
+        // useful response is to read again and redo it. The bound stops a pathologically busy store
+        // spinning here; in practice the second attempt wins, because it starts from what overtook us.
+        for (var attempt = 0; ; attempt++)
+        {
+            var incoming = Read(stored.Path, out var stamp);
+            var merge = ProjectMerge.Merge(stored.Baseline, Project, incoming);
 
-        if (merge.Conflicts.Count > 0)
-            return new SaveOutcome(SaveStatus.Conflicted, Array.Empty<string>(), merge.Conflicts,
-                                   Array.Empty<Diagnostic>());
+            if (merge.Conflicts.Count > 0)
+                return new SaveOutcome(SaveStatus.Conflicted, Array.Empty<string>(), merge.Conflicts,
+                                       Array.Empty<Diagnostic>());
 
-        return Write(stored.Path,
-                     merge.Applied.Count == 0 ? SaveStatus.Written : SaveStatus.Merged,
-                     merge.Applied, merge.Validation);
+            var status = merge.Applied.Count == 0 ? SaveStatus.Written : SaveStatus.Merged;
+
+            if (Write(stored.Path, status, merge.Applied, merge.Validation, stamp) is { } outcome)
+                return outcome;
+
+            if (attempt >= MaxAttempts)
+                throw new InvalidOperationException(
+                    $"Could not save '{stored.Path}': something wrote to it during each of "
+                    + $"{MaxAttempts + 1} attempts. Nothing was written.");
+        }
+    }
+
+    /// <summary>Enough to get past a burst; few enough that a livelock is reported rather than hidden.</summary>
+    private const int MaxAttempts = 4;
+
+    /// <summary>Loads, with the stamp when the store can supply one.</summary>
+    private Project Read(string path, out string? stamp)
+    {
+        if (_repository is IStampedProjectRepository stamped) return stamped.Load(path, out stamp);
+        stamp = null;
+        return _repository.Load(path);
     }
 
     /// <summary>
@@ -141,13 +165,28 @@ public sealed class WorkingCopy
     public SaveOutcome SaveAs(string path)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
-        return Write(path, SaveStatus.Written, Array.Empty<string>(), Array.Empty<Diagnostic>());
+
+        // Unconditional: "save as" names a destination and replaces it, so there is no read for a
+        // stamp to guard.
+        return Write(path, SaveStatus.Written, Array.Empty<string>(), Array.Empty<Diagnostic>(),
+                     stamp: null)!;
     }
 
-    private SaveOutcome Write(string path, SaveStatus status,
-                              IReadOnlyList<string> merged, IReadOnlyList<Diagnostic> validation)
+    /// <summary>
+    /// Writes, and re-baselines. Null means the store refused because <paramref name="stamp"/> had
+    /// moved — somebody wrote while this save was deciding what to write.
+    /// </summary>
+    private SaveOutcome? Write(string path, SaveStatus status, IReadOnlyList<string> merged,
+                               IReadOnlyList<Diagnostic> validation, string? stamp)
     {
-        _repository.Save(Project, path);
+        if (stamp is not null && _repository is IStampedProjectRepository stamped)
+        {
+            if (!stamped.SaveIfUnchanged(Project, path, stamp)) return null;
+        }
+        else
+        {
+            _repository.Save(Project, path);
+        }
 
         // Re-read rather than keeping the copy just written: the baseline has to be what storage now
         // holds, and only a read proves that is what we think it is.

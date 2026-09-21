@@ -116,9 +116,9 @@ offsets on both sides** of a variable field and run a cursor only through the mi
 | 5 | C# generator + advanced protocol features | **Done** |
 | 5b | Protobuf schema target + protovalidate | **Done** — gated per message, protoc-verified |
 | 5c | Wire-compatibility diffing | **Done** — `compare`, PD0080..PD0088 |
-| 6 | Shared storage & collaboration | **Started** — merging save, and a SQL backend behind the same port. Revisions and operations not begun. See `docs/shared-storage-design.md` |
+| 6 | Shared storage & collaboration | **Started** — merging save, SQL backend, optimistic concurrency. Operations and a merge view not begun. See `docs/shared-storage-design.md` |
 
-**2059 automated tests, all passing**, plus a Windows-only view-model suite. Three conformance checks run inside `dotnet test` and **fail**
+**2061 automated tests, all passing**, plus a Windows-only view-model suite. Three conformance checks run inside `dotnet test` and **fail**
 rather than skip when their toolchain is absent — a green suite that compiled nothing is worse than a
 red one. None of the toolchains is vendored.
 
@@ -623,6 +623,38 @@ the two share is still caught.
 One caution, learned the hard way here: the fixture mints fresh ids on every call, so using it as both
 baseline and round-trip input reports **every** entity as added. That was this suite's first red run, and
 the test was what was wrong, not the mapping.
+
+**The merging save had a lost-update window, and it was demonstrated before it was fixed.**
+Every `Save()` re-reads storage first, which closes the ordinary case — two people editing different
+messages both survive whichever order they save in. What it could not close is the window *inside* one
+save, between the read it merges against and the write that follows. `LostUpdateTests` reproduced it
+deterministically, with a decorating repository writing at the instant the window opens: the
+interloper's whole message vanished and both saves reported success.
+
+`IStampedProjectRepository` closes it. A stamped `Load` reports a token for the version it read, and
+`SaveIfUnchanged` compares and writes **as one transaction** — checking the stamp separately just before
+writing would re-create the same window one level down. SQLite carries it as a `version` column bumped on
+every write.
+
+Three decisions in it:
+
+- **It is a separate interface, not a widening of `IProjectRepository`.** A backend that cannot do it
+  atomically should not implement it: `WorkingCopy` reads its absence as "this store has one writer" and
+  carries on, which is honest, where a stamp that only *narrowed* the window would look like a guarantee.
+  The file backend deliberately does not implement it.
+- **Being overtaken is retried, not reported.** It means the merge had stale input, so the only useful
+  response is to read again and redo it — and the second attempt starts from whatever overtook it. Four
+  attempts, then it throws rather than writing anyway or spinning.
+- **The interloper in the tests always edits a *different* entity.** Two people touching one message is
+  an ordinary merge conflict, reported long before a stamp matters, so an interloper aimed at our own
+  message would test the merge instead of the window.
+
+That test misled its author three times before it was right, and each way is worth knowing: an
+interloper firing during `WorkingCopy.Open` lands in the *baseline* (Open reads twice) and is merged in
+as ordinary work; a decorator implementing only `IProjectRepository` silently downgrades the store to the
+unguarded path; and a fixture generating an id that collides with an existing one is refused by the
+schema with a UNIQUE violation — correctly, and a duplicate the file backend would have written without
+complaint.
 
 **Settled, so that they are not reopened as questions:**
 

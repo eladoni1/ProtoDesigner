@@ -35,7 +35,7 @@ namespace ProtoDesigner.Persistence.Sql;
 /// a genuinely concurrent deployment would want to be — SQLite over a network share is not that.
 /// </para>
 /// </remarks>
-public sealed class SqlProjectRepository : IProjectRepository
+public sealed class SqlProjectRepository : IStampedProjectRepository
 {
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
@@ -60,7 +60,20 @@ public sealed class SqlProjectRepository : IProjectRepository
 
     // ---- save ---------------------------------------------------------------------------------
 
-    public void Save(Project project, string projectKey)
+    public void Save(Project project, string projectKey) => Write(project, projectKey, expectedStamp: null);
+
+    /// <summary>
+    /// The conditional write. Everything happens inside one transaction, which is what makes the
+    /// comparison and the write indivisible — checking the version separately first would leave the same
+    /// window open one level down.
+    /// </summary>
+    public bool SaveIfUnchanged(Project project, string projectKey, string expectedStamp)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(expectedStamp);
+        return Write(project, projectKey, expectedStamp);
+    }
+
+    private bool Write(Project project, string projectKey, string? expectedStamp)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentException.ThrowIfNullOrEmpty(projectKey);
@@ -68,25 +81,40 @@ public sealed class SqlProjectRepository : IProjectRepository
         using var connection = Open();
         using var tx = connection.BeginTransaction();
 
+        var current = CurrentVersion(connection, projectKey);
+        if (expectedStamp is not null && current.ToString(Inv) != expectedStamp)
+            return false;   // somebody wrote while we were deciding what to write
+
         foreach (var table in Schema.Tables)
             Execute(connection, $"DELETE FROM {table} WHERE project_key = $k", ("$k", projectKey));
 
-        WriteProject(connection, projectKey, project);
+        WriteProject(connection, projectKey, project, current + 1);
         foreach (var type in project.Types.All) WriteType(connection, projectKey, type);
 
         for (var b = 0; b < project.Buses.Count; b++)
             WriteBus(connection, projectKey, project.Buses[b], b);
 
         tx.Commit();
+        return true;
     }
 
-    private static void WriteProject(SqliteConnection c, string key, Project p) => Execute(c,
+    /// <summary>The version stored for a key, or 0 when it has never been written.</summary>
+    private static long CurrentVersion(SqliteConnection c, string key)
+    {
+        using var r = Query(c, "SELECT version FROM projects WHERE project_key = $k", ("$k", key));
+        return r.Read() ? r.GetInt64(0) : 0;
+    }
+
+    private static void WriteProject(SqliteConnection c, string key, Project p, long version) => Execute(c,
         """
-        INSERT INTO projects (project_key, name, schema_version,
+        INSERT INTO projects (project_key, name, schema_version, version,
                               endianness, bit_order, alignment_bits, packing_mode, pad_to_byte)
-        VALUES ($k, $name, $ver, $end, $bit, $align, $pack, $pad)
+        VALUES ($k, $name, $ver, $version, $end, $bit, $align, $pack, $pad)
         """,
-        Concat(new (string, object?)[] { ("$k", key), ("$name", p.Name), ("$ver", p.SchemaVersion) },
+        Concat(new (string, object?)[]
+               {
+                   ("$k", key), ("$name", p.Name), ("$ver", p.SchemaVersion), ("$version", version),
+               },
                Options(p.Options)));
 
     private static void WriteType(SqliteConnection c, string key, TypeDefinition type)
@@ -229,14 +257,17 @@ public sealed class SqlProjectRepository : IProjectRepository
 
     // ---- load ---------------------------------------------------------------------------------
 
-    public Project Load(string projectKey)
+    public Project Load(string projectKey) => Load(projectKey, out _);
+
+    public Project Load(string projectKey, out string stamp)
     {
         ArgumentException.ThrowIfNullOrEmpty(projectKey);
 
         using var connection = Open();
 
         using var head = Query(connection,
-            "SELECT name, schema_version, endianness, bit_order, alignment_bits, packing_mode, pad_to_byte " +
+            "SELECT name, schema_version, endianness, bit_order, alignment_bits, packing_mode, " +
+            "       pad_to_byte, version " +
             "FROM projects WHERE project_key = $k", ("$k", projectKey));
 
         if (!head.Read())
@@ -244,6 +275,7 @@ public sealed class SqlProjectRepository : IProjectRepository
 
         var project = new Project(head.GetString(0)) { SchemaVersion = head.GetInt32(1) };
         ReadOptions(project.Options, head, 2);
+        stamp = head.GetInt64(7).ToString(Inv);
         head.Close();
 
         ReadTypes(connection, projectKey, project);

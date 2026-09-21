@@ -34,6 +34,9 @@ internal static class Schema
           project_key     TEXT PRIMARY KEY,
           name            TEXT NOT NULL,
           schema_version  INTEGER NOT NULL,
+          -- Bumped on every write. A save carries the version it read and the update is conditional on
+          -- it, so a writer that was overtaken in the gap is refused rather than silently winning.
+          version         INTEGER NOT NULL DEFAULT 0,
           endianness      TEXT, bit_order TEXT, alignment_bits INTEGER, packing_mode TEXT, pad_to_byte INTEGER
         );
 
